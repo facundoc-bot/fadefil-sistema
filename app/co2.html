@@ -15,15 +15,6 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--tinta); background: var(--fondo); }
-  header { background: var(--marca); color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  header h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: .2px; }
-  header .usuario { margin-left: auto; font-size: 13px; opacity: .9; }
-  header a.volver { color: #fff; font-size: 13.5px; text-decoration: none; border: 1px solid rgba(255,255,255,.45); border-radius: 6px; padding: 4px 9px; }
-  header a.volver:hover { background: rgba(255,255,255,.12); }
-  header button { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.5); }
-  nav { display: flex; gap: 4px; padding: 8px 12px 0; background: var(--marca); overflow-x: auto; }
-  nav button { background: transparent; color: #cfdbe8; border: 0; border-radius: 8px 8px 0 0; padding: 10px 14px; font-weight: 600; white-space: nowrap; }
-  nav button.activo { background: var(--fondo); color: var(--marca); }
   main { max-width: 980px; margin: 0 auto; padding: 16px; }
   section.panel { display: none; } section.panel.activo { display: block; }
   .tarjeta { background: var(--tarjeta); border: 1px solid var(--linea); border-radius: var(--radio); padding: 16px; margin-bottom: 14px; }
@@ -59,12 +50,6 @@
   td { border-bottom: 1px solid var(--linea); padding: 6px; vertical-align: middle; }
   td input, td select { padding: 6px 8px; }
   .filtro-consulta { padding-bottom: 6px; } .filtro-consulta .ayuda { margin: 6px 0 0; }
-  .filtro-global { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 8px; align-items: end; background: var(--tarjeta); border: 1px solid var(--linea);
-    border-radius: var(--radio); padding: 10px 12px; margin-bottom: 14px; }
-  .filtro-global label { margin-bottom: 2px; } .filtro-global select { padding: 7px 8px; }
-  .filtro-global .alcance { font-size: 12.5px; color: var(--suave); padding-bottom: 8px; white-space: nowrap; }
-  .filtro-global.activo { border-color: var(--marca-2); box-shadow: inset 3px 0 0 var(--marca-2); }
-  @media (max-width: 600px) { .filtro-global { grid-template-columns: 1fr 1fr; } .filtro-global .alcance { grid-column: 1 / -1; padding: 0; } }
   .pendiente { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
   .grafico { position: relative; } .grafico svg { width: 100%; height: auto; display: block; }
   .grafico .grilla { stroke: var(--linea); stroke-width: 1; } .grafico .grilla.base { stroke: #b9c3cf; }
@@ -117,33 +102,29 @@
     #tabla-lineas td.c-carga { grid-area: carga; }
   }
 </style>
+<link rel="stylesheet" href="estilo.css">
+<meta name="theme-color" content="#0b0b0b">
+<link rel="icon" href="marca/icono-192.png">
+<link rel="apple-touch-icon" href="marca/icono-192.png">
 </head>
 <body>
-<header>
-  <a id="volver-app" class="volver" href="#" target="_top" style="display:none">← Volver a la app</a>
-  <h1>Cilindros CO₂</h1>
-  <span class="usuario" id="usuario">Cargando…</span>
-  <button class="chico" onclick="recargar(true)" title="Vuelve a leer todo, también regiones, plazas, zonas y depósitos">Actualizar datos</button>
-  <button class="chico" onclick="salir()" title="Cerrar la sesión en este dispositivo">Salir</button>
-</header>
-<nav id="pestanas">
-  <button data-panel="p-remito" class="solo-carga">Remito LINDE</button>
-  <button data-panel="p-facturas">Remitos y facturas</button>
-  <button data-panel="p-consulta">Consultas</button>
-  <button data-panel="p-recambios">Recambios</button>
-  <button data-panel="p-revision">Revisión</button>
-  <button data-panel="p-alta" class="solo-admin">Inventario inicial</button>
-</nav>
+<script>
+armarMarco('co2', { actualizar: 'recargar(true)', extra: `<a id="volver-app" style="display:none"></a>
+  <div class="contexto" id="filtro-global">
+    <button class="boton-icono" onclick="this.parentNode.classList.toggle('abierto')" title="Qué región, plaza y zona se muestran">${icono('map-pin')}<span id="contexto-texto">Todo el país</span>${icono('chevron-down', 'chico')}</button>
+    <div class="popover">
+      <label for="f-region">Región</label><select id="f-region" onchange="cambioFiltro('region')"></select>
+      <label for="f-plaza">Plaza</label><select id="f-plaza" onchange="cambioFiltro('plaza')"></select>
+      <label for="f-zona">Zona</label><select id="f-zona" onchange="cambioFiltro('zona')"></select>
+      <p class="ayuda" style="margin:12px 0 0" id="f-alcance"></p>
+    </div>
+  </div>` });
+document.addEventListener('mousedown', (e) => { const c = document.getElementById('filtro-global'); if (c && !c.contains(e.target) && !e.target.closest('.buscador')) c.classList.remove('abierto'); });
+</script>
 
 <main>
   <div id="error-global"></div>
   <div id="pendiente-local"></div>
-  <div class="filtro-global" id="filtro-global">
-    <div><label for="f-region">Región</label><select id="f-region" onchange="cambioFiltro('region')"></select></div>
-    <div><label for="f-plaza">Plaza</label><select id="f-plaza" onchange="cambioFiltro('plaza')"></select></div>
-    <div><label for="f-zona">Zona</label><select id="f-zona" onchange="cambioFiltro('zona')"></select></div>
-    <div class="alcance" id="f-alcance"></div>
-  </div>
 
   <!-- ============================ REMITO LINDE ============================ -->
   <section class="panel" id="p-remito">
@@ -456,8 +437,7 @@ async function recargar(forzar) {
   try {
     S.ini = await llamar('apiInicio', !!forzar);
     $('error-global').innerHTML = '';
-    document.body.className = 'rol-' + S.ini.usuario.rol;
-    $('usuario').textContent = `${S.ini.usuario.nombre} · ${S.ini.usuario.rol}`;
+    ponerUsuario(S.ini.usuario);
     const opcDep = S.ini.depositos.map(d => `<option value="${esc(d.id)}"${d.activo ? '' : ' disabled'}>${esc(d.nombre)}${d.direccion ? ' · ' + esc(d.direccion) : ''}${d.activo ? '' : ' — inactivo'}</option>`).join('');
     $('rem-deposito').innerHTML = '<option value="">— Elegí —</option>' + opcDep;
     $('alta-deposito').innerHTML = '<option value="">— Elegí —</option>' + opcDep;
@@ -472,7 +452,7 @@ async function recargar(forzar) {
     if (S.ini.pendientesAprobacion) verPendientesAprobacion(true); else { S.pendAprob = []; pintarPendientesAprobacion(); }
     pintarStock();
     $('volver-app').href = S.ini.urlApp || '#';
-    $('volver-app').style.display = S.ini.urlApp ? '' : 'none';
+    $('volver-app').style.display = 'none';
     if (S.remito) pintarLineas();
     revisarPendienteLocal();
     const activo = document.querySelector('nav button.activo');
@@ -508,6 +488,8 @@ function armarFiltroGlobal() {
   if (!S._filtroIniciado) {
     S._filtroIniciado = true;
     S.filtro = Object.assign(S.filtro, leerLocal('co2_filtro') || {});
+    // El filtro es el mismo en toda la app (lo elegido en la app principal vale acá y al revés).
+    try { const p = (k) => localStorage.getItem('fadefil.' + k); if (p('region') !== null || p('plaza') !== null) S.filtro = { regionId: p('region') || '', plazaId: p('plaza') || '', zonaId: p('zona') || '' }; } catch (e) { /* sin almacenamiento */ }
     // La app unificada puede abrir el módulo con ?region=…&plaza=…&zona=…
     try {
       (cb => cb({ parameter: Object.fromEntries(new URLSearchParams(location.search)) }))(loc => {
@@ -527,7 +509,8 @@ function armarFiltroGlobal() {
   $('f-zona').innerHTML = opc(S.ini.zonas.filter(z => (!f.plazaId || z.plazaId === f.plazaId) && (!f.regionId || (plaza(z.plazaId) || {}).regionId === f.regionId)).sort(porNombre), 'Todas', f.zonaId);
   const a = alcance();
   $('filtro-global').classList.toggle('activo', !a.todo);
-  $('f-alcance').textContent = a.todo ? 'Todo el país' : `${a.depositos.size} depósito(s) · ${S.ini.clientes.filter(enAlcance).length} cliente(s)`;
+  $('f-alcance').textContent = a.todo ? 'Se aplica a toda la app y queda guardado en este dispositivo.' : `Incluye ${a.depositos.size} depósito(s) y ${S.ini.clientes.filter(enAlcance).length} cliente(s). Se aplica a toda la app.`;
+  $('contexto-texto').textContent = a.todo ? 'Todo el país' : textoFiltro();
 }
 function cambioFiltro(nivel) {
   const f = S.filtro;
@@ -535,6 +518,7 @@ function cambioFiltro(nivel) {
   if (nivel === 'plaza') { f.plazaId = $('f-plaza').value; f.zonaId = ''; if (f.plazaId) f.regionId = plaza(f.plazaId).regionId || f.regionId; }
   if (nivel === 'zona') { f.zonaId = $('f-zona').value; if (f.zonaId) { f.plazaId = zona(f.zonaId).plazaId; f.regionId = (plaza(f.plazaId) || {}).regionId || f.regionId; } }
   guardarLocal('co2_filtro', f);
+  try { localStorage.setItem('fadefil.region', f.regionId || ''); localStorage.setItem('fadefil.plaza', f.plazaId || ''); localStorage.setItem('fadefil.zona', f.zonaId || ''); } catch (e) { /* sin almacenamiento */ }
   armarFiltroGlobal();
   aplicarFiltro();
 }
@@ -1444,7 +1428,7 @@ async function guardarAltas() {
 }
 
 altasCambio();
-exigirSesion().then(() => { recargar(); botonExcel(() => document.querySelector('section.panel.activo'), () => 'FADEFIL CO2 ' + ((document.querySelector('nav button.activo') || {}).textContent || '')); })
+exigirSesion().then(async () => { await recargar(); abrirDesdeHash(); botonExcel(() => document.querySelector('section.panel.activo'), () => 'FADEFIL CO2 ' + ((document.querySelector('nav button.activo') || {}).textContent || '')); })
   .catch(e => { if (e.message !== 'SIN_SESION') $('error-global').innerHTML = `<div class="nota err">${esc(e.message)}</div>`; });
 </script>
 </body>

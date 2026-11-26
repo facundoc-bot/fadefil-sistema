@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E💧%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="marca/icono-192.png">
 <script src="lib/supabase.js"></script>
 <script src="config.js"></script>
 <script src="comun.js"></script>
@@ -16,18 +16,6 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--tinta); background: var(--fondo); }
-  header { background: var(--marca); color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  header h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: .2px; }
-  header .filtros { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  header .filtros label { color: #cfdbe8; margin: 0; }
-  header .filtros select { width: auto; min-width: 120px; padding: 6px 8px; font-weight: 600; background: #fff2cc; border-color: #fff2cc; }
-  header .usuario { margin-left: auto; font-size: 13px; opacity: .9; }
-  header button { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.5); }
-  nav { display: flex; gap: 4px; padding: 8px 12px 0; background: var(--marca); overflow-x: auto; }
-  nav button { background: transparent; color: #cfdbe8; border: 0; border-radius: 8px 8px 0 0; padding: 10px 14px; font-weight: 600; white-space: nowrap; }
-  nav button.activo { background: var(--fondo); color: var(--marca); }
-  nav a.nav-enlace { color: #cfdbe8; padding: 10px 14px; font-weight: 600; white-space: nowrap; text-decoration: none; }
-  nav a.nav-enlace:hover { color: #fff; }
   main { max-width: 1100px; margin: 0 auto; padding: 16px; }
   section.panel { display: none; } section.panel.activo { display: block; }
   .tarjeta { background: var(--tarjeta); border: 1px solid var(--linea); border-radius: var(--radio); padding: 16px; margin-bottom: 14px; }
@@ -102,34 +90,25 @@
   .buscador .grupo { padding: 6px 8px 2px; font-size: 12px; font-weight: 700; color: #5f6b7a; text-transform: uppercase; }
   .buscador .vacio { padding: 8px; }
 </style>
+<link rel="stylesheet" href="estilo.css">
+<meta name="theme-color" content="#0b0b0b">
+<link rel="apple-touch-icon" href="marca/icono-192.png">
 </head>
 <body>
-<header>
-  <h1>FADEFIL · Clientes</h1>
-  <div class="filtros">
-    <label for="f-region">Región</label><select id="f-region" onchange="cambiarFiltro('region')"></select>
-    <label for="f-plaza">Plaza</label><select id="f-plaza" onchange="cambiarFiltro('plaza')"></select>
-    <label for="f-zona">Zona</label><select id="f-zona" onchange="cambiarFiltro('zona')"></select>
-  </div>
-  <span class="usuario" id="usuario">Cargando…</span>
+<script>
+armarMarco('index', { actualizar: 'recargar()', extra: `
   <button class="chico alerta" id="sin-guardar" style="display:none" onclick="irASinGuardar()" title="Hay trabajo cargado en la app que todavía no se guardó"></button>
-  <button class="chico" onclick="recargar()" title="Vuelve a traer los datos. No borra lo que tengas sin guardar.">Actualizar datos</button>
-  <button class="chico" onclick="salir()" title="Cerrar la sesión en este dispositivo">Salir</button>
-</header>
-<nav id="pestanas">
-  <button data-panel="p-inicio">Inicio</button>
-  <button data-panel="p-ot" class="solo-carga">Nueva OT</button>
-  <button data-panel="p-envios" class="solo-carga">Envíos</button>
-  <button data-panel="p-revision" class="solo-carga">Revisión</button>
-  <button data-panel="p-reparacion" class="solo-carga">Reparación</button>
-  <button data-panel="p-stock">Stock</button>
-  <button data-panel="p-clientes">Clientes</button>
-  <button data-panel="p-maquinas">Máquinas</button>
-  <a id="nav-co2" class="nav-enlace" href="co2.html" style="display:none" title="Remitos de LINDE, inventario inicial y consultas de cilindros">CO₂ ↗</a>
-  <button data-panel="p-tecnicos">Técnicos</button>
-  <button data-panel="p-admin" class="solo-admin">Administración</button>
-  <a class="nav-enlace solo-admin" href="datos.html" title="Depósitos, plazas, zonas, técnicos, usuarios, catálogo y carga masiva">Datos ↗</a>
-</nav>
+  <div class="contexto" id="contexto">
+    <button class="boton-icono" onclick="this.parentNode.classList.toggle('abierto')" title="Qué región, plaza y zona se muestran">${icono('map-pin')}<span id="contexto-texto">Todo el país</span>${icono('chevron-down', 'chico')}</button>
+    <div class="popover">
+      <label for="f-region">Región</label><select id="f-region" onchange="cambiarFiltro('region')"></select>
+      <label for="f-plaza">Plaza</label><select id="f-plaza" onchange="cambiarFiltro('plaza')"></select>
+      <label for="f-zona">Zona</label><select id="f-zona" onchange="cambiarFiltro('zona')"></select>
+      <p class="ayuda" style="margin:12px 0 0">Se aplica a toda la app y queda guardado en este dispositivo.</p>
+    </div>
+  </div>` });
+document.addEventListener('mousedown', (e) => { const c = document.getElementById('contexto'); if (c && !c.contains(e.target) && !e.target.closest('.buscador')) c.classList.remove('abierto'); });
+</script>
 
 <main>
   <div id="error-global"></div>
@@ -137,6 +116,15 @@
 
   <!-- ============================ INICIO ============================ -->
   <section class="panel" id="p-inicio">
+    <div class="saludo"><h2 id="saludo-titulo">Hola</h2><p id="saludo-fecha"></p></div>
+    <div class="accesos">
+      <button class="acceso principal solo-carga" onclick="ir('p-ot')"><svg class="icono"><use href="lib/iconos.svg#clipboard-plus"/></svg><span>Nueva OT<small>Cargar el trabajo de un técnico</small></span></button>
+      <button class="acceso solo-carga" onclick="ir('p-envios')"><svg class="icono"><use href="lib/iconos.svg#truck"/></svg><span>Envíos<small>Despachar o recibir</small></span></button>
+      <button class="acceso solo-carga" onclick="ir('p-revision')"><svg class="icono"><use href="lib/iconos.svg#scan-search"/></svg><span>Revisión<small>Lo que volvió de los clientes</small></span></button>
+      <a class="acceso solo-carga" href="co2.html#p-remito"><svg class="icono"><use href="lib/iconos.svg#file-text"/></svg><span>Remito LINDE<small>Leer el PDF y cargarlo</small></span></a>
+      <button class="acceso" onclick="ir('p-clientes')"><svg class="icono"><use href="lib/iconos.svg#users"/></svg><span>Clientes<small>Buscar una ficha</small></span></button>
+      <button class="acceso" onclick="ir('p-stock')"><svg class="icono"><use href="lib/iconos.svg#boxes"/></svg><span>Stock<small>Por depósito</small></span></button>
+    </div>
     <div class="metricas" id="ini-metricas"></div>
     <div class="tarjeta">
       <h2>Mantenimientos vencidos y próximos</h2>
@@ -167,7 +155,7 @@
       <div id="ot-cliente-info"></div>
       <div style="margin-bottom:12px">
         <label>Tipo de trabajo</label>
-        <div class="segmentado" id="ot-tipos"></div>
+        <div class="tipos-ot" id="ot-tipos"></div>
       </div>
       <div id="ot-campos"></div>
       <div id="ot-co2"></div>
@@ -607,8 +595,9 @@ function aplicarIni(ini) {
     S.ini = ini;
     S.movItemData = null; S.movPeriodo = null; // los movimientos se vuelven a pedir con los datos nuevos
     $('error-global').innerHTML = '';
-    document.body.className = 'rol-' + S.ini.usuario.rol;
-    $('usuario').textContent = `${S.ini.usuario.nombre} · ${S.ini.usuario.rol} · v${S.ini.version}`;
+    ponerUsuario(S.ini.usuario);
+    $('saludo-titulo').textContent = 'Hola, ' + String(S.ini.usuario.nombre || '').split(/\s+/)[0];
+    $('saludo-fecha').textContent = new Date(S.ini.hoy + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }).replace(/^./, (c) => c.toUpperCase()) + ' · v' + S.ini.version;
     if (!S.filtrosListos) { S.region = leerPref('region'); S.plaza = leerPref('plaza'); S.zona = leerPref('zona'); S.filtrosListos = true; }
     armarFiltros();
     ['ot-fecha', 'env-fecha', 'cie-fecha', 'ing-fecha', 'revi-fecha', 'aj-fecha', 'am-fecha', 'rep-fecha'].forEach(id => { $(id).max = S.ini.hoy; if (!$(id).value) $(id).value = S.ini.hoy; });
@@ -644,10 +633,14 @@ function armarFiltros() {
   actualizarEnlaceCo2();
 }
 /* Sección CO₂ (depósitos y consultas): se abre con el mismo filtro. */
-function actualizarEnlaceCo2() {
-  const a = $('nav-co2'), url = S.ini && S.ini.urlApp;
-  a.style.display = url && hayCo2() ? '' : 'none';
-  if (url) a.href = url + '?' + ['region', 'plaza', 'zona'].map(k => S[k] ? k + '=' + encodeURIComponent(S[k]) : '').filter(String).join('&');
+/* Estado del cliente como etiqueta de color: verde activo, ámbar pausado o incompleto, gris baja. */
+function insigniaCliente(e) {
+  const cl = { ACTIVO: 'ok', DESINSTALADO_MOMENTANEO: 'adv', SIN_DATOS: 'adv', EX_CLIENTE: 'pend' }[e] || 'pend';
+  return `<span class="insignia ${cl}">${esc(S.ini.estadosCliente[e] || e)}</span>`;
+}
+function actualizarEnlaceCo2() { // el filtro elegido se muestra en la barra superior
+  const t = S.zona ? nomPlaza(S.plaza) + ' · ' + S.zona : S.plaza ? nomPlaza(S.plaza) : S.region ? 'Región ' + S.region : 'Todo el país';
+  const e = $('contexto-texto'); if (e) e.textContent = t;
 }
 function cambiarFiltro(nivel) {
   S[nivel] = $('f-' + nivel).value;
@@ -714,7 +707,9 @@ function otDesdeInicio(id, tipo) {
  *  Nueva OT
  * ==================================================================== */
 function pintarTiposOT() {
-  $('ot-tipos').innerHTML = TIPOS_ORDEN.map(t => `<button data-tipo="${t}" class="${t === S.ot.tipo ? 'activo' : ''}${t === 'ALTA_INICIAL' ? ' solo-admin' : ''}" onclick="elegirTipoOT('${t}')">${esc(S.ini.tipos[t])}</button>`).join('');
+  const ICONO_TIPO = { INSTALACION: 'plug-zap', MANTENIMIENTO: 'calendar-clock', REPARACION: 'wrench', REPARACION_BACKUP: 'repeat', CAMBIO_MODELO: 'arrow-left-right',
+    ENTREGA_ADICIONALES: 'package', ENTREGA_CO2: 'cylinder', DESINSTALACION_MOMENTANEA: 'circle-pause', DESINSTALACION: 'unplug', ALTA_INICIAL: 'database' };
+  $('ot-tipos').innerHTML = TIPOS_ORDEN.map(t => `<button data-tipo="${t}" class="${t === S.ot.tipo ? 'activo' : ''}${t === 'ALTA_INICIAL' ? ' solo-admin' : ''}" onclick="elegirTipoOT('${t}')">${icono(ICONO_TIPO[t] || 'clipboard-check')}<span>${esc(S.ini.tipos[t])}</span></button>`).join('');
 }
 function filtrarClientesOT() {
   const sel = $('ot-cliente'), f = sinAcentos($('ot-cliente-filtro').value), previo = sel.value || S.ot.idCliente;
@@ -1815,7 +1810,7 @@ function pintarClientes() {
   const max = 300;
   $('cli-tabla').innerHTML = lista.length ? '<thead><tr><th>ID</th><th>Nombre</th><th>Sector</th><th>Plaza / zona</th><th>Estado</th><th>Serie</th><th>Última visita</th></tr></thead><tbody>' +
     lista.slice(0, max).map(c => `<tr class="clic" onclick="verCliente('${esc(c.id)}')"><td class="mono">${esc(c.id)}</td><td>${esc(c.nombre)}</td><td>${esc(c.sector)}</td>
-      <td>${esc(plazaYZona(c))}</td><td>${esc(S.ini.estadosCliente[c.estado])}</td><td class="mono">${esc(c.serie)}</td><td>${fechaTxt(c.ultimaVisita)}</td></tr>`).join('') +
+      <td>${esc(plazaYZona(c))}</td><td>${insigniaCliente(c.estado)}</td><td class="mono">${esc(c.serie)}</td><td>${fechaTxt(c.ultimaVisita)}</td></tr>`).join('') +
     (lista.length > max ? `<tr><td colspan="7" class="vacio">Se muestran ${max} de ${lista.length}: afiná la búsqueda.</td></tr>` : '') + '</tbody>'
     : '<tbody><tr><td class="vacio">Ningún cliente coincide.</td></tr></tbody>';
 }
@@ -2051,7 +2046,7 @@ async function actualizarMaestros() {
 }
 
 pintarLote();
-exigirSesion().then(() => { recargar(); botonExcel(() => document.querySelector('section.panel.activo'), () => 'FADEFIL ' + ((document.querySelector('nav button.activo') || {}).textContent || '')); })
+exigirSesion().then(async () => { await recargar(); abrirDesdeHash('p-inicio'); botonExcel(() => document.querySelector('section.panel.activo'), () => 'FADEFIL ' + ((document.querySelector('nav button.activo') || {}).textContent || '')); })
   .catch(e => { if (e.message !== 'SIN_SESION') errorGlobal(e); });
 </script>
 </body>

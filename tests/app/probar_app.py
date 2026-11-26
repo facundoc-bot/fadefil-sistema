@@ -26,8 +26,8 @@ with sync_playwright() as p:
     pag.evaluate("s => localStorage.setItem('sb-localhost-auth-token', JSON.stringify(s))", SESION)
     for pagina, esperar in [('index.html', 'ADMIN'), ('co2.html', 'ADMIN')]:
         pag.goto(BASE + '/' + pagina)
-        pag.wait_for_function("t => document.getElementById('usuario') && document.getElementById('usuario').textContent.includes(t)", arg=esperar, timeout=30000)
-        botones = pag.query_selector_all('nav button[data-panel]')
+        pag.wait_for_function("() => document.body.classList.contains('rol-ADMIN')", timeout=30000)
+        botones = pag.query_selector_all('aside nav button[data-panel]')
         for b in botones:
             if not b.is_visible(): continue
             nombre = b.inner_text()
@@ -35,12 +35,17 @@ with sync_playwright() as p:
             err = pag.inner_text('#error-global') if pag.query_selector('#error-global') else ''
             if err.strip(): fallas.append(f'{pagina} · {nombre}: {err.strip()[:200]}')
             pag.screenshot(path=f'/tmp/app_{pagina.split(".")[0]}_{re.sub(r"[^A-Za-z]", "", nombre)}.png', full_page=False)
+            if pagina == 'index.html' and nombre.strip() in ('Inicio', 'Nueva OT'):
+                movil = nav.new_page(viewport={'width': 390, 'height': 844}, device_scale_factor=2)
+                movil.goto(BASE + '/archivo.html?r=nada'); movil.evaluate("s => localStorage.setItem('sb-localhost-auth-token', JSON.stringify(s))", SESION)
+                movil.goto(BASE + '/index.html#' + b.get_attribute('data-panel')); movil.wait_for_function("() => document.body.classList.contains('rol-ADMIN')", timeout=30000)
+                movil.wait_for_timeout(1500); movil.screenshot(path=f'/tmp/movil_{re.sub(r"[^A-Za-z]", "", nombre)}.png'); movil.close()
         print(pagina, 'pestañas:', [b.inner_text() for b in botones if b.is_visible()])
     # Excel desde una pantalla de la app (Stock)
     pag.goto(BASE + '/index.html')
-    pag.wait_for_function("() => document.getElementById('usuario').textContent.includes('ADMIN')", timeout=30000)
+    pag.wait_for_function("() => document.body.classList.contains('rol-ADMIN') && typeof S !== 'undefined' && S.ini", timeout=30000)
     pag.click('nav button[data-panel="p-stock"]'); pag.wait_for_timeout(800)
-    with pag.expect_download(timeout=20000) as d: pag.click('text=⬇ Excel')
+    with pag.expect_download(timeout=20000) as d: pag.click('.boton-excel')
     wb = openpyxl.load_workbook(bajado(d.value))
     print('Excel de Stock:', wb.sheetnames, 'filas', [wb[n].max_row for n in wb.sheetnames])
     if not any(wb[n].max_row > 1 for n in wb.sheetnames): fallas.append('El Excel de Stock salió vacío')
@@ -48,17 +53,17 @@ with sync_playwright() as p:
     # Datos: agregar una zona, renombrar un depósito, descargar y carga masiva
     pag.goto(BASE + '/datos.html')
     pag.wait_for_selector('#filas tr', timeout=30000)
-    pag.click('nav >> text=Zonas'); pag.click('text=Agregar')
+    pag.click('#subpestanas >> text=Zonas'); pag.click('text=Agregar')
     pag.fill('#n-0', 'Godoy Cruz'); pag.select_option('#n-1', 'Mendoza'); pag.click('#filas >> text=Guardar')
     pag.wait_for_selector('#msg .nota', timeout=15000)
     if 'Agregado' not in pag.inner_text('#msg'): fallas.append('Datos · zona: ' + pag.inner_text('#msg'))
-    pag.click('nav >> text=Depósitos')
+    pag.click('#subpestanas >> text=Depósitos')
     fila = pag.locator('#filas tr', has_text='Depósito Córdoba').first
     fila.locator('text=Editar').click(); pag.fill('#e-0', 'Depósito Córdoba Capital')
     pag.once('dialog', lambda dlg: dlg.accept()); pag.click('#filas >> text=Guardar')
     pag.wait_for_selector('#msg .nota', timeout=15000)
     if 'Cambios guardados' not in pag.inner_text('#msg'): fallas.append('Datos · renombrar: ' + pag.inner_text('#msg'))
-    with pag.expect_download(timeout=20000) as d: pag.click('text=⬇ Descargar Excel')
+    with pag.expect_download(timeout=20000) as d: pag.click('text=Descargar Excel')
     if openpyxl.load_workbook(bajado(d.value)).active.max_row < 3: fallas.append('Datos · Excel de depósitos vacío')
     # Carga masiva desde un Excel
     wb = openpyxl.Workbook(); wb.remove(wb.active)
@@ -70,8 +75,9 @@ with sync_playwright() as p:
         ws = wb.create_sheet(n)
         for f in filas: ws.append(f)
     wb.save('/tmp/carga.xlsx')
-    pag.click('nav >> text=Carga masiva')
-    with pag.expect_download(timeout=20000) as d: pag.click('text=⬇ Descargar plantilla')
+    pag.screenshot(path='/tmp/app_datos.png')
+    pag.click('#subpestanas >> text=Carga masiva')
+    with pag.expect_download(timeout=20000) as d: pag.click('text=Descargar plantilla')
     if 'clientes' not in openpyxl.load_workbook(bajado(d.value)).sheetnames: fallas.append('Plantilla sin la hoja clientes')
     pag.set_input_files('#imp-archivo', '/tmp/carga.xlsx'); pag.click('text=Validar')
     pag.wait_for_selector('#imp-res table', timeout=60000)
@@ -83,9 +89,18 @@ with sync_playwright() as p:
     msg = pag.inner_text('#imp-msg'); print('Importación:', msg.replace('\n', ' ')[:300])
     if '1 máquinas, 1 clientes' not in msg: fallas.append('Carga masiva: ' + msg[:300])
     pag.goto(BASE + '/index.html')
-    pag.wait_for_function("() => document.getElementById('usuario').textContent.includes('ADMIN')", timeout=30000)
+    pag.wait_for_function("() => document.body.classList.contains('rol-ADMIN') && typeof S !== 'undefined' && S.ini", timeout=30000)
     if not pag.evaluate("() => S.ini.clientes.some(c => c.id === '80001' && c.estado === 'ACTIVO')"): fallas.append('El cliente importado no aparece activo en la app')
     if not pag.evaluate("() => S.ini.depositos.some(d => d.id === 'Depósito Córdoba Capital')"): fallas.append('El depósito renombrado no aparece en la app')
+    # Buscador de clientes de Nueva OT: escribir, ver coincidencias y elegir una
+    pag.click('nav#pestanas >> text=Nueva OT'); pag.click('#ot-cliente-filtro'); pag.keyboard.type('Resto')
+    pag.wait_for_selector('.selector.abierto .combo-op', timeout=5000)
+    opciones = pag.locator('.selector.abierto .combo-op').all_text_contents()
+    pag.click('.selector.abierto .combo-op >> nth=0')
+    elegido = pag.evaluate("() => [document.getElementById('ot-cliente').value, S.ot.idCliente, document.getElementById('ot-cliente-filtro').placeholder]")
+    print('Buscador de clientes:', opciones, elegido)
+    if len(opciones) != 1 or elegido[0] != '10002' or elegido[1] != '10002' or 'Resto Dos' not in elegido[2]: fallas.append('Buscador de clientes: ' + json.dumps([opciones, elegido]))
+    pag.screenshot(path='/tmp/app_buscador.png')
     # Guardar una OT desde la app (navegador → función → base) y que la pantalla se actualice con la respuesta
     r = pag.evaluate("""async () => { const r = await llamar('apiConfirmar', [{ clase: 'OT', datos: { fecha: S.ini.hoy, idCliente: '80001', tipo: 'MANTENIMIENTO', items: [] } }], true);
       if (r.ok) aplicarIni(r.ini); return { ok: r.ok, ids: r.ids, err: JSON.stringify(r.resultados && r.resultados.map(x => x.errores)), mant: (S.ini.clientes.find(c => c.id === '80001') || {}).tipoUltimaVisita }; }""")

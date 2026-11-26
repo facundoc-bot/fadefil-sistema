@@ -13,7 +13,7 @@ function emailDe(t) {
   try { return JSON.parse(Buffer.from(t.split('.')[1], 'base64url').toString()).email || ''; } catch { return ''; }
 }
 const RAIZ = new URL('../../app/', import.meta.url).pathname;
-const TIPOS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css' };
+const TIPOS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };

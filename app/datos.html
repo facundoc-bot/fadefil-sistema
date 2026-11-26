@@ -7,51 +7,22 @@
 <script src="lib/supabase.js"></script>
 <script src="config.js"></script>
 <script src="comun.js"></script>
+<link rel="stylesheet" href="estilo.css">
+<meta name="theme-color" content="#0b0b0b">
+<link rel="icon" href="marca/icono-192.png">
 <style>
-  :root { --tinta: #16212e; --suave: #5a6878; --linea: #d9e0e8; --fondo: #f4f6f9; --marca: #1f3a5f; --marca-2: #2f5d8f; --ok: #1e7a4c; --ok-f: #e6f4ec;
-    --adv: #8a5a00; --adv-f: #fff4dc; --err: #a3261f; --err-f: #fde9e7; --radio: 10px; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--tinta); background: var(--fondo); }
-  header { background: var(--marca); color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  header h1 { font-size: 17px; margin: 0; font-weight: 650; } header a { color: #cfdbe8; font-weight: 600; text-decoration: none; }
-  header .usuario { margin-left: auto; font-size: 13px; opacity: .9; }
-  header button { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.5); }
-  nav { display: flex; gap: 4px; padding: 8px 12px 0; background: var(--marca); overflow-x: auto; }
-  nav button { background: transparent; color: #cfdbe8; border: 0; border-radius: 8px 8px 0 0; padding: 10px 12px; font-weight: 600; white-space: nowrap; }
-  nav button.activo { background: var(--fondo); color: var(--marca); }
-  main { max-width: 1200px; margin: 0 auto; padding: 16px; }
-  .tarjeta { background: #fff; border: 1px solid var(--linea); border-radius: var(--radio); padding: 16px; margin-bottom: 14px; }
-  .tarjeta h2 { font-size: 16px; margin: 0 0 4px; } .ayuda { color: var(--suave); font-size: 13px; margin: 0 0 12px; }
-  button { font: inherit; font-weight: 600; padding: 8px 13px; border-radius: 8px; border: 1px solid var(--linea); background: #fff; color: var(--tinta); cursor: pointer; }
-  button.primario { background: var(--marca); border-color: var(--marca); color: #fff; } button.exito { background: var(--ok); border-color: var(--ok); color: #fff; }
-  button.chico { padding: 3px 8px; font-size: 13px; } button:disabled { opacity: .45; cursor: not-allowed; }
-  .acciones { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
-  input, select { font: inherit; padding: 6px 8px; border: 1px solid var(--linea); border-radius: 7px; background: #fff; width: 100%; min-width: 80px; }
-  input[type=checkbox] { width: auto; min-width: 0; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .3px; color: var(--suave); border-bottom: 1px solid var(--linea); padding: 6px; white-space: nowrap; }
-  td { border-bottom: 1px solid var(--linea); padding: 5px 6px; vertical-align: middle; }
-  tr.editando td { background: #f0f4f9; } tr.mal td { background: var(--err-f); } tr.adv td { background: var(--adv-f); }
-  .tabla-scroll { overflow-x: auto; } .num { text-align: right; } .gris { color: var(--suave); } .mono { font-family: ui-monospace, Menlo, monospace; }
-  .nota { border-radius: 8px; padding: 10px 12px; margin: 10px 0; font-size: 14px; white-space: pre-line; }
-  .nota.err { background: var(--err-f); color: var(--err); } .nota.adv { background: var(--adv-f); color: var(--adv); } .nota.ok { background: var(--ok-f); color: var(--ok); }
-  .nota.info { background: #e8eef5; color: var(--marca); }
-  .metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 10px 0; }
-  .metrica { background: #fff; border: 1px solid var(--linea); border-radius: var(--radio); padding: 10px; } .metrica .n { font-size: 22px; font-weight: 700; } .metrica .t { font-size: 12.5px; color: var(--suave); }
-  #ocupado { position: fixed; inset: 0; background: rgba(22,33,46,.35); display: none; align-items: center; justify-content: center; z-index: 10; }
-  #ocupado div { background: #fff; padding: 18px 22px; border-radius: var(--radio); font-weight: 600; }
+  tr.editando td { background: #fbfde6; } tr.adv td { background: var(--adv-f); }
+  td input, td select { min-width: 90px; }
+  .nota { white-space: pre-line; }
+  .buscar-tabla { max-width: 240px; margin-left: auto; }
+  @media (max-width: 700px) { .buscar-tabla { max-width: none; margin-left: 0; } }
 </style>
 </head>
 <body>
-<header>
-  <a href="index.html">← Volver a la app</a>
-  <h1>Datos</h1>
-  <span class="usuario" id="usuario">Cargando…</span>
-  <button class="chico" onclick="salir()">Salir</button>
-</header>
-<nav id="pestanas"></nav>
+<script>armarMarco('datos', { actualizar: 'location.reload()' });</script>
 <main>
   <div id="error-global"></div>
+  <div class="subpestanas" id="subpestanas"></div>
   <div id="contenido"></div>
 </main>
 <div id="ocupado"><div id="ocupado-texto">Procesando…</div></div>
@@ -121,7 +92,7 @@ async function leer(t) {
 async function leerTodo() { for (const m of MAESTROS) await leer(m.t); }
 
 function pestanas() {
-  $('pestanas').innerHTML = MAESTROS.map((m) => `<button class="${S.pestana === m.t ? 'activo' : ''}" onclick="ir('${m.t}')">${esc(m.titulo)}</button>`).join('') +
+  $('subpestanas').innerHTML = MAESTROS.map((m) => `<button class="${S.pestana === m.t ? 'activo' : ''}" onclick="ir('${m.t}')">${esc(m.titulo)}</button>`).join('') +
     `<button class="${S.pestana === 'carga' ? 'activo' : ''}" onclick="ir('carga')">Carga masiva</button>`;
 }
 function ir(t) { S.pestana = t; S.editando = null; S.nuevo = null; pintar(); }
@@ -156,11 +127,10 @@ function pintar() {
   const clave = (r) => m.clave.map((k) => r[k]).join('|');
   const editar = !m.soloLeer;
   let html = `<div class="tarjeta"><h2>${esc(m.titulo)} <span class="gris">(${filas.length})</span></h2>${m.ayuda ? `<p class="ayuda">${esc(m.ayuda)}</p>` : ''}
-    <div class="acciones">${editar && !m.soloEditar ? '<button class="primario" onclick="nuevo()">Agregar</button>' : ''}
-      <button onclick="excelTabla('${m.t}')">⬇ Descargar Excel</button>
-      ${editar && !m.soloEditar ? `<label class="gris" style="font-size:13px">Cargar desde Excel: <input type="file" accept=".xlsx,.xls,.csv" onchange="cargarExcelTabla('${m.t}', this)" style="width:auto"></label>` : ''}
-      ${m.t === 'maquinas' || m.t === 'catalogo' || m.t === 'sistemas_purificacion' ? '' : ''}
-      <input placeholder="Buscar…" oninput="S.buscar=this.value;pintarFilas()" value="${esc(S.buscar || '')}" style="max-width:220px;margin-left:auto"></div>
+    <div class="acciones">${editar && !m.soloEditar ? '<button class="primario" onclick="nuevo()">' + icono('plus', 'chico') + ' Agregar</button>' : ''}
+      <button onclick="excelTabla('${m.t}')">${icono('download', 'chico')} Descargar Excel</button>
+      ${editar && !m.soloEditar ? `<label class="boton-archivo" title="Agrega o actualiza filas desde una planilla con las mismas columnas que la descarga">${icono('upload', 'chico')} Subir Excel<input type="file" accept=".xlsx,.xls,.csv" onchange="cargarExcelTabla('${m.t}', this)" hidden></label>` : ''}
+      <input class="buscar-tabla" placeholder="Buscar en ${esc(m.titulo.toLowerCase())}…" oninput="S.buscar=this.value;pintarFilas()" value="${esc(S.buscar || '')}"></div>
     <div id="msg"></div>
     <div class="tabla-scroll"><table><thead><tr>${m.cols.map((c) => `<th>${esc(c.titulo || c.c.replace(/_/g, ' '))}</th>`).join('')}${editar ? '<th></th>' : ''}</tr></thead><tbody id="filas"></tbody></table></div></div>`;
   $('contenido').innerHTML = html;
@@ -322,11 +292,11 @@ async function plantilla() {
 function pintarCarga() {
   $('contenido').innerHTML = `<div class="tarjeta"><h2>Carga masiva</h2>
     <p class="ayuda">Clientes con su alta inicial (estado, máquina, sistema, comodato y fecha del último cambio de cada componente), máquinas, cilindros de CO₂ en clientes y stock inicial. Se valida con las mismas reglas que una OT y se guarda en tandas.</p>
-    <div class="acciones"><button onclick="plantilla()">⬇ Descargar plantilla</button>
+    <div class="acciones"><button onclick="plantilla()">${icono('download', 'chico')} Descargar plantilla</button>
       <input type="file" id="imp-archivo" accept=".xlsx,.xls" style="max-width:330px">
       <button class="primario" onclick="validarImportacion()">Validar</button>
       <button class="exito" id="btn-importar" onclick="importar()" disabled>Importar</button>
-      <button id="btn-imp-excel" onclick="excelResultado()" disabled>⬇ Resultado en Excel</button></div>
+      <button id="btn-imp-excel" onclick="excelResultado()" disabled>${icono('download', 'chico')} Resultado en Excel</button></div>
     <div id="imp-msg"></div><div id="imp-res"></div></div>`;
   if (S.imp) pintarResultado();
 }
@@ -399,7 +369,7 @@ async function importar() {
   try {
     await exigirSesion();
     const u = await servidor('yo');
-    $('usuario').textContent = u.nombre + ' · ' + u.rol;
+    ponerUsuario(u);
     if (u.rol !== 'ADMIN') { $('contenido').innerHTML = '<div class="nota err">Datos es solo para administradores.</div>'; return; }
     ocupado('Leyendo los datos…');
     await leerTodo();

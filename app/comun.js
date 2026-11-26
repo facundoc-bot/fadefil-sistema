@@ -12,13 +12,18 @@ const FUNCION = CFG.supabaseUrl + '/functions/v1/guardar';
 async function exigirSesion() {
   const { data } = await sb.auth.getSession();
   if (data && data.session) return data.session;
+  document.body.className = '';
   document.body.innerHTML = `
-    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1f3a5f;font:15px system-ui,sans-serif">
-      <div style="background:#fff;border-radius:12px;padding:28px 30px;max-width:360px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.25)">
-        <h1 style="margin:0 0 6px;font-size:20px;color:#1f3a5f">Sistema FADEFIL</h1>
-        <p style="color:#5a6878;margin:0 0 20px">Entrá con tu cuenta de Google. Si es la primera vez, un administrador tiene que habilitar tu mail.</p>
-        <button id="btn-google" style="font:inherit;font-weight:600;padding:11px 18px;border-radius:8px;border:1px solid #d9e0e8;background:#fff;cursor:pointer;width:100%">Entrar con Google</button>
-        <p id="login-error" style="color:#a3261f;font-size:13px"></p>
+    <div style="min-height:100vh;display:grid;place-items:center;background:#0b0b0b;padding:24px">
+      <div style="width:100%;max-width:380px;text-align:center;color:#fff">
+        <img src="marca/logo-aqa-blanco.png" alt="AQA" style="height:64px;width:auto;margin-bottom:28px">
+        <div style="background:#1f1f1f;border-radius:24px;padding:28px 26px">
+          <h1 style="margin:0 0 6px;font-size:22px;font-weight:650;letter-spacing:-.02em">Sistema FADEFIL</h1>
+          <p style="color:#a3a3a3;margin:0 0 22px;font-size:14px">Entrá con tu cuenta de Google. La primera vez, un administrador tiene que habilitar tu mail.</p>
+          <button id="btn-google" style="width:100%;background:#eeff41;color:#0b0b0b;border:0;font-weight:650;padding:13px 18px">Entrar con Google</button>
+          <p id="login-error" style="color:#ff8a80;font-size:13px;margin:12px 0 0"></p>
+        </div>
+        <p style="color:#6e6e6e;font-size:12px;margin-top:18px">Premium Eco Water · AQA®</p>
       </div>
     </div>`;
   document.getElementById('btn-google').onclick = async () => {
@@ -183,12 +188,201 @@ async function leerExcel(file) {
 /** Botón flotante "Descargar Excel" que baja las tablas de la sección que se está viendo. */
 function botonExcel(obtenerElemento, nombre) {
   const b = document.createElement('button');
-  b.textContent = '⬇ Excel';
+  b.className = 'boton-icono boton-excel';
+  b.innerHTML = icono('download') + '<span class="ocultar-movil">Excel</span>';
   b.title = 'Descarga a Excel las tablas de esta pantalla';
-  b.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:9;font:600 14px system-ui;padding:9px 13px;border-radius:999px;border:1px solid #1e7a4c;background:#1e7a4c;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.18);cursor:pointer';
   b.onclick = async () => {
     try { await descargarTablas(obtenerElemento(), nombre() + ' ' + new Date().toISOString().slice(0, 10)); }
     catch (e) { alert(e.message); }
   };
-  document.body.appendChild(b);
+  const tope = document.querySelector('.tope .espacio');
+  if (tope) tope.after(b); else document.body.appendChild(b);
 }
+
+/* ---------------------------------------------------------------------------
+ *  Estructura común de la app: menú lateral (computadora), barra inferior (celular),
+ *  barra superior con el título de la sección. Las secciones de la misma página son
+ *  botones con data-panel (las pantallas ya los manejan); las de otra página, enlaces.
+ * ------------------------------------------------------------------------ */
+const ICONOS_URL = 'lib/iconos.svg';
+const icono = (n, cl) => `<svg class="icono${cl ? ' ' + cl : ''}" aria-hidden="true"><use href="${ICONOS_URL}#${n}"/></svg>`;
+const MENU = [
+  { items: [{ pag: 'index', panel: 'p-inicio', t: 'Inicio', i: 'house' }] },
+  { grupo: 'Operación', rol: 'carga', items: [
+    { pag: 'index', panel: 'p-ot', t: 'Nueva OT', i: 'clipboard-plus', rol: 'carga' },
+    { pag: 'index', panel: 'p-envios', t: 'Envíos', i: 'truck', rol: 'carga' },
+    { pag: 'index', panel: 'p-revision', t: 'Revisión', i: 'scan-search', rol: 'carga' },
+    { pag: 'index', panel: 'p-reparacion', t: 'Reparación', i: 'wrench', rol: 'carga' }] },
+  { grupo: 'Consultas', items: [
+    { pag: 'index', panel: 'p-clientes', t: 'Clientes', i: 'users' },
+    { pag: 'index', panel: 'p-maquinas', t: 'Máquinas', i: 'refrigerator' },
+    { pag: 'index', panel: 'p-stock', t: 'Stock', i: 'boxes' },
+    { pag: 'index', panel: 'p-tecnicos', t: 'Técnicos', i: 'hard-hat' }] },
+  { grupo: 'CO₂', items: [
+    { pag: 'co2', panel: 'p-remito', t: 'Remito LINDE', i: 'file-text', rol: 'carga' },
+    { pag: 'co2', panel: 'p-facturas', t: 'Remitos y facturas', i: 'receipt' },
+    { pag: 'co2', panel: 'p-consulta', t: 'Cilindros', i: 'cylinder' },
+    { pag: 'co2', panel: 'p-recambios', t: 'Recambios', i: 'repeat' },
+    { pag: 'co2', panel: 'p-revision', t: 'Alertas de CO₂', i: 'list-checks' },
+    { pag: 'co2', panel: 'p-alta', t: 'Inventario inicial', i: 'package-plus', rol: 'admin' }] },
+  { grupo: 'Administración', rol: 'admin', items: [
+    { pag: 'index', panel: 'p-admin', t: 'Auditoría', i: 'shield-check', rol: 'admin' },
+    { pag: 'datos', panel: '', t: 'Datos y carga masiva', i: 'database', rol: 'admin' }] }
+];
+const INFERIOR = [
+  { pag: 'index', panel: 'p-inicio', t: 'Inicio', i: 'house' },
+  { pag: 'index', panel: 'p-ot', t: 'Nueva OT', i: 'clipboard-plus', rol: 'carga' },
+  { pag: 'index', panel: 'p-clientes', t: 'Clientes', i: 'users' },
+  { pag: 'co2', panel: 'p-consulta', t: 'CO₂', i: 'cylinder' }
+];
+let PAGINA = '';
+function itemMenu(x, pagina) {
+  const cl = (x.rol ? 'solo-' + x.rol : '') + (x.pag === pagina && !x.panel ? ' activo' : '');
+  if (x.pag === pagina && x.panel) return `<button data-panel="${x.panel}" class="${cl}">${icono(x.i)}<span>${x.t}</span></button>`;
+  const url = x.pag + '.html' + (x.panel ? '#' + x.panel : '');
+  return `<a href="${url}" class="${cl}">${icono(x.i)}<span>${x.t}</span></a>`;
+}
+/** Arma el marco de la página. pagina: index | co2 | datos. contexto: HTML del selector de región/plaza/zona (solo la app principal). */
+function armarMarco(pagina, opciones) {
+  PAGINA = pagina;
+  opciones = opciones || {};
+  document.body.classList.add('con-marco');
+  const lateral = document.createElement('aside');
+  lateral.className = 'lateral';
+  lateral.innerHTML = `<div class="marca"><img src="marca/logo-aqa-blanco.png" alt="AQA"><span>Sistema<br>FADEFIL</span></div>
+    <nav id="pestanas">${MENU.map((g) => (g.grupo ? `<div class="grupo-menu${g.rol === 'admin' ? ' solo-admin' : ''}">${g.grupo}</div>` : '') + g.items.map((x) => itemMenu(x, pagina)).join('')).join('')}</nav>
+    <div class="pie"><div class="avatar" id="avatar">·</div><div class="quien"><b id="quien-nombre">Cargando…</b><small id="quien-rol"></small></div>
+      <button onclick="salir()" title="Cerrar la sesión">${icono('log-out')}</button></div>`;
+  const tope = document.createElement('header');
+  tope.className = 'tope';
+  tope.innerHTML = `<button class="boton-icono boton-menu" onclick="document.body.classList.toggle('menu-abierto')" aria-label="Menú">${icono('menu')}</button>
+    <h1 id="titulo-seccion"></h1><div class="espacio"></div>${opciones.extra || ''}
+    <span class="usuario" id="usuario"></span>
+    <button class="boton-icono" onclick="${opciones.actualizar || 'location.reload()'}" title="Volver a traer los datos (no borra lo que tengas sin guardar)">${icono('refresh-cw')}<span class="ocultar-movil">Actualizar</span></button>`;
+  const inferior = document.createElement('nav');
+  inferior.className = 'inferior';
+  inferior.innerHTML = INFERIOR.map((x) => itemMenu(x, pagina)).join('') + `<a href="#" onclick="event.preventDefault();document.body.classList.add('menu-abierto')">${icono('ellipsis')}<span>Más</span></a>`;
+  const velo = document.createElement('div');
+  velo.className = 'velo';
+  velo.onclick = () => document.body.classList.remove('menu-abierto');
+  document.body.prepend(velo);
+  document.body.prepend(inferior);
+  document.body.prepend(tope);
+  document.body.prepend(lateral);
+  // Título según la sección elegida; el menú se cierra en el celular; la sección queda en la dirección (#) para volver o compartir.
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-panel]');
+    if (!b || !b.closest('nav')) return;
+    document.body.classList.remove('menu-abierto');
+    ponerTitulo(b.dataset.panel);
+    history.replaceState(null, '', '#' + b.dataset.panel);
+    window.scrollTo({ top: 0 });
+  });
+  window.addEventListener('scroll', () => tope.classList.toggle('con-borde', window.scrollY > 4), { passive: true });
+  if (pagina === 'datos') ponerTitulo('');
+}
+function ponerTitulo(panel) {
+  const todos = MENU.flatMap((g) => g.items);
+  const x = todos.find((i) => i.pag === PAGINA && i.panel === panel) || todos.find((i) => i.pag === PAGINA && !i.panel);
+  const t = x ? x.t : 'Sistema FADEFIL';
+  const h = document.getElementById('titulo-seccion');
+  if (h) h.textContent = t;
+  document.title = t + ' · Sistema FADEFIL';
+  document.querySelectorAll('nav button[data-panel]').forEach((b) => b.classList.toggle('activo', b.dataset.panel === panel));
+}
+/** Abre la sección que viene en la dirección (#p-…), si existe. */
+function abrirDesdeHash(porDefecto) {
+  const id = (location.hash || '').slice(1) || porDefecto;
+  const b = id && document.querySelector(`nav button[data-panel="${id}"]`);
+  if (b && getComputedStyle(b).display !== 'none') b.click();
+  else { const activo = document.querySelector('section.panel.activo'); ponerTitulo(activo ? activo.id : ''); }
+}
+/** Nombre, rol e iniciales en el menú; el rol habilita las secciones que corresponden. */
+function ponerUsuario(u) {
+  document.body.classList.remove('rol-ADMIN', 'rol-CARGA', 'rol-CONSULTA');
+  document.body.classList.add('rol-' + u.rol);
+  const nombre = u.nombre || u.email || '';
+  const ini = nombre.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('');
+  const roles = { ADMIN: 'Administrador', CARGA: 'Carga', CONSULTA: 'Consulta' };
+  const set = (id, t) => { const e = document.getElementById(id); if (e) e.textContent = t; };
+  set('avatar', ini || '·'); set('quien-nombre', nombre); set('quien-rol', roles[u.rol] || u.rol);
+}
+/* Textos de ayuda largos: se muestran en una línea y se abren con un toque. */
+function plegarAyudas(raiz) {
+  (raiz || document).querySelectorAll('p.ayuda:not(.plegable)').forEach((p) => {
+    if ((p.textContent || '').length > 140) { p.classList.add('plegable'); p.title = 'Tocá para ver la explicación completa'; }
+  });
+}
+document.addEventListener('click', (e) => { const p = e.target.closest('p.ayuda.plegable'); if (p) p.classList.toggle('abierta'); });
+document.addEventListener('DOMContentLoaded', () => {
+  plegarAyudas();
+  new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) plegarAyudas(n); }))).observe(document.body, { childList: true, subtree: true });
+});
+/** Va a una sección de la misma página (como tocar el menú). */
+function ir(panel) { const b = document.querySelector(`nav button[data-panel="${panel}"]`); if (b) b.click(); }
+
+/* ---------------------------------------------------------------------------
+ *  Buscador de clientes (y otras listas largas): las pantallas tienen un campo para
+ *  filtrar y una lista desplegable al lado. Se muestran como un solo campo: se escribe,
+ *  aparecen las coincidencias (agrupadas como en la lista) y se elige con un toque o con
+ *  las flechas y Enter. Por debajo sigue funcionando la lista de siempre.
+ * ------------------------------------------------------------------------ */
+function mejorarSelectores(raiz) {
+  (raiz || document).querySelectorAll('.selector:not(.combo)').forEach((caja) => {
+    const input = caja.querySelector('input'), select = caja.querySelector('select');
+    if (!input || !select) return;
+    caja.classList.add('combo');
+    input.dataset.ph = input.placeholder || 'Buscar…';
+    input.setAttribute('autocomplete', 'off');
+    const lista = document.createElement('div');
+    lista.className = 'combo-lista';
+    caja.appendChild(lista);
+    let activo = -1, opciones = [];
+    const elegido = () => { const o = select.options[select.selectedIndex]; return o && o.value ? o.textContent : ''; };
+    const reflejar = () => {
+      if (document.activeElement === input) return;
+      const t = elegido();
+      input.placeholder = t || input.dataset.ph;
+      caja.classList.toggle('con-valor', !!t);
+    };
+    const pintar = () => {
+      opciones = [];
+      let html = '';
+      [...select.children].forEach((n) => {
+        const items = n.tagName === 'OPTGROUP' ? [...n.children] : [n];
+        const validos = items.filter((o) => o.value && !o.disabled);
+        if (!validos.length) return;
+        if (n.tagName === 'OPTGROUP') html += `<div class="combo-grupo">${esc(n.label)}</div>`;
+        validos.forEach((o) => { opciones.push(o.value); html += `<div class="combo-op${o.value === select.value ? ' elegida' : ''}" data-i="${opciones.length - 1}">${esc(o.textContent)}</div>`; });
+      });
+      lista.innerHTML = html || `<div class="combo-vacio">${esc((select.options[0] && !select.options[0].value && select.options[0].textContent) || 'Sin resultados')}</div>`;
+      activo = -1;
+    };
+    const abrir = () => { pintar(); caja.classList.add('abierto'); };
+    const cerrar = () => { caja.classList.remove('abierto'); activo = -1; };
+    const elegir = (i) => {
+      const v = opciones[i];
+      if (v == null) return;
+      select.value = v;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true })); // la lista vuelve a mostrar todo, conservando lo elegido
+      cerrar(); input.blur(); reflejar();
+    };
+    const marcar = () => lista.querySelectorAll('.combo-op').forEach((d) => { const on = Number(d.dataset.i) === activo; d.classList.toggle('activa', on); if (on) d.scrollIntoView({ block: 'nearest' }); });
+    input.addEventListener('focus', () => { input.placeholder = elegido() || input.dataset.ph; abrir(); });
+    input.addEventListener('input', () => { if (document.activeElement === input) abrir(); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); activo = Math.min(opciones.length - 1, activo + 1); marcar(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); activo = Math.max(0, activo - 1); marcar(); }
+      else if (e.key === 'Enter') { e.preventDefault(); elegir(activo >= 0 ? activo : 0); }
+      else if (e.key === 'Escape') { cerrar(); input.blur(); }
+    });
+    input.addEventListener('blur', () => setTimeout(() => { cerrar(); reflejar(); }, 150));
+    lista.addEventListener('mousedown', (e) => { const d = e.target.closest('.combo-op'); if (d) { e.preventDefault(); elegir(Number(d.dataset.i)); } });
+    new MutationObserver(reflejar).observe(select, { childList: true, subtree: true });
+    select.addEventListener('change', reflejar);
+    reflejar();
+  });
+}
+document.addEventListener('DOMContentLoaded', () => mejorarSelectores());
