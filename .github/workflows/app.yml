@@ -65,3 +65,14 @@ jobs:
           rm -f auth.json
           echo "### La app está en $URL" >> $GITHUB_STEP_SUMMARY
           echo "La app está en $URL"
+      - name: Comprobar la app y el login
+        if: steps.secretos.outputs.listo == 'si'
+        run: |
+          SUB=$(curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PROYECTO_PAGES" | jq -r '.result.subdomain')
+          sleep 20
+          for p in index.html co2.html datos.html config.js lib/supabase.js lib/pdf.min.mjs lib/exceljs.min.js; do
+            echo "$p: $(curl -s -o /dev/null -w '%{http_code}' "https://$SUB/$p")"
+          done
+          DEST=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "https://$SUPABASE_PROJECT_REF.supabase.co/auth/v1/authorize?provider=google&redirect_to=https://$SUB/")
+          echo "Login con Google: $DEST" | sed 's/client_id=[^&]*/client_id=…/'
+          echo "$DEST" | grep -q 'accounts.google.com' || { echo "El login con Google no redirige a Google"; exit 1; }
