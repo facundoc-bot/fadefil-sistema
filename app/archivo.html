@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Archivo · Sistema FADEFIL</title>
+<script src="lib/supabase.js"></script><script src="config.js"></script><script src="comun.js"></script></head>
+<body style="font:15px system-ui,sans-serif;padding:24px;color:#16212e"><p id="msg">Abriendo el archivo…</p>
+<script>
+(async () => {
+  try {
+    await exigirSesion();
+    const ruta = new URLSearchParams(location.search).get('r');
+    if (!ruta) throw new Error('Falta el archivo.');
+    const { data, error } = await sb.storage.from('co2-linde').createSignedUrl(ruta, 300);
+    if (error) throw new Error('No se pudo abrir el archivo: ' + error.message);
+    location.replace(data.signedUrl);
+  } catch (e) { if (e.message !== 'SIN_SESION') document.getElementById('msg').textContent = e.message; }
+})();
+</script></body></html>

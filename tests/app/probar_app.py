@@ -1,0 +1,100 @@
+# Recorre la app en Chrome (Playwright) contra el servidor local y la base de prueba:
+# login de prueba, arranque, cada pestaña de la app principal y de CO₂, sin errores en la consola.
+import sys, json, re, os, hmac, hashlib, base64, time
+from playwright.sync_api import sync_playwright
+import openpyxl
+
+def jwt(email):
+    b = lambda d: base64.urlsafe_b64encode(json.dumps(d, separators=(',', ':')).encode()).rstrip(b'=').decode()
+    cab, cuerpo = b({'alg': 'HS256', 'typ': 'JWT'}), b({'role': 'authenticated', 'email': email, 'aud': 'authenticated', 'exp': int(time.time()) + 3600 * 24, 'sub': '00000000-0000-0000-0000-000000000001'})
+    firma = base64.urlsafe_b64encode(hmac.new(os.environ['JWT_SECRETO'].encode(), (cab + '.' + cuerpo).encode(), hashlib.sha256).digest()).rstrip(b'=').decode()
+    return cab + '.' + cuerpo + '.' + firma
+
+BASE = 'http://localhost:8787'
+SESION = {'access_token': jwt('facundoc@aqa.com.ar'), 'refresh_token': 'x', 'token_type': 'bearer', 'expires_in': 3600 * 24 * 365,
+          'expires_at': 4102444800, 'user': {'id': '00000000-0000-0000-0000-000000000001', 'email': 'facundoc@aqa.com.ar', 'aud': 'authenticated', 'role': 'authenticated'}}
+fallas = []
+def bajado(d, n='/tmp/bajado.xlsx'):
+    d.save_as(n); return n
+with sync_playwright() as p:
+    nav = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-sandbox'])
+    pag = nav.new_page(viewport={'width': 1280, 'height': 900})
+    errores = []
+    pag.on('console', lambda m: errores.append(m.text) if m.type == 'error' else None)
+    pag.on('pageerror', lambda e: errores.append(str(e)))
+    pag.goto(BASE + '/archivo.html?r=nada')
+    pag.evaluate("s => localStorage.setItem('sb-localhost-auth-token', JSON.stringify(s))", SESION)
+    for pagina, esperar in [('index.html', 'ADMIN'), ('co2.html', 'ADMIN')]:
+        pag.goto(BASE + '/' + pagina)
+        pag.wait_for_function("t => document.getElementById('usuario') && document.getElementById('usuario').textContent.includes(t)", arg=esperar, timeout=30000)
+        botones = pag.query_selector_all('nav button[data-panel]')
+        for b in botones:
+            if not b.is_visible(): continue
+            nombre = b.inner_text()
+            b.click(); pag.wait_for_timeout(1200)
+            err = pag.inner_text('#error-global') if pag.query_selector('#error-global') else ''
+            if err.strip(): fallas.append(f'{pagina} · {nombre}: {err.strip()[:200]}')
+            pag.screenshot(path=f'/tmp/app_{pagina.split(".")[0]}_{re.sub(r"[^A-Za-z]", "", nombre)}.png', full_page=False)
+        print(pagina, 'pestañas:', [b.inner_text() for b in botones if b.is_visible()])
+    # Excel desde una pantalla de la app (Stock)
+    pag.goto(BASE + '/index.html')
+    pag.wait_for_function("() => document.getElementById('usuario').textContent.includes('ADMIN')", timeout=30000)
+    pag.click('nav button[data-panel="p-stock"]'); pag.wait_for_timeout(800)
+    with pag.expect_download(timeout=20000) as d: pag.click('text=⬇ Excel')
+    wb = openpyxl.load_workbook(bajado(d.value))
+    print('Excel de Stock:', wb.sheetnames, 'filas', [wb[n].max_row for n in wb.sheetnames])
+    if not any(wb[n].max_row > 1 for n in wb.sheetnames): fallas.append('El Excel de Stock salió vacío')
+
+    # Datos: agregar una zona, renombrar un depósito, descargar y carga masiva
+    pag.goto(BASE + '/datos.html')
+    pag.wait_for_selector('#filas tr', timeout=30000)
+    pag.click('nav >> text=Zonas'); pag.click('text=Agregar')
+    pag.fill('#n-0', 'Godoy Cruz'); pag.select_option('#n-1', 'Mendoza'); pag.click('#filas >> text=Guardar')
+    pag.wait_for_selector('#msg .nota', timeout=15000)
+    if 'Agregado' not in pag.inner_text('#msg'): fallas.append('Datos · zona: ' + pag.inner_text('#msg'))
+    pag.click('nav >> text=Depósitos')
+    fila = pag.locator('#filas tr', has_text='Depósito Córdoba').first
+    fila.locator('text=Editar').click(); pag.fill('#e-0', 'Depósito Córdoba Capital')
+    pag.once('dialog', lambda dlg: dlg.accept()); pag.click('#filas >> text=Guardar')
+    pag.wait_for_selector('#msg .nota', timeout=15000)
+    if 'Cambios guardados' not in pag.inner_text('#msg'): fallas.append('Datos · renombrar: ' + pag.inner_text('#msg'))
+    with pag.expect_download(timeout=20000) as d: pag.click('text=⬇ Descargar Excel')
+    if openpyxl.load_workbook(bajado(d.value)).active.max_row < 3: fallas.append('Datos · Excel de depósitos vacío')
+    # Carga masiva desde un Excel
+    wb = openpyxl.Workbook(); wb.remove(wb.active)
+    hojas = {'maquinas': [['serie', 'modelo', 'fecha_ingreso'], ['WEB-1', 'AQA 200', '2024-01-10']],
+             'clientes': [['cliente_id', 'nombre_fantasia', 'zona', 'estado', 'serie', 'fecha_instalacion', 'sistema'], ['80001', 'Cliente web', 'Godoy Cruz', 'Activo', 'WEB-1', '2024-02-01', '4 Etapas'],
+                          ['80002', 'Con error', 'Zona que no existe', 'Ex cliente', '', '', '']],
+             'comodato': [['cliente_id', 'codigo', 'cantidad'], ['80001', 'BOT', 2]], 'stock': [['deposito', 'codigo', 'cantidad'], ['Depósito Mendoza', 'BOMBA', 3]]}
+    for n, filas in hojas.items():
+        ws = wb.create_sheet(n)
+        for f in filas: ws.append(f)
+    wb.save('/tmp/carga.xlsx')
+    pag.click('nav >> text=Carga masiva')
+    with pag.expect_download(timeout=20000) as d: pag.click('text=⬇ Descargar plantilla')
+    if 'clientes' not in openpyxl.load_workbook(bajado(d.value)).sheetnames: fallas.append('Plantilla sin la hoja clientes')
+    pag.set_input_files('#imp-archivo', '/tmp/carga.xlsx'); pag.click('text=Validar')
+    pag.wait_for_selector('#imp-res table', timeout=60000)
+    res = pag.inner_text('#imp-res')
+    print('Validación:', pag.inner_text('#imp-msg').replace('\n', ' · ')[:300])
+    if 'Zona que no existe' not in res and 'no existe' not in res: fallas.append('Carga masiva: no marcó el error de zona')
+    pag.once('dialog', lambda dlg: dlg.accept()); pag.click('#btn-importar')
+    pag.wait_for_function("() => /Importados/.test(document.getElementById('imp-msg').textContent)", timeout=90000)
+    msg = pag.inner_text('#imp-msg'); print('Importación:', msg.replace('\n', ' ')[:300])
+    if '1 máquinas, 1 clientes' not in msg: fallas.append('Carga masiva: ' + msg[:300])
+    pag.goto(BASE + '/index.html')
+    pag.wait_for_function("() => document.getElementById('usuario').textContent.includes('ADMIN')", timeout=30000)
+    if not pag.evaluate("() => S.ini.clientes.some(c => c.id === '80001' && c.estado === 'ACTIVO')"): fallas.append('El cliente importado no aparece activo en la app')
+    if not pag.evaluate("() => S.ini.depositos.some(d => d.id === 'Depósito Córdoba Capital')"): fallas.append('El depósito renombrado no aparece en la app')
+    # Guardar una OT desde la app (navegador → función → base) y que la pantalla se actualice con la respuesta
+    r = pag.evaluate("""async () => { const r = await llamar('apiConfirmar', [{ clase: 'OT', datos: { fecha: S.ini.hoy, idCliente: '80001', tipo: 'MANTENIMIENTO', items: [] } }], true);
+      if (r.ok) aplicarIni(r.ini); return { ok: r.ok, ids: r.ids, err: JSON.stringify(r.resultados && r.resultados.map(x => x.errores)), mant: (S.ini.clientes.find(c => c.id === '80001') || {}).tipoUltimaVisita }; }""")
+    print('OT desde la app:', r)
+    if not r['ok'] or r['mant'] != 'MANTENIMIENTO': fallas.append('OT desde la app: ' + json.dumps(r))
+
+    reales = [e for e in errores if 'favicon' not in e and 'Failed to load resource' not in e]
+    if reales: fallas.append('Errores en la consola: ' + ' | '.join(reales[:8]))
+    nav.close()
+if fallas:
+    print('FALLAS:\n' + '\n'.join(fallas)); sys.exit(1)
+print('App: todas las pestañas abren sin errores.')

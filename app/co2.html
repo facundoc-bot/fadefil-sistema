@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="lib/supabase.js"></script>
+<script src="config.js"></script>
+<script src="comun.js"></script>
+<title>Cilindros CO₂ — FADEFIL</title>
+<style>
+  :root {
+    --tinta: #16212e; --suave: #5a6878; --linea: #d9e0e8; --fondo: #f4f6f9; --tarjeta: #ffffff;
+    --marca: #1f3a5f; --marca-2: #2f5d8f; --ok: #1e7a4c; --ok-f: #e6f4ec; --adv: #8a5a00; --adv-f: #fff4dc;
+    --err: #a3261f; --err-f: #fde9e7; --radio: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--tinta); background: var(--fondo); }
+  header { background: var(--marca); color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  header .usuario { margin-left: auto; font-size: 13px; opacity: .9; }
+  header a.volver { color: #fff; font-size: 13.5px; text-decoration: none; border: 1px solid rgba(255,255,255,.45); border-radius: 6px; padding: 4px 9px; }
+  header a.volver:hover { background: rgba(255,255,255,.12); }
+  header button { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.5); }
+  nav { display: flex; gap: 4px; padding: 8px 12px 0; background: var(--marca); overflow-x: auto; }
+  nav button { background: transparent; color: #cfdbe8; border: 0; border-radius: 8px 8px 0 0; padding: 10px 14px; font-weight: 600; white-space: nowrap; }
+  nav button.activo { background: var(--fondo); color: var(--marca); }
+  main { max-width: 980px; margin: 0 auto; padding: 16px; }
+  section.panel { display: none; } section.panel.activo { display: block; }
+  .tarjeta { background: var(--tarjeta); border: 1px solid var(--linea); border-radius: var(--radio); padding: 16px; margin-bottom: 14px; }
+  .tarjeta h2 { font-size: 16px; margin: 0 0 4px; } .tarjeta h3 { font-size: 14px; margin: 14px 0 6px; }
+  .ayuda { color: var(--suave); font-size: 13px; margin: 0 0 12px; }
+  .fila { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  label { display: block; font-size: 12.5px; font-weight: 600; color: var(--suave); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .3px; }
+  input, select, textarea { width: 100%; font: inherit; padding: 9px 10px; border: 1px solid var(--linea); border-radius: 8px; background: #fff; color: var(--tinta); }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--marca-2); outline-offset: -1px; }
+  textarea { min-height: 60px; resize: vertical; }
+  button { font: inherit; font-weight: 600; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--linea); background: #fff; color: var(--tinta); cursor: pointer; }
+  button.primario { background: var(--marca); border-color: var(--marca); color: #fff; }
+  button.exito { background: var(--ok); border-color: var(--ok); color: #fff; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.chico { padding: 4px 9px; font-size: 13px; }
+  .acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .segmentado { display: inline-flex; border: 1px solid var(--linea); border-radius: 8px; overflow: hidden; }
+  .segmentado button { border: 0; border-radius: 0; border-right: 1px solid var(--linea); }
+  .segmentado button:last-child { border-right: 0; }
+  .segmentado button.activo { background: var(--marca); color: #fff; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 38px; padding: 6px; border: 1px solid var(--linea); border-radius: 8px; background: #fff; }
+  .chips .vacio { padding: 4px; font-size: 13px; }
+  .selector { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; gap: 8px; }
+  @media (max-width: 600px) { .selector { grid-template-columns: 1fr; } }
+  select.serie { font-family: ui-monospace, Menlo, monospace; margin-bottom: 6px; }
+  .alerta-grupo h3 { display: flex; align-items: center; gap: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: #e8eef5; color: var(--marca); border-radius: 999px; padding: 3px 10px; font-weight: 600; font-size: 13px; font-family: ui-monospace, Menlo, monospace; }
+  .chip button { border: 0; background: transparent; padding: 0 2px; color: var(--suave); }
+  .sugerencias { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .sugerencias button { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; padding: 3px 8px; border-style: dashed; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .3px; color: var(--suave); border-bottom: 1px solid var(--linea); padding: 6px; }
+  td { border-bottom: 1px solid var(--linea); padding: 6px; vertical-align: middle; }
+  td input, td select { padding: 6px 8px; }
+  .filtro-consulta { padding-bottom: 6px; } .filtro-consulta .ayuda { margin: 6px 0 0; }
+  .filtro-global { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 8px; align-items: end; background: var(--tarjeta); border: 1px solid var(--linea);
+    border-radius: var(--radio); padding: 10px 12px; margin-bottom: 14px; }
+  .filtro-global label { margin-bottom: 2px; } .filtro-global select { padding: 7px 8px; }
+  .filtro-global .alcance { font-size: 12.5px; color: var(--suave); padding-bottom: 8px; white-space: nowrap; }
+  .filtro-global.activo { border-color: var(--marca-2); box-shadow: inset 3px 0 0 var(--marca-2); }
+  @media (max-width: 600px) { .filtro-global { grid-template-columns: 1fr 1fr; } .filtro-global .alcance { grid-column: 1 / -1; padding: 0; } }
+  .pendiente { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+  .grafico { position: relative; } .grafico svg { width: 100%; height: auto; display: block; }
+  .grafico .grilla { stroke: var(--linea); stroke-width: 1; } .grafico .grilla.base { stroke: #b9c3cf; }
+  .grafico .eje { fill: var(--suave); font-size: 12px; }
+  .grafico .barra { fill: var(--marca-2); } .grafico .barra.en-curso { fill: #a9bfd8; }
+  .grafico .golpe { fill: transparent; cursor: pointer; } .grafico .golpe.sobre { fill: rgba(31, 58, 95, .06); }
+  .tarjeta { position: relative; }
+  .tooltip-graf { display: none; position: absolute; top: 70px; left: 0; margin-left: 16px; background: var(--tinta); color: #fff; font-size: 13px;
+    padding: 6px 10px; border-radius: 6px; pointer-events: none; width: 140px; }
+  .etiqueta { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: #e8eef5; color: var(--marca); }
+  .etiqueta.mal { background: var(--err-f); color: var(--err); } .etiqueta.cerca { background: var(--adv-f); color: var(--adv); }
+  .metrica .t + .n + .t { margin-top: 2px; }
+  .buscar-serie { margin-bottom: 4px; padding-top: 6px; padding-bottom: 6px; font-size: 13px; }
+  .conteo-remito { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 12px 0 0; padding: 10px 12px; background: #e8eef5; border-radius: 8px; font-size: 14px; }
+  .conteo-remito .falta { color: var(--err); font-weight: 600; }
+  .etiqueta.ok { background: var(--ok-f); color: var(--ok); }
+  .texto-leido { margin-top: 8px; font-size: 13px; } .texto-leido pre { white-space: pre-wrap; max-height: 320px; overflow: auto; background: #f6f8fa; padding: 8px; border-radius: 6px; font-size: 12px; }
+  button.link { text-align: left; border: 0; background: none; padding: 0; color: var(--marca); font-weight: 600; text-decoration: underline; cursor: pointer; font-size: inherit; }
+  tr.mal td { background: var(--err-f); } tr.dudosa td { background: var(--adv-f); }
+  .tabla-scroll { overflow-x: auto; }
+  .mono { font-family: ui-monospace, Menlo, monospace; }
+  .nota { border-radius: 8px; padding: 10px 12px; margin: 10px 0; font-size: 14px; }
+  .nota.err { background: var(--err-f); color: var(--err); } .nota.adv { background: var(--adv-f); color: var(--adv); }
+  .nota.ok { background: var(--ok-f); color: var(--ok); } .nota.info { background: #e8eef5; color: var(--marca); }
+  .nota ul { margin: 6px 0 0 18px; padding: 0; }
+  .lote-item { border: 1px solid var(--linea); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: #fff; }
+  .lote-item .cab { display: flex; gap: 8px; align-items: center; }
+  .lote-item .cab strong { flex: 1; }
+  .insignia { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .insignia.ok { background: var(--ok-f); color: var(--ok); } .insignia.err { background: var(--err-f); color: var(--err); }
+  .insignia.pend { background: #eef1f4; color: var(--suave); } .insignia.adv { background: var(--adv-f); color: var(--adv); }
+  .metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .metrica { background: #fff; border: 1px solid var(--linea); border-radius: var(--radio); padding: 12px; }
+  .metrica .n { font-size: 26px; font-weight: 700; } .metrica .t { font-size: 12.5px; color: var(--suave); }
+  .vacio { color: var(--suave); font-style: italic; }
+  #ocupado { position: fixed; inset: 0; background: rgba(22,33,46,.35); display: none; align-items: center; justify-content: center; z-index: 10; }
+  #ocupado div { background: #fff; padding: 18px 22px; border-radius: var(--radio); font-weight: 600; box-shadow: 0 8px 30px rgba(0,0,0,.15); }
+  #aviso { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: 92vw; display: none; z-index: 11; }
+  .solo-admin, .solo-carga { display: none; }
+  body.rol-ADMIN .solo-admin { display: initial; } body.rol-ADMIN .solo-carga, body.rol-CARGA .solo-carga { display: initial; }
+  body.rol-ADMIN nav .solo-admin, body.rol-ADMIN nav .solo-carga, body.rol-CARGA nav .solo-carga { display: inline-block; }
+  @media (max-width: 600px) {
+    main { padding: 10px; } .tarjeta { padding: 12px; }
+    /* Líneas del remito como tarjetas: la serie a todo el ancho para compararla con el papel */
+    #tabla-lineas thead { display: none; }
+    #tabla-lineas tr { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "tipo quitar" "serie serie" "carga carga"; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--linea); }
+    #tabla-lineas td { border: 0; padding: 0 4px; }
+    #tabla-lineas td.c-tipo { grid-area: tipo; } #tabla-lineas td.c-quitar { grid-area: quitar; }
+    #tabla-lineas td.c-serie { grid-area: serie; } #tabla-lineas td.c-serie input { font-size: 17px; letter-spacing: .5px; }
+    #tabla-lineas td.c-carga { grid-area: carga; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <a id="volver-app" class="volver" href="#" target="_top" style="display:none">← Volver a la app</a>
+  <h1>Cilindros CO₂</h1>
+  <span class="usuario" id="usuario">Cargando…</span>
+  <button class="chico" onclick="recargar(true)" title="Vuelve a leer todo, también regiones, plazas, zonas y depósitos">Actualizar datos</button>
+  <button class="chico" onclick="salir()" title="Cerrar la sesión en este dispositivo">Salir</button>
+</header>
+<nav id="pestanas">
+  <button data-panel="p-remito" class="solo-carga">Remito LINDE</button>
+  <button data-panel="p-facturas">Remitos y facturas</button>
+  <button data-panel="p-consulta">Consultas</button>
+  <button data-panel="p-recambios">Recambios</button>
+  <button data-panel="p-revision">Revisión</button>
+  <button data-panel="p-alta" class="solo-admin">Inventario inicial</button>
+</nav>
+
+<main>
+  <div id="error-global"></div>
+  <div id="pendiente-local"></div>
+  <div class="filtro-global" id="filtro-global">
+    <div><label for="f-region">Región</label><select id="f-region" onchange="cambioFiltro('region')"></select></div>
+    <div><label for="f-plaza">Plaza</label><select id="f-plaza" onchange="cambioFiltro('plaza')"></select></div>
+    <div><label for="f-zona">Zona</label><select id="f-zona" onchange="cambioFiltro('zona')"></select></div>
+    <div class="alcance" id="f-alcance"></div>
+  </div>
+
+  <!-- ============================ REMITO LINDE ============================ -->
+  <section class="panel" id="p-remito">
+    <div class="nota info" style="margin-bottom:12px">Esta sección es para los depósitos (remitos de LINDE, inventario inicial) y las consultas. Las entregas, retiros y recambios en clientes se cargan en la app con una OT <strong>Entrega de CO₂</strong> (o en la instalación y la desinstalación).</div>
+    <div class="tarjeta" id="ci-tarjeta" style="display:none">
+      <h2>Carga inicial</h2>
+      <div id="ci-estado"></div>
+      <div class="acciones" id="ci-acciones"></div>
+      <div id="ci-resultado"></div>
+      <div id="ci-lista" style="display:none">
+        <h3>Borradores</h3>
+        <div class="tabla-scroll"><table id="ci-tabla"></table></div>
+      </div>
+    </div>
+    <div class="tarjeta" id="pa-tarjeta" style="display:none">
+      <h2>Remitos pendientes de aprobación</h2>
+      <p class="ayuda" id="pa-ayuda"></p>
+      <div class="tabla-scroll"><table id="pa-tabla"></table></div>
+    </div>
+    <datalist id="series-conocidas"></datalist>
+    <div class="tarjeta">
+      <h2>1 · Documento</h2>
+      <p class="ayuda">Subí el PDF (o una foto) del remito. "Leer PDF" extrae el texto y propone los datos; vos los revisás antes de guardar. Los duplicados y triplicados de un remito ya cargado se rechazan solos.</p>
+      <div class="fila">
+        <div><label for="rem-archivo">Archivo del remito</label><input type="file" id="rem-archivo" accept="application/pdf"></div>
+      </div>
+      <div class="acciones">
+        <button class="primario" id="btn-leer" onclick="leerRemito()">Leer PDF</button>
+        <button onclick="remitoManual()">Cargar a mano</button>
+      </div>
+      <div id="rem-ia-nota"></div>
+      <div id="rem-texto"></div>
+    </div>
+
+    <div class="tarjeta" id="rem-form" style="display:none">
+      <h2>2 · Revisar datos <span class="etiqueta cerca" id="rem-modo" style="display:none">Borrador</span></h2>
+      <div id="rem-editando"></div>
+      <p class="ayuda" id="rem-archivo-link"></p>
+      <div class="fila">
+        <div><label for="rem-nro">Número de remito</label><input id="rem-nro" class="mono" oninput="remitoCambio()"></div>
+        <div><label for="rem-fecha">Fecha</label><input type="date" id="rem-fecha" oninput="remitoCambio()"></div>
+        <div><label for="rem-deposito">Depósito que recibe / entrega</label><select id="rem-deposito" onchange="pintarLineas();remitoCambio()"></select></div>
+        <div><label for="rem-copia">Copia</label>
+          <select id="rem-copia" onchange="remitoCambio()">
+            <option value="NO_INDICADO">No indicado</option><option value="ORIGINAL">Original</option>
+            <option value="DUPLICADO">Duplicado</option><option value="TRIPLICADO">Triplicado</option>
+          </select></div>
+      </div>
+      <div class="fila"><div><label for="rem-plaza">Plaza / lugar de entrega según el documento</label><input id="rem-plaza" oninput="S.remito.plazaTexto=this.value;remitoCambio()"></div></div>
+      <h3>Cilindros</h3>
+      <div class="tabla-scroll">
+        <table id="tabla-lineas">
+          <thead><tr><th>Tipo</th><th>Serie</th><th>Carga</th><th></th></tr></thead>
+          <tbody id="rem-lineas"></tbody>
+        </table>
+      </div>
+      <div class="acciones"><button class="chico" onclick="agregarLinea('ENTREGA')">+ Entregado</button><button class="chico" onclick="agregarLinea('RETIRO')">+ Retirado</button></div>
+      <div class="fila" style="margin-top:12px"><div><label for="rem-obs">Observaciones</label><textarea id="rem-obs" oninput="remitoCambio()"></textarea></div></div>
+      <div id="rem-resultado"></div>
+      <div class="conteo-remito" id="rem-conteo" aria-live="polite"></div>
+      <div class="acciones">
+        <button class="primario" onclick="validarRemito()">Validar</button>
+        <button class="exito" id="btn-confirmar-remito" disabled onclick="confirmarRemito()">Guardar remito</button>
+        <button class="primario" id="btn-enviar-aprob" style="display:none" onclick="enviarAprobacion()">Enviar a aprobación</button>
+        <button onclick="limpiarRemito()">Descartar</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ CONSULTAS ============================ -->
+  <!-- ============================ REMITOS Y FACTURAS (v2.4) ============================ -->
+  <section class="panel" id="p-facturas">
+    <div class="tarjeta solo-carga">
+      <h2>Validar una factura de LINDE</h2>
+      <p class="ayuda">Subí el PDF de la factura. Se comparan los kg facturados de cada remito con los kg que ese remito entregó según el sistema (por ejemplo, 90 kg = 9 cilindros de 10 kg o 18 de 5 kg). Los precios no se controlan.</p>
+      <div class="fila">
+        <div><label for="fac-archivo">Factura (PDF)</label><input type="file" id="fac-archivo" accept="application/pdf"></div>
+      </div>
+      <div class="acciones">
+        <button class="primario" onclick="leerFactura()">Leer factura</button>
+        <button onclick="facturaManual()">Cargar a mano</button>
+      </div>
+    </div>
+    <div class="tarjeta" id="fac-form" style="display:none">
+      <h2>Factura</h2>
+      <div id="fac-nota"></div>
+      <div class="fila">
+        <div><label for="fac-nro">N° de factura</label><input id="fac-nro" class="mono" placeholder="00525-00003080" oninput="facCambio()"></div>
+        <div><label for="fac-fecha">Fecha</label><input id="fac-fecha" type="date" oninput="facCambio()"></div>
+      </div>
+      <h3>Remitos facturados</h3>
+      <div class="tabla-scroll"><table id="fac-tabla"><thead><tr><th>Remito</th><th>Fecha del remito</th><th>Kg facturados</th><th>Resultado</th><th></th></tr></thead><tbody id="fac-lineas"></tbody></table></div>
+      <div class="acciones"><button class="chico" onclick="facAgregar()">+ Agregar remito</button></div>
+      <div id="fac-resumen"></div>
+      <div id="fac-texto"></div>
+      <div class="acciones">
+        <button class="primario" onclick="validarFactura()">Validar</button>
+        <button class="exito" id="btn-guardar-factura" disabled onclick="guardarFactura()">Guardar factura</button>
+        <button onclick="cerrarFactura()">Cancelar</button>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <h2>Resumen de remitos</h2>
+      <p class="ayuda">Remitos de LINDE confirmados, con los kg entregados y la factura en la que están.</p>
+      <div class="fila">
+        <div><label for="rr-desde">Desde</label><input id="rr-desde" type="date"></div>
+        <div><label for="rr-hasta">Hasta</label><input id="rr-hasta" type="date"></div>
+        <div><label for="rr-deposito">Depósito</label><select id="rr-deposito"></select></div>
+        <div><label for="rr-fact">Facturación</label><select id="rr-fact"><option value="TODOS">Todos</option><option value="SIN_FACTURAR">Sin facturar</option><option value="FACTURADOS">Facturados</option></select></div>
+      </div>
+      <div class="acciones"><button class="primario" onclick="verResumenRemitos()">Ver</button></div>
+      <div id="rr-totales"></div>
+      <div class="tabla-scroll"><table id="rr-tabla"></table></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Facturas cargadas</h2>
+      <div class="tabla-scroll"><table id="fac-lista"></table></div>
+    </div>
+  </section>
+
+  <section class="panel" id="p-consulta">
+    <div class="tarjeta">
+      <h2>Stock por depósito</h2>
+      <p class="ayuda">Cilindros en circuito agrupados por su depósito de origen. "En clientes" son los que ese depósito tiene entregados.</p>
+      <div class="tabla-scroll"><table id="tabla-stock"></table></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Saldo con LINDE</h2>
+      <p class="ayuda">Todos los cilindros son de LINDE. Recibidos y devueltos cuentan desde que se usa el sistema; "Inventario inicial" son los que ya teníamos. Sirve para conciliar con LINDE.</p>
+      <div class="tabla-scroll"><table id="tabla-linde"><tbody><tr><td class="vacio">Cargando…</td></tr></tbody></table></div>
+      <h3>Series en nuestro poder</h3>
+      <div class="tabla-scroll"><table id="tabla-linde-series"></table></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Ficha de un cilindro</h2>
+      <div class="fila"><div><label for="q-serie">Serie</label><input id="q-serie" class="mono" list="lista-series" placeholder="Ej.: A1754410" onkeydown="if(event.key==='Enter')fichaSerie()"></div></div>
+      <datalist id="lista-series"></datalist>
+      <div class="acciones"><button class="primario" onclick="fichaSerie()">Buscar</button></div>
+      <div id="ficha-serie"></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Cilindros en un cliente</h2>
+      <div class="fila"><div><label for="q-cliente">Cliente</label>
+        <div class="selector"><input id="q-cliente-filtro" placeholder="Filtrar…" aria-label="Filtrar clientes" oninput="filtrarClientes('q-cliente')"><select id="q-cliente" onchange="fichaCliente()"></select></div></div></div>
+      <div class="acciones"><button class="primario" onclick="fichaCliente()">Buscar</button></div>
+      <div id="ficha-cliente"></div>
+    </div>
+  </section>
+
+  <!-- ============================ RECAMBIOS ============================ -->
+  <section class="panel" id="p-recambios">
+    <div class="tarjeta filtro-consulta">
+      <div class="fila">
+        <div><label for="rc-meses">Período para los promedios</label>
+          <select id="rc-meses" onchange="cargarRecambios()">
+            <option value="3">Últimos 3 meses</option><option value="6" selected>Últimos 6 meses</option>
+            <option value="12">Últimos 12 meses</option><option value="0">Todo el historial</option>
+          </select></div>
+      </div>
+      <p class="ayuda">Consumo = carga de los vacíos retirados en cada cliente. Próximo recambio = último recambio + días promedio entre recambios. Usa el filtro de región, plaza y zona de arriba.</p>
+    </div>
+    <div class="metricas" id="rc-metricas"></div>
+    <div class="tarjeta" style="margin-top:12px">
+      <h2 id="rc-titulo-graf">Kg consumidos por mes</h2>
+      <p class="ayuda">Últimos 12 meses. El mes en curso va más claro porque está incompleto.</p>
+      <div class="grafico" id="rc-grafico"></div>
+      <div class="tooltip-graf" id="rc-tooltip" role="status"></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Clientes</h2>
+      <p class="ayuda">Ordenados por próximo recambio: arriba, los atrasados y los más cercanos. Tocá un cliente para ver su ficha.</p>
+      <div class="tabla-scroll"><table id="rc-tabla"></table></div>
+    </div>
+  </section>
+
+  <!-- ============================ REVISIÓN ============================ -->
+  <section class="panel" id="p-revision">
+    <div class="tarjeta">
+      <h2>Alertas por serie</h2>
+      <p class="ayuda" id="alertas-ayuda">Cilindros que llevan demasiado tiempo en un cliente sin moverse, y vacíos que LINDE todavía no retiró. Se calculan al momento con los límites de co2_config. Muestra todas las regiones.</p>
+      <div id="alertas"><p class="vacio">Cargando…</p></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Inconsistencias abiertas</h2>
+      <p class="ayuda">Situaciones que se guardaron pero conviene revisar (por ejemplo, LINDE retiró un cilindro que figuraba lleno).</p>
+      <div id="inconsistencias"><p class="vacio">Cargando…</p></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Últimas operaciones</h2>
+      <p class="ayuda">Nada se borra. Si una operación tiene un error, un administrador la anula y se vuelve a cargar bien. Solo se puede anular si después no hubo otros movimientos de esas series.</p>
+      <div class="tabla-scroll"><table id="recientes"></table></div>
+    </div>
+  </section>
+
+  <!-- ============================ INVENTARIO INICIAL ============================ -->
+  <section class="panel" id="p-alta">
+    <div class="tarjeta">
+      <h2>Inventario inicial</h2>
+      <p class="ayuda">Para cilindros que ya estaban en un depósito o en un cliente antes de empezar a usar el sistema, sin remito de LINDE cargado. Se usa una sola vez por cilindro, al arrancar.</p>
+      <div class="fila">
+        <div><label for="alta-fecha">Fecha del conteo</label><input type="date" id="alta-fecha"></div>
+        <div><label for="alta-deposito">Depósito de origen del circuito</label><select id="alta-deposito"></select></div>
+        <div><label for="alta-ubic">Dónde está hoy</label>
+          <select id="alta-ubic" onchange="altaUbicacion()"><option value="DEPOSITO">En el depósito</option><option value="CLIENTE">En un cliente</option></select></div>
+        <div><label for="alta-carga">Carga</label><select id="alta-carga"></select></div>
+        <div id="alta-estado-bloque"><label for="alta-estado">Estado</label>
+          <select id="alta-estado"><option value="LLENO_DISPONIBLE">Lleno disponible</option><option value="VACIO_DISPONIBLE">Vacío disponible</option></select></div>
+      </div>
+      <div class="fila" id="alta-cliente-bloque" style="display:none"><div><label for="alta-cliente">Cliente</label>
+        <div class="selector"><input id="alta-cliente-filtro" placeholder="Filtrar…" aria-label="Filtrar clientes" oninput="filtrarClientes('alta-cliente')"><select id="alta-cliente"></select></div></div></div>
+      <div class="fila"><div><label for="alta-series">Series (una por línea o separadas por coma)</label><textarea id="alta-series" class="mono"></textarea></div></div>
+      <div class="acciones"><button class="primario" onclick="agregarAltas()">Agregar a la lista</button></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Altas para guardar <span id="altas-cant" class="insignia pend">0</span></h2>
+      <div id="altas"></div>
+      <div id="altas-resultado"></div>
+      <div class="acciones">
+        <button class="primario" onclick="validarAltas()">Validar</button>
+        <button class="exito" id="btn-guardar-altas" disabled onclick="guardarAltas()">Guardar altas</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="ocupado"><div id="ocupado-texto">Procesando…</div></div>
+<div id="aviso" class="nota ok"></div>
+
+<script>
+/* ======================================================================
+ *  Estado y utilidades
+ * ==================================================================== */
+const S = {
+  ini: null,
+  remito: null, remitoValidado: false,
+  altas: [], altasValidado: false,
+  recambios: {}, saldo: null,
+  filtro: { regionId: '', plazaId: '', zonaId: '' }
+};
+const TIPO_TXT = { ENTREGA: 'Entrega', RETIRO: 'Retiro', RECAMBIO: 'Recambio' };
+
+/* Todas las funciones del módulo en el servidor llevan el prefijo co2_ (proyecto unificado). */
+const PREFIJO = 'co2_';
+/* App nueva: cada pedido va a la función del servidor. El archivo del remito o la factura se guarda desde acá
+   (espacio privado co2-linde) y el texto del PDF lo saca el navegador: al servidor llega el texto y la ruta. */
+async function llamar(fn, ...args) {
+  if (fn === 'apiGuardarArchivoRemito') { const a = await subirArchivo(args[0], 'remitos'); return { url: a.url, hash: a.hash, nombre: a.nombre }; }
+  if (fn === 'apiLeerRemitoPDF' || fn === 'apiLeerFacturaPDF') {
+    const a = await subirArchivo(args[0], fn === 'apiLeerRemitoPDF' ? 'remitos' : 'facturas');
+    let texto = '';
+    try { texto = await textoPDF(a.bytes); } catch (e) { texto = ''; }
+    return servidor('co2_api', { fn, args: [{ texto, archivo: { url: a.url, hash: a.hash, nombre: a.nombre } }] });
+  }
+  return servidor('co2_api', { fn, args });
+}
+const $ = id => document.getElementById(id);
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function norm(s) { return String(s || '').toUpperCase().replace(/\s+/g, ''); }
+function fechaTxt(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : (iso || ''); }
+function ocupado(txt) { $('ocupado-texto').textContent = txt || 'Procesando…'; $('ocupado').style.display = 'flex'; }
+function libre() { $('ocupado').style.display = 'none'; }
+function aviso(txt, clase) { const a = $('aviso'); a.className = 'nota ' + (clase || 'ok'); a.textContent = txt; a.style.display = 'block'; clearTimeout(a._t); a._t = setTimeout(() => a.style.display = 'none', clase === 'err' ? 7000 : 2500); }
+function errorGlobal(e) { $('error-global').innerHTML = `<div class="nota err">${esc(e.message || e)}</div>`; }
+function estadoTxt(e) { return (S.ini && S.ini.estados[e]) || e || ''; }
+function deposito(id) { return S.ini.depositos.find(x => x.id === id); }
+function nombreDeposito(id) { const d = deposito(id); return d ? 'Depósito ' + d.nombre : 'Depósito inexistente: ' + id; }
+function plaza(id) { return S.ini.plazas.find(x => x.id === id); }
+function zona(id) { return S.ini.zonas.find(x => x.id === id); }
+function region(id) { return S.ini.regiones.find(x => x.id === id); }
+/* "Córdoba · Centro": plaza y zona de un cliente. */
+function lugarCliente(c) { const p = plaza(c.plazaId), z = zona(c.zonaId); return [p ? p.nombre : 'Sin plaza', z ? z.nombre : (c.zonaId ? 'zona inexistente: ' + c.zonaId : 'sin zona')].join(' · '); }
+function cargaTxt(p) { return p ? p + ' kg' : 'sin carga'; }
+function cliente(id) { return S.ini.clientes.find(c => String(c.id) === String(id)); }
+
+/* Errores y advertencias del motor, agrupados por operación. */
+function htmlResultados(resultados, etiqueta) {
+  let html = '';
+  let todoOk = true;
+  resultados.forEach((r, i) => {
+    const pref = etiqueta ? etiqueta(i) + ': ' : '';
+    if (r.errores.length) {
+      todoOk = false;
+      html += `<div class="nota err"><strong>${esc(pref)}${r.errores.length} error(es)</strong><ul>${r.errores.map(e => `<li>${esc(e.mensaje)}</li>`).join('')}</ul></div>`;
+    }
+    if (r.advertencias.length) {
+      html += `<div class="nota adv"><strong>${esc(pref)}A revisar</strong><ul>${r.advertencias.map(e => `<li>${esc(e.mensaje)}</li>`).join('')}</ul></div>`;
+    }
+  });
+  if (todoOk) html = `<div class="nota ok">Todo válido. Ya podés guardar.</div>` + html;
+  return html;
+}
+
+/* ======================================================================
+ *  Arranque
+ * ==================================================================== */
+document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => mostrarPanel(b.dataset.panel)));
+
+function mostrarPanel(id) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('activo', b.dataset.panel === id));
+  document.querySelectorAll('section.panel').forEach(s => s.classList.toggle('activo', s.id === id));
+  if (id === 'p-revision') cargarRevision();
+  if (id === 'p-recambios') cargarRecambios();
+  if (id === 'p-consulta') cargarSaldo();
+  if (id === 'p-facturas') abrirFacturas();
+}
+
+async function recargar(forzar) {
+  S.recambios = {}; S.saldo = null;
+  ocupado('Cargando datos…');
+  try {
+    S.ini = await llamar('apiInicio', !!forzar);
+    $('error-global').innerHTML = '';
+    document.body.className = 'rol-' + S.ini.usuario.rol;
+    $('usuario').textContent = `${S.ini.usuario.nombre} · ${S.ini.usuario.rol}`;
+    const opcDep = S.ini.depositos.map(d => `<option value="${esc(d.id)}"${d.activo ? '' : ' disabled'}>${esc(d.nombre)}${d.direccion ? ' · ' + esc(d.direccion) : ''}${d.activo ? '' : ' — inactivo'}</option>`).join('');
+    $('rem-deposito').innerHTML = '<option value="">— Elegí —</option>' + opcDep;
+    $('alta-deposito').innerHTML = '<option value="">— Elegí —</option>' + opcDep;
+    const opcCarga = '<option value="">— Elegí —</option>' + S.ini.cargas.map(p => `<option value="${p}">${p} kg</option>`).join('');
+    $('alta-carga').innerHTML = opcCarga;
+    armarFiltroGlobal();
+    ['q-cliente', 'alta-cliente'].forEach(filtrarClientes);
+    pintarListaSeries();
+    ['rem-fecha', 'alta-fecha'].forEach(id => { $(id).max = S.ini.hoy; if (!$(id).value && id !== 'rem-fecha') $(id).value = S.ini.hoy; });
+    $('series-conocidas').innerHTML = [...new Set(Object.keys(S.ini.pesos).concat(S.ini.cargaInicial.series))].sort().map(x => `<option value="${esc(x)}">`).join('');
+    pintarCargaInicial();
+    if (S.ini.pendientesAprobacion) verPendientesAprobacion(true); else { S.pendAprob = []; pintarPendientesAprobacion(); }
+    pintarStock();
+    $('volver-app').href = S.ini.urlApp || '#';
+    $('volver-app').style.display = S.ini.urlApp ? '' : 'none';
+    if (S.remito) pintarLineas();
+    revisarPendienteLocal();
+    const activo = document.querySelector('nav button.activo');
+    if (!activo) mostrarPanel(S.ini.usuario.rol === 'CONSULTA' ? 'p-consulta' : 'p-remito');
+    else if (activo.dataset.panel === 'p-consulta') cargarSaldo();
+    else if (activo.dataset.panel === 'p-recambios') cargarRecambios();
+  } catch (e) { errorGlobal(e); $('usuario').textContent = 'Sin acceso'; }
+  libre();
+}
+
+/* Después de guardar: la respuesta trae el estado nuevo de los cilindros tocados.
+   Se actualiza la app sin volver a pedir todo (lo de otros usuarios llega con "Actualizar datos"). */
+function aplicarCilindros(lista) {
+  (lista || []).forEach(c => {
+    S.ini.cilindros = S.ini.cilindros.filter(x => x.serie !== c.serie);
+    if (c.estado !== 'ENTREGADO_LINDE') S.ini.cilindros.push(c);
+    if (c.pesoKg) S.ini.pesos[c.serie] = c.pesoKg;
+  });
+  S.saldo = null; S.recambios = {};
+  $('series-conocidas').innerHTML = [...new Set(Object.keys(S.ini.pesos).concat(S.ini.cargaInicial.series))].sort().map(x => `<option value="${esc(x)}">`).join('');
+  pintarStock(); pintarListaSeries();
+  if ($('p-consulta').classList.contains('activo')) cargarSaldo();
+}
+
+/* ======================================================================
+ *  Filtro global Región → Plaza → Zona
+ * ==================================================================== */
+function guardarLocal(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* sin almacenamiento local */ } }
+function leerLocal(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+function borrarLocal(k) { try { localStorage.removeItem(k); } catch (e) { /* nada */ } }
+
+function armarFiltroGlobal() {
+  if (!S._filtroIniciado) {
+    S._filtroIniciado = true;
+    S.filtro = Object.assign(S.filtro, leerLocal('co2_filtro') || {});
+    // La app unificada puede abrir el módulo con ?region=…&plaza=…&zona=…
+    try {
+      (cb => cb({ parameter: Object.fromEntries(new URLSearchParams(location.search)) }))(loc => {
+        const q = loc.parameter || {};
+        if (q.region || q.plaza || q.zona) { S.filtro = { regionId: q.region || '', plazaId: q.plaza || '', zonaId: q.zona || '' }; armarFiltroGlobal(); aplicarFiltro(); }
+      });
+    } catch (e) { /* fuera de Apps Script */ }
+  }
+  const f = S.filtro;
+  if (f.zonaId && !zona(f.zonaId)) f.zonaId = '';
+  if (f.plazaId && !plaza(f.plazaId)) f.plazaId = '';
+  if (f.regionId && !region(f.regionId)) f.regionId = '';
+  const opc = (lista, todos, sel) => `<option value="">${todos}</option>` + lista.map(x => `<option value="${esc(x.id)}"${x.id === sel ? ' selected' : ''}>${esc(x.nombre)}${x.activa === false ? ' (inactiva)' : ''}</option>`).join('');
+  const porNombre = (a, b) => String(a.nombre).localeCompare(String(b.nombre));
+  $('f-region').innerHTML = opc(S.ini.regiones.slice().sort(porNombre), 'Todas', f.regionId);
+  $('f-plaza').innerHTML = opc(S.ini.plazas.filter(p => !f.regionId || p.regionId === f.regionId).sort(porNombre), 'Todas', f.plazaId);
+  $('f-zona').innerHTML = opc(S.ini.zonas.filter(z => (!f.plazaId || z.plazaId === f.plazaId) && (!f.regionId || (plaza(z.plazaId) || {}).regionId === f.regionId)).sort(porNombre), 'Todas', f.zonaId);
+  const a = alcance();
+  $('filtro-global').classList.toggle('activo', !a.todo);
+  $('f-alcance').textContent = a.todo ? 'Todo el país' : `${a.depositos.size} depósito(s) · ${S.ini.clientes.filter(enAlcance).length} cliente(s)`;
+}
+function cambioFiltro(nivel) {
+  const f = S.filtro;
+  if (nivel === 'region') { f.regionId = $('f-region').value; f.plazaId = ''; f.zonaId = ''; }
+  if (nivel === 'plaza') { f.plazaId = $('f-plaza').value; f.zonaId = ''; if (f.plazaId) f.regionId = plaza(f.plazaId).regionId || f.regionId; }
+  if (nivel === 'zona') { f.zonaId = $('f-zona').value; if (f.zonaId) { f.plazaId = zona(f.zonaId).plazaId; f.regionId = (plaza(f.plazaId) || {}).regionId || f.regionId; } }
+  guardarLocal('co2_filtro', f);
+  armarFiltroGlobal();
+  aplicarFiltro();
+}
+/* Qué incluye el filtro: plazas, zonas y depósitos (el de cada plaza). */
+function alcance() {
+  const f = S.filtro, todo = !f.regionId && !f.plazaId && !f.zonaId;
+  const plazas = S.ini.plazas.filter(p => (!f.regionId || p.regionId === f.regionId) && (!f.plazaId || p.id === f.plazaId) && (!f.zonaId || (zona(f.zonaId) || {}).plazaId === p.id));
+  const idsP = new Set(plazas.map(p => p.id));
+  return { todo, plazas: idsP, depositos: new Set(plazas.map(p => p.depositoId).filter(Boolean)),
+    zonas: new Set(S.ini.zonas.filter(z => idsP.has(z.plazaId) && (!f.zonaId || z.id === f.zonaId)).map(z => z.id)) };
+}
+function enAlcance(c) { const a = S._alcance || alcance(); return a.todo || a.zonas.has(c.zonaId); }
+function depEnAlcance(id) { const a = S._alcance || alcance(); return a.todo || a.depositos.has(id); }
+function textoFiltro() {
+  const f = S.filtro, z = zona(f.zonaId), p = plaza(f.plazaId), r = region(f.regionId);
+  return z ? (p ? p.nombre + ' · ' : '') + z.nombre : p ? p.nombre : r ? r.nombre : 'todas las regiones';
+}
+function aplicarFiltro() {
+  S._alcance = alcance();
+  ['q-cliente', 'alta-cliente'].forEach(filtrarClientes);
+  pintarStock(); pintarSaldoLinde(); pintarListaSeries();
+  if (S.recambios[$('rc-meses').value]) pintarRecambios();
+  S._alcance = null;
+}
+
+/* ======================================================================
+ *  Trabajo sin guardar: copia en este navegador por si se cierra la página
+ * ==================================================================== */
+function clavePendiente() { return S.ini ? 'co2_pendiente::' + S.ini.usuario.email : ''; }
+function hayPendiente() { return !!(S.remito || S.altas.length); }
+let _tPendiente = 0;
+function guardarPendiente() {
+  if (!S.ini || S._restaurando) return;
+  clearTimeout(_tPendiente);
+  _tPendiente = setTimeout(() => {
+    if (!hayPendiente()) { borrarLocal(clavePendiente()); return; }
+    const rem = S.remito ? Object.assign({}, S.remito, opRemito().datos, { lineas: S.remito.lineas, archivo: S.remitoArchivo || null }) : null;
+    guardarLocal(clavePendiente(), { ts: Date.now(), remito: rem, altas: S.altas.map(o => ({ clase: o.clase, datos: o.datos })) });
+  }, 400);
+}
+function revisarPendienteLocal() {
+  if (S._pendienteRevisado) return;
+  S._pendienteRevisado = true;
+  const p = leerLocal(clavePendiente());
+  if (!p || !(p.remito || (p.altas || []).length)) return;
+  const partes = [];
+  if (p.remito) partes.push('un remito' + (p.remito.nroRemito ? ' (N° ' + p.remito.nroRemito + ')' : '') + ' con ' + p.remito.lineas.length + ' línea(s)');
+  if ((p.altas || []).length) partes.push(p.altas.length + ' alta(s) de inventario');
+  const d = new Date(p.ts);
+  $('pendiente-local').innerHTML = `<div class="nota adv pendiente"><span><strong>Quedó trabajo sin guardar</strong> del ${d.toLocaleDateString('es-AR')} ${d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}: ${esc(partes.join(', '))}.</span>
+    <button class="chico primario" onclick="recuperarPendiente()">Recuperar</button><button class="chico" onclick="descartarPendiente()">Descartar</button></div>`;
+}
+function recuperarPendiente() {
+  const p = leerLocal(clavePendiente());
+  $('pendiente-local').innerHTML = '';
+  if (!p) return;
+  S._restaurando = true;
+  if (p.remito) {
+    const r = p.remito;
+    abrirFormRemito(r, r.archivo);
+    $('rem-obs').value = r.observaciones || '';
+    mostrarPanel('p-remito');
+  }
+  S.altas = p.altas || [];
+  altasCambio();
+  S._restaurando = false;
+  guardarPendiente();
+  aviso('Recuperado. Validá antes de guardar: se controla contra los datos de ahora.', 'info');
+}
+function descartarPendiente() { borrarLocal(clavePendiente()); $('pendiente-local').innerHTML = ''; }
+window.addEventListener('beforeunload', e => { if (hayPendiente()) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ======================================================================
+ *  Selector de clientes: siempre lista desplegable, agrupada por región y plaza
+ *  y limitada por el filtro global
+ * ==================================================================== */
+function sinAcentos(s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+function filtrarClientes(id) {
+  const sel = $(id), f = sinAcentos($(id + '-filtro').value), previo = sel.value;
+  // En consultas aparecen también los inactivos; en inventario inicial, no.
+  const conInactivos = id !== 'alta-cliente';
+  const lista = S.ini.clientes.filter(c => (c.activo || conInactivos) && enAlcance(c) &&
+    (!f || sinAcentos([c.nombre, c.id, lugarCliente(c)].join(' ')).includes(f)));
+  const grupoDe = c => { if (!c.activo) return 'Inactivos (solo retiro)'; const p = plaza(c.plazaId), r = p && region(p.regionId); return p ? (r ? r.nombre + ' · ' : '') + p.nombre : 'Sin plaza (revisá su zona)'; };
+  const grupos = {};
+  lista.forEach(c => { const g = grupoDe(c); (grupos[g] = grupos[g] || []).push(c); });
+  const ultimo = g => g.startsWith('Inactivos') ? 2 : g.startsWith('Sin plaza') ? 1 : 0;
+  sel.innerHTML = `<option value="">— ${lista.length ? 'Elegí un cliente (' + lista.length + ')' : 'Ningún cliente coincide' + (S.filtro.regionId ? ' en ' + textoFiltro() : '')} —</option>` +
+    Object.keys(grupos).sort((a, b) => (ultimo(a) - ultimo(b)) || a.localeCompare(b)).map(g => `<optgroup label="${esc(g)}">${grupos[g].map(c => {
+      const z = zona(c.zonaId);
+      return `<option value="${esc(c.id)}">${esc(c.nombre)} · ${esc(c.id)}${z ? ' · ' + esc(z.nombre) : ''}${c.activo ? '' : ' · ' + esc(lugarCliente(c))}</option>`; }).join('')}</optgroup>`).join('');
+  if (lista.some(c => String(c.id) === previo)) sel.value = previo;
+  else if (lista.length === 1) sel.value = lista[0].id;
+}
+
+/* ======================================================================
+ *  Remito LINDE
+ * ==================================================================== */
+function aBase64(file) {
+  return new Promise((ok, mal) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = mal; r.readAsDataURL(file); });
+}
+function reducirImagen(file, max) {
+  return new Promise((ok, mal) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      ok(c.toDataURL('image/jpeg', 0.88).split(',')[1]);
+    };
+    img.onerror = () => mal(new Error('No se pudo abrir la imagen. Probá con otra foto o con el PDF.'));
+    img.src = url;
+  });
+}
+async function prepararArchivo() {
+  const f = $('rem-archivo').files[0];
+  if (!f) throw new Error('Elegí primero el archivo del remito.');
+  if (f.type === 'application/pdf') {
+    if (f.size > 20 * 1024 * 1024) throw new Error('El PDF pesa más de 20 MB. Subí una versión más liviana.');
+    return { nombre: f.name, mimeType: 'application/pdf', base64: await aBase64(f) };
+  }
+  return { nombre: f.name.replace(/\.[^.]+$/, '') + '.jpg', mimeType: 'image/jpeg', base64: await reducirImagen(f, 2200) };
+}
+
+/* ======================================================================
+ *  v2.4 · Remitos y facturas de LINDE
+ * ==================================================================== */
+const RES_FACTURA = { VALIDADO: ['Validado', 'ok'], DIFERENCIA_KG: ['Diferencia de kg', 'mal'], NO_ENCONTRADO: ['Remito no cargado', 'mal'],
+  NO_CONFIRMADO: ['Remito sin confirmar', 'mal'], YA_FACTURADO: ['Ya facturado', 'mal'], SIN_KG: ['Faltan los kg', 'mal'] };
+function abrirFacturas() {
+  if (!$('rr-deposito').options.length) {
+    $('rr-deposito').innerHTML = '<option value="">Todos</option>' + S.ini.depositos.map(d => `<option value="${esc(d.id)}">${esc(d.nombre)}</option>`).join('');
+    const h = new Date(), iso = d => d.toISOString().slice(0, 10);
+    $('rr-hasta').value = iso(h); $('rr-desde').value = iso(new Date(h.getFullYear(), h.getMonth() - 2, 1));
+  }
+  verResumenRemitos(true); cargarFacturas();
+}
+async function leerFactura() {
+  const f = $('fac-archivo').files[0];
+  if (!f) { aviso('Elegí primero el PDF de la factura.', 'err'); return; }
+  let archivo;
+  try {
+    archivo = f.type === 'application/pdf' ? { nombre: f.name, mimeType: 'application/pdf', base64: await aBase64(f) }
+      : { nombre: f.name.replace(/\.[^.]+$/, '') + '.jpg', mimeType: 'image/jpeg', base64: await reducirImagen(f, 2200) };
+  } catch (e) { aviso(e.message, 'err'); return; }
+  ocupado('Leyendo la factura…');
+  try {
+    const r = await llamar('apiLeerFacturaPDF', archivo);
+    if (r.ok) {
+      abrirFormFactura(r.factura);
+      $('fac-nota').innerHTML = `<div class="nota info">Se leyeron ${r.factura.lineas.length} remito(s).${r.factura.observaciones ? '<br>' + esc(r.factura.observaciones) : ''}<br>Revisá los datos contra la factura y tocá Validar.</div>`;
+    } else {
+      abrirFormFactura({ lineas: [{ nroRemito: '', fechaRemito: '', kg: '' }], archivoUrl: r.archivo.url, archivoHash: r.archivo.hash });
+      $('fac-nota').innerHTML = `<div class="nota adv">${esc(r.mensaje)}</div>`;
+    }
+    $('fac-texto').innerHTML = r.texto ? `<details class="texto-leido"><summary>Ver el texto leído de la factura</summary><pre>${esc(r.texto)}</pre></details>` : '';
+    if (r.ok && r.factura.lineas.length) await validarFactura(true);
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+function facturaManual() { abrirFormFactura({ lineas: [{ nroRemito: '', fechaRemito: '', kg: '' }] }); $('fac-nota').innerHTML = ''; $('fac-texto').innerHTML = ''; }
+function abrirFormFactura(f) {
+  S.factura = { nroFactura: f.nroFactura || '', fecha: f.fecha || '', archivoUrl: f.archivoUrl || '', archivoHash: f.archivoHash || '',
+    lineas: (f.lineas || []).map(l => ({ nroRemito: l.nroRemito || '', fechaRemito: l.fechaRemito || '', kg: l.kg === '' || l.kg == null ? '' : l.kg })) };
+  S.facturaVal = null;
+  $('fac-nro').value = S.factura.nroFactura; $('fac-fecha').value = S.factura.fecha;
+  $('fac-form').style.display = 'block'; $('fac-resumen').innerHTML = '';
+  pintarFactura(); facCambio(true);
+  if ($('fac-form').scrollIntoView) $('fac-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function pintarFactura() {
+  const val = S.facturaVal ? S.facturaVal.lineas : [];
+  const deVal = n => val.find(v => normNro(v.nroRemito) === normNro(n));
+  $('fac-lineas').innerHTML = S.factura.lineas.map((l, i) => {
+    const v = deVal(l.nroRemito), r = v ? RES_FACTURA[v.resultado] || [v.resultado, ''] : null;
+    const det = v ? esc([v.detalle].concat(v.avisos || []).join(' ')) : '';
+    return `<tr class="${r && r[1] === 'mal' ? 'mal' : ''}">
+      <td><input class="mono" value="${esc(l.nroRemito)}" placeholder="00290-00005053" aria-label="Remito" oninput="S.factura.lineas[${i}].nroRemito=this.value;facCambio()"></td>
+      <td><input type="date" value="${esc(l.fechaRemito)}" aria-label="Fecha del remito" oninput="S.factura.lineas[${i}].fechaRemito=this.value;facCambio()"></td>
+      <td><input type="number" min="0" step="any" value="${esc(l.kg)}" aria-label="Kg facturados" style="max-width:110px" oninput="S.factura.lineas[${i}].kg=this.value===''?'':Number(this.value);facCambio()"></td>
+      <td style="font-size:13px">${r ? `<strong>${esc(r[0])}</strong><br>${det}` : '<span class="ayuda">Sin validar</span>'}</td>
+      <td><button class="link" onclick="S.factura.lineas.splice(${i},1);pintarFactura();facCambio()" title="Quitar">✕</button></td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="vacio">Sin remitos. Agregá uno.</td></tr>';
+}
+function normNro(s) { return String(s || '').split(/\D+/).filter(Boolean).map(p => String(parseInt(p, 10))).join('-'); }
+function facAgregar() { S.factura.lineas.push({ nroRemito: '', fechaRemito: '', kg: '' }); pintarFactura(); facCambio(); }
+function facCambio(sinBorrar) {
+  if (!S.factura) return;
+  S.factura.nroFactura = $('fac-nro').value; S.factura.fecha = $('fac-fecha').value;
+  if (!sinBorrar && S.facturaVal) { S.facturaVal = null; $('fac-resumen').innerHTML = '<div class="nota adv">Cambiaste datos: validá de nuevo.</div>'; }
+  $('btn-guardar-factura').disabled = !S.facturaVal || !S.facturaVal.ok;
+}
+async function validarFactura(silencioso) {
+  facCambio(true);
+  if (!silencioso) ocupado('Validando…');
+  try {
+    const v = await llamar('apiValidarFactura', S.factura);
+    S.facturaVal = v; pintarFactura(); pintarResumenFactura(v);
+    $('btn-guardar-factura').disabled = !v.ok;
+  } catch (e) { aviso(e.message, 'err'); }
+  if (!silencioso) libre();
+}
+function pintarResumenFactura(v) {
+  const r = v.resumen;
+  const err = v.errores.length ? `<div class="nota err">${v.errores.map(esc).join('<br>')}</div>` : '';
+  const clase = v.todoValidado ? 'ok' : 'adv';
+  const partes = [`<strong>${r.validados} de ${v.lineas.length} remito(s) validados</strong> (${r.kgValidados} de ${r.kgFactura} kg facturados)`];
+  if (r.conDiferencias) partes.push(`${r.conDiferencias} con diferencias de kg`);
+  if (r.noEncontrados) partes.push(`${r.noEncontrados} sin cargar o sin confirmar`);
+  if (r.yaFacturados) partes.push(`${r.yaFacturados} ya facturados en otra factura`);
+  $('fac-resumen').innerHTML = err + (v.lineas.length ? `<div class="nota ${clase}">${v.todoValidado ? '✓ Todo validado: ' : ''}${partes.join(' · ')}.${v.ok && !v.todoValidado ? '<br>Podés guardarla igual: queda como "con diferencias" para reclamar.' : ''}</div>` : '');
+}
+async function guardarFactura() {
+  ocupado('Guardando la factura…');
+  try {
+    const v = await llamar('apiGuardarFactura', S.factura);
+    if (!v.ok) { S.facturaVal = v; pintarFactura(); pintarResumenFactura(v); libre(); return; }
+    aviso(`Factura guardada (${v.id}): ${v.estado === 'VALIDADA' ? 'validada' : 'con diferencias'}.`);
+    cerrarFactura(); verResumenRemitos(true); cargarFacturas();
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+function cerrarFactura() { S.factura = null; S.facturaVal = null; $('fac-form').style.display = 'none'; $('fac-archivo').value = ''; }
+async function verResumenRemitos(silencioso) {
+  if (!silencioso) ocupado('Armando el resumen…');
+  try {
+    const r = await llamar('apiResumenRemitos', { desde: $('rr-desde').value, hasta: $('rr-hasta').value, deposito: $('rr-deposito').value, facturacion: $('rr-fact').value });
+    const t = r.totales;
+    $('rr-totales').innerHTML = `<div class="nota info"><strong>${t.remitos} remito(s)</strong> · ${t.entregas} cilindros entregados · <strong>${t.kg} kg</strong>${t.composicionTexto ? ' (' + esc(t.composicionTexto) + ')' : ''} · ${t.retiros} retirados.` +
+      `<br>Facturado y validado: ${t.kgFacturadoValidado} kg · Sin facturar: ${t.sinFacturar} remito(s), ${t.kgSinFacturar} kg.</div>`;
+    $('rr-tabla').innerHTML = '<thead><tr><th>Fecha</th><th>Remito</th><th>Depósito</th><th>Entregados</th><th>Kg</th><th>Retirados</th><th>Factura</th></tr></thead><tbody>' +
+      r.filas.map(x => {
+        const fa = x.factura, rf = fa ? RES_FACTURA[fa.resultado] || [fa.resultado, ''] : null;
+        return `<tr><td>${esc(fechaTxt(x.fecha))}</td><td class="mono">${x.archivoUrl ? `<a href="${esc(x.archivoUrl)}" target="_blank" rel="noopener">${esc(x.nro)}</a>` : esc(x.nro)}</td><td>${esc(nombreDeposito(x.deposito))}</td>` +
+          `<td>${x.entregas}${x.composicion ? `<br><span class="ayuda" style="margin:0">${esc(x.composicion)}</span>` : ''}</td><td><strong>${x.kg}</strong></td><td>${x.retiros}</td>` +
+          `<td style="font-size:13px">${fa ? `<span class="mono">${esc(fa.nroFactura)}</span><br>${esc(rf[0])}` : '<span class="ayuda" style="margin:0">Sin facturar</span>'}</td></tr>`;
+      }).join('') + (r.filas.length ? '' : '<tr><td colspan="7" class="vacio">No hay remitos con esos filtros.</td></tr>') + '</tbody>';
+  } catch (e) { aviso(e.message, 'err'); }
+  if (!silencioso) libre();
+}
+async function cargarFacturas() {
+  try { S.facturas = await llamar('apiFacturas'); pintarFacturas(); } catch (e) { aviso(e.message, 'err'); }
+}
+function pintarFacturas() {
+  const est = { VALIDADA: 'Validada', CON_DIFERENCIAS: 'Con diferencias', ANULADA: 'Anulada' };
+  $('fac-lista').innerHTML = '<thead><tr><th>Fecha</th><th>Factura</th><th>Kg</th><th>Estado</th><th>Remitos</th><th></th></tr></thead><tbody>' +
+    (S.facturas || []).map(f => `<tr class="${f.estado === 'CON_DIFERENCIAS' ? 'mal' : ''}"><td>${esc(fechaTxt(f.fecha))}</td>` +
+      `<td class="mono">${f.archivoUrl ? `<a href="${esc(f.archivoUrl)}" target="_blank" rel="noopener">${esc(f.nro)}</a>` : esc(f.nro)}</td><td>${esc(f.totalKg)}</td><td>${esc(est[f.estado] || f.estado)}</td>` +
+      `<td style="font-size:13px">${f.lineas.map(l => `<span class="mono">${esc(l.nroRemito)}</span>: ${esc((RES_FACTURA[l.resultado] || [l.resultado])[0])}`).join('<br>')}</td>` +
+      `<td>${f.estado !== 'ANULADA' && esAdmin() ? `<button class="link" onclick="anularFactura('${esc(f.id)}', this)">Anular</button>` : ''}</td></tr>`).join('') +
+    ((S.facturas || []).length ? '' : '<tr><td colspan="6" class="vacio">Todavía no hay facturas cargadas.</td></tr>') + '</tbody>';
+}
+function anularFactura(id, btn) {
+  btn.parentElement.innerHTML = `<input id="anf-motivo" placeholder="Motivo" style="max-width:160px"> <button class="link" onclick="confirmarAnularFactura('${esc(id)}')">Anular</button> · <button class="link" onclick="pintarFacturas()">No</button>`;
+}
+async function confirmarAnularFactura(id) {
+  const motivo = ($('anf-motivo') || {}).value || '';
+  if (!motivo.trim()) { aviso('Escribí el motivo.', 'err'); return; }
+  ocupado('Anulando…');
+  try { S.facturas = await llamar('apiAnularFactura', id, motivo); pintarFacturas(); verResumenRemitos(true); aviso('Factura ' + id + ' anulada: sus remitos vuelven a "sin facturar".'); }
+  catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+
+async function leerRemito() {
+  let archivo;
+  try { archivo = await prepararArchivo(); } catch (e) { aviso(e.message, 'err'); return; }
+  ocupado('Leyendo el PDF (unos segundos)…');
+  try {
+    const r = await llamar('apiLeerRemitoPDF', archivo);
+    $('rem-ia-nota').innerHTML = '';
+    if (r.ok) {
+      abrirFormRemito(r.remito, r.archivo);
+      const dudosas = r.remito.lineas.filter(l => !l.legible).length;
+      const ctrl = r.remito.control || '', noCoincide = /^NO coincide/.test(ctrl);
+      $('rem-ia-nota').insertAdjacentHTML('afterbegin', `<div class="nota ${noCoincide || dudosas ? 'adv' : 'info'}">Se leyeron ${r.remito.lineas.length} cilindro(s).${ctrl ? ' <strong>' + esc(ctrl) + '</strong>' : ''}${dudosas ? ` <strong>${dudosas} para revisar</strong> (marcados en amarillo).` : ''}${r.remito.observaciones ? '<br>' + esc(r.remito.observaciones) : ''}<br>Revisá cada dato contra el documento antes de validar.</div>`);
+    } else {
+      abrirFormRemito({ lineas: [{ tipo: 'ENTREGA', serie: '' }], origenCarga: 'MANUAL', archivoUrl: r.archivo.url, archivoHash: r.archivo.hash }, r.archivo);
+      $('rem-ia-nota').insertAdjacentHTML('afterbegin', `<div class="nota adv">${esc(r.mensaje)}</div>`);
+    }
+    $('rem-texto').innerHTML = r.texto ? `<details class="texto-leido"><summary>Ver el texto leído del documento</summary><pre>${esc(r.texto)}</pre></details>` : '';
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+
+async function remitoManual() {
+  let infoArchivo = null;
+  if ($('rem-archivo').files[0]) {
+    ocupado('Guardando el archivo…');
+    try { infoArchivo = await llamar('apiGuardarArchivoRemito', await prepararArchivo()); } catch (e) { aviso(e.message, 'err'); }
+    libre();
+  }
+  $('rem-texto').innerHTML = '';
+  $('rem-ia-nota').innerHTML = infoArchivo ? '' : '<div class="nota adv">Vas a cargar sin archivo de respaldo. Si tenés el PDF o la foto, conviene adjuntarlo.</div>';
+  abrirFormRemito({ lineas: [{ tipo: 'ENTREGA', serie: '' }], origenCarga: 'MANUAL', archivoUrl: infoArchivo ? infoArchivo.url : '', archivoHash: infoArchivo ? infoArchivo.hash : '' }, infoArchivo);
+}
+
+function abrirFormRemito(rem, archivo) {
+  S.remito = Object.assign({ nroRemito: '', fecha: '', idDeposito: '', plazaTexto: '', tipoCopia: 'NO_INDICADO', lineas: [] }, rem);
+  delete S.remito.archivo;
+  S.remitoArchivo = archivo || null;
+  $('rem-editando').innerHTML = S.remito.idBorrador ? `<div class="nota adv">Editando el borrador <strong>${esc(S.remito.idBorrador)}</strong>. Al guardar, reemplaza al anterior.</div>`
+    : S.remito.idPendiente ? `<div class="nota adv">Aprobando el remito pendiente <strong>${esc(S.remito.idPendiente)}</strong>. Indicá a qué cilindro corresponde cada serie dudosa, validá y guardalo.</div>` : '';
+  $('rem-nro').value = S.remito.nroRemito; $('rem-fecha').value = S.remito.fecha;
+  $('rem-deposito').value = S.remito.idDeposito || ''; $('rem-copia').value = S.remito.tipoCopia || 'NO_INDICADO';
+  $('rem-plaza').value = S.remito.plazaTexto || ''; $('rem-obs').value = '';
+  $('rem-archivo-link').innerHTML = archivo ? `Documento: <a href="${esc(archivo.url)}" target="_blank">${esc(archivo.nombre)}</a> — abrilo al lado para comparar.` : 'Sin documento adjunto.';
+  if (S.remito.plazaTexto && !S.remito.idDeposito) $('rem-ia-nota').insertAdjacentHTML('beforeend', '<div class="nota adv">No se pudo asociar la plaza del documento a un depósito. Elegilo a mano.</div>');
+  $('rem-form').style.display = 'block';
+  $('rem-resultado').innerHTML = '';
+  pintarLineas();
+  remitoCambio();
+}
+
+/* Cilindros que LINDE puede retirar: los que están hoy en el depósito del remito. */
+function enDeposito(idDep) {
+  return S.ini.cilindros.filter(c => c.ubicTipo === 'DEPOSITO' && c.ubicId === idDep)
+    .sort((a, b) => (a.estado === b.estado ? (a.serie < b.serie ? -1 : 1) : (a.estado === 'VACIO_DISPONIBLE' ? -1 : 1)));
+}
+function celdaSerie(l, i) {
+  if (l.tipo !== 'RETIRO') {
+    return `<input class="mono" value="${esc(l.serie)}" aria-label="Serie" placeholder="Serie que entrega LINDE" oninput="S.remito.lineas[${i}].serie=this.value;S.remito.lineas[${i}].aprobada=false;remitoCambio()" onchange="pintarLineas()">`;
+  }
+  if (enBorrador()) { // carga inicial: el cilindro puede no estar todavía en el depósito; se valida al procesar
+    return `<input class="mono" list="series-conocidas" value="${esc(l.serie)}" aria-label="Serie" placeholder="Serie que retira LINDE" autocomplete="off"
+      oninput="S.remito.lineas[${i}].serie=this.value;remitoCambio()" onchange="pintarLineas()">`;
+  }
+  const dep = $('rem-deposito').value;
+  if (!dep) return `<select class="serie" disabled><option>Elegí primero el depósito</option></select>`;
+  const lista = seriesRetiroLinde(i);
+  if (l.serie && !lista.some(c => c.serie === norm(l.serie))) l.serie = '';
+  return `<input class="mono buscar-serie" placeholder="Buscar serie…" aria-label="Buscar serie" autocomplete="off"
+      oninput="filtrarSerieRetiro(${i}, this)" onkeydown="if(event.key==='Enter'){event.preventDefault();filtrarSerieRetiro(${i}, this, true)}">
+    <select class="serie" id="sel-retiro-${i}" aria-label="Serie" onchange="S.remito.lineas[${i}].serie=this.value;remitoCambio()">${htmlOpcionesRetiro(i, '')}</select>`;
+}
+/* Retiro LINDE: cilindros del depósito que no se eligieron en otra línea. */
+function seriesRetiroLinde(i) {
+  const usadas = S.remito.lineas.filter((x, j) => j !== i && x.tipo === 'RETIRO').map(x => norm(x.serie));
+  return enDeposito($('rem-deposito').value).filter(c => !usadas.includes(c.serie));
+}
+function htmlOpcionesRetiro(i, filtro) {
+  const todas = seriesRetiroLinde(i), f = norm(filtro), elegida = norm(S.remito.lineas[i].serie);
+  const lista = f ? todas.filter(c => c.serie.includes(f)) : todas;
+  // La serie ya elegida se mantiene en la lista aunque no coincida con lo que se está buscando.
+  if (elegida && !lista.some(c => c.serie === elegida)) { const e = todas.find(c => c.serie === elegida); if (e) lista.unshift(e); }
+  const titulo = !f ? `— Elegí (${todas.length} en el depósito) —` : lista.length ? `— ${lista.length} de ${todas.length} coinciden —` : `— Ninguna coincide con "${esc(filtro)}" —`;
+  return `<option value="">${titulo}</option>` + lista.map(c => `<option value="${esc(c.serie)}"${c.serie === elegida ? ' selected' : ''}>${esc(c.serie)} · ${cargaTxt(c.pesoKg)} · ${c.estado === 'VACIO_DISPONIBLE' ? 'vacío' : 'lleno (se registrará para revisión)'}</option>`).join('');
+}
+/* Filtra la lista sin redibujar la tabla. Si queda una sola serie (o se aprieta Enter), la elige. */
+function filtrarSerieRetiro(i, input, conEnter) {
+  const sel = $('sel-retiro-' + i), f = norm(input.value);
+  const coinciden = f ? seriesRetiroLinde(i).filter(c => c.serie.includes(f)) : [];
+  const exacta = coinciden.find(c => c.serie === f);
+  const elegir = exacta || (coinciden.length === 1 || (conEnter && coinciden.length) ? coinciden[0] : null);
+  if (elegir && S.remito.lineas[i].serie !== elegir.serie) { S.remito.lineas[i].serie = elegir.serie; remitoCambio(); }
+  sel.innerHTML = htmlOpcionesRetiro(i, input.value);
+}
+/* Carga: se elige al entrar; si la serie ya pasó por el sistema, viene fija. */
+function celdaCarga(l, i) {
+  const conocida = S.ini.pesos[norm(l.serie)];
+  if (l.tipo === 'RETIRO') return `<span class="ayuda" style="margin:0">${l.serie ? cargaTxt(conocida) : ''}</span>`;
+  if (conocida) { l.pesoKg = conocida; return `<span class="ayuda" style="margin:0">${conocida} kg · registrada</span>`; }
+  return `<select aria-label="Carga" onchange="S.remito.lineas[${i}].pesoKg=Number(this.value);remitoCambio()">
+    <option value="">— Carga —</option>${S.ini.cargas.map(p => `<option value="${p}"${Number(l.pesoKg) === p ? ' selected' : ''}>${p} kg</option>`).join('')}</select>`;
+}
+function pintarLineas(malas) {
+  malas = malas || {};
+  $('rem-lineas').innerHTML = S.remito.lineas.map((l, i) => {
+    const serieCelda = celdaSerie(l, i);
+    const sinMatch = l.tipo === 'RETIRO' && l.serieLeidaIA && !l.serie;
+    const clase = malas[norm(l.serie)] || sinMatch || (l.dudosa && !l.aprobada) ? 'mal' : (l.legible === false && !l.aprobada ? 'dudosa' : '');
+    const corregida = !l.serieLeidaIA ? '' : sinMatch
+      ? `<div class="ayuda" style="margin:2px 0 0;color:var(--err)">Se leyó <span class="mono">${esc(l.serieLeidaIA)}</span>: no está en este depósito. Elegí la serie correcta o quitá la línea.</div>`
+      : (norm(l.serieLeidaIA) !== norm(l.serie) ? `<div class="ayuda" style="margin:2px 0 0">Se leyó: <span class="mono">${esc(l.serieLeidaIA)}</span></div>` : '');
+    return `<tr class="${clase}">
+      <td class="c-tipo"><select onchange="S.remito.lineas[${i}].tipo=this.value;pintarLineas();remitoCambio()">
+        <option value="ENTREGA"${l.tipo === 'ENTREGA' ? ' selected' : ''}>Entrega LINDE</option>
+        <option value="RETIRO"${l.tipo === 'RETIRO' ? ' selected' : ''}>Retiro LINDE</option></select></td>
+      <td class="c-serie">${serieCelda}${l.dudosa ? htmlDudosa(l, i) : corregida}</td>
+      <td class="c-carga">${celdaCarga(l, i)}</td>
+      <td class="c-quitar"><button class="chico" title="Quitar" onclick="S.remito.lineas.splice(${i},1);pintarLineas();remitoCambio()">✕</button></td></tr>`;
+  }).join('') || '<tr><td colspan="4" class="vacio">Sin cilindros. Agregá líneas.</td></tr>';
+  contarLineas();
+}
+/* v2.3: serie dudosa (no figura igual en los números de lote). La aprueba un administrador indicando a qué cilindro corresponde. */
+function esAdmin() { return S.ini && S.ini.usuario.rol === 'ADMIN'; }
+function serieSegura(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9-]/g, ''); }
+function htmlDudosa(l, i) {
+  const leida = esc(l.serieLeidaIA || l.serie), sug = serieSegura(l.sugerida);
+  if (l.aprobada) return `<div class="ayuda" style="margin:2px 0 0">✓ <strong>Aprobada:</strong> es <span class="mono">${esc(norm(l.serie))}</span> (se leyó ${leida}).${esAdmin() ? ` <button class="link" onclick="desaprobarSerie(${i})">Deshacer</button>` : ''}</div>`;
+  const botones = esAdmin()
+    ? `<div class="acciones" style="margin:4px 0 0">${sug ? `<button class="chico" onclick="aprobarSerie(${i}, '${sug}')">Es ${sug}</button>` : ''}<button class="chico" onclick="aprobarSerie(${i})">Es ${esc(norm(l.serie)) || 'la de la casilla'}</button></div>`
+    : '<br>La aprueba un administrador: enviá el remito a aprobación.';
+  return `<div class="ayuda" style="margin:2px 0 0;color:var(--err)"><strong>Serie dudosa:</strong> se leyó <span class="mono">${leida}</span>${sug ? `; en los números de lote figura <span class="mono">${sug}</span>` : ''}. ¿A qué cilindro corresponde?${botones}</div>`;
+}
+function aprobarSerie(i, serie) {
+  const l = S.remito.lineas[i];
+  if (!esAdmin()) return;
+  if (serie) l.serie = serie;
+  if (!norm(l.serie)) { aviso('Escribí la serie correcta en la casilla.', 'err'); return; }
+  l.aprobada = true; pintarLineas(); remitoCambio();
+}
+function desaprobarSerie(i) { S.remito.lineas[i].aprobada = false; pintarLineas(); remitoCambio(); }
+function dudosasSinAprobar() { return S.remito ? S.remito.lineas.filter(l => l.dudosa && !l.aprobada).length : 0; }
+function actualizarBotonAprobacion() {
+  const n = dudosasSinAprobar();
+  $('btn-enviar-aprob').style.display = n && !enBorrador() ? '' : 'none';
+  $('btn-enviar-aprob').textContent = S.remito && S.remito.idPendiente ? 'Guardar cambios (sigue pendiente)' : `Enviar a aprobación (${n} dudosa${n > 1 ? 's' : ''})`;
+}
+async function enviarAprobacion() {
+  ocupado('Enviando a aprobación…');
+  try {
+    const r = await llamar('apiEnviarAprobacion', opRemito().datos);
+    if (!r.ok) { $('rem-resultado').innerHTML = htmlResultados(r.resultados); libre(); return; }
+    limpiarRemito();
+    S.ini.pendientesAprobacion = r.pendientes;
+    await verPendientesAprobacion(true);
+    aviso(`Remito enviado a aprobación (${r.id}). Lo aprueba un administrador.`);
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+async function verPendientesAprobacion(silencioso) {
+  if (!S.ini || S.ini.usuario.rol === 'CONSULTA') return;
+  if (!silencioso) ocupado('Cargando pendientes…');
+  try {
+    S.pendAprob = await llamar('apiPendientesAprobacion');
+    S.ini.pendientesAprobacion = S.pendAprob.length;
+    pintarPendientesAprobacion();
+  } catch (e) { aviso(e.message, 'err'); }
+  if (!silencioso) libre();
+}
+function pintarPendientesAprobacion() {
+  const lista = S.pendAprob || [];
+  $('pa-tarjeta').style.display = lista.length ? '' : 'none';
+  $('pa-ayuda').textContent = esAdmin()
+    ? 'Tienen series dudosas. Abrí cada uno, indicá a qué cilindro corresponde cada serie y guardalo.'
+    : 'Esperan que un administrador indique a qué cilindro corresponde cada serie dudosa.';
+  $('pa-tabla').innerHTML = '<thead><tr><th>Fecha</th><th>N° remito</th><th>Depósito</th><th>Series dudosas</th><th>Cargado por</th><th></th></tr></thead><tbody>' +
+    lista.map(p => {
+      const dud = p.datos.lineas.filter(l => l.dudosa).map(l => `<span class="mono">${esc(l.serieLeidaIA || l.serie)}</span>${l.sugerida ? ' (¿' + esc(l.sugerida) + '?)' : ''}`).join(', ');
+      const acc = esAdmin() ? `<button class="link" onclick="revisarPendiente('${esc(p.id)}')">Revisar y aprobar</button> · <button class="link" onclick="rechazarPendiente('${esc(p.id)}', this)">Rechazar</button>` : '<span class="ayuda">Esperando aprobación</span>';
+      return `<tr><td>${esc(fechaTxt(p.fecha))}</td><td class="mono">${esc(p.datos.nroRemito)}</td><td>${esc(nombreDeposito(p.idDeposito))}</td><td style="font-size:13px">${dud}</td><td style="font-size:13px">${esc(p.cargadoPor || '')}</td><td style="white-space:nowrap">${acc}</td></tr>`;
+    }).join('') + '</tbody>';
+}
+function revisarPendiente(id) {
+  const p = (S.pendAprob || []).find(x => x.id === id);
+  if (!p) return;
+  $('rem-ia-nota').innerHTML = ''; $('rem-texto').innerHTML = '';
+  abrirFormRemito(Object.assign({}, p.datos, { idPendiente: p.id, lineas: p.datos.lineas.map(l => Object.assign({}, l)) }), p.datos.archivoUrl ? { url: p.datos.archivoUrl, nombre: 'archivo del remito' } : null);
+  $('rem-obs').value = p.datos.observaciones || '';
+  if ($('rem-form').scrollIntoView) $('rem-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function rechazarPendiente(id, btn) {
+  btn.parentElement.innerHTML = `¿Rechazar ${esc(id)}? Se borra (y su archivo va a la papelera). <button class="link" onclick="confirmarRechazo('${esc(id)}')">Sí</button> · <button class="link" onclick="pintarPendientesAprobacion()">No</button>`;
+}
+async function confirmarRechazo(id) {
+  ocupado('Rechazando…');
+  try { await llamar('apiRechazarPendiente', id); await verPendientesAprobacion(true); aviso('Remito ' + id + ' rechazado.'); }
+  catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+function agregarLinea(tipo) { S.remito.lineas.push({ tipo, serie: '' }); pintarLineas(); remitoCambio(); }
+function remitoCambio() { S.remitoValidado = false; $('btn-confirmar-remito').disabled = true; contarLineas(); actualizarBotonAprobacion(); guardarPendiente(); }
+/* Totales al pie del remito, para comparar con el papel. */
+function contarLineas() {
+  if (!S.remito) return;
+  const ls = S.remito.lineas, cargaDe = l => Number(l.pesoKg) || S.ini.pesos[norm(l.serie)] || 0;
+  const ent = ls.filter(l => l.tipo === 'ENTREGA'), ret = ls.filter(l => l.tipo === 'RETIRO');
+  const conSerie = l => !!norm(l.serie);
+  const porCarga = lista => {
+    const c = {}; lista.filter(conSerie).forEach(l => { const k = cargaDe(l); c[k] = (c[k] || 0) + 1; });
+    const partes = Object.keys(c).filter(k => k !== '0').sort((a, b) => a - b).map(k => `${c[k]} de ${k} kg`);
+    if (c[0]) partes.push(`${c[0]} sin carga`);
+    return partes.length ? ` <span class="ayuda">(${partes.join(' · ')})</span>` : '';
+  };
+  const vacias = ls.filter(l => !conSerie(l)).length;
+  $('rem-conteo').innerHTML =
+    `<span>Entregas: <strong>${ent.filter(conSerie).length}</strong>${porCarga(ent)}</span>` +
+    `<span>Retiros: <strong>${ret.filter(conSerie).length}</strong>${porCarga(ret)}</span>` +
+    `<span>Total: <strong>${ls.filter(conSerie).length}</strong></span>` +
+    (vacias ? `<span class="falta">${vacias} línea${vacias > 1 ? 's' : ''} sin serie</span>` : '');
+}
+function limpiarRemito() { $('btn-enviar-aprob').style.display = 'none'; S.remito = null; S.remitoArchivo = null; $('rem-form').style.display = 'none'; $('rem-archivo').value = ''; $('rem-ia-nota').innerHTML = ''; $('rem-texto').innerHTML = ''; $('rem-editando').innerHTML = ''; guardarPendiente(); }
+
+function opRemito() {
+  return { clase: 'REMITO', datos: {
+    idBorrador: S.remito.idBorrador || '', idPendiente: S.remito.idPendiente || '',
+    nroRemito: $('rem-nro').value.trim(), fecha: $('rem-fecha').value, idDeposito: $('rem-deposito').value,
+    plazaTexto: S.remito.plazaTexto || '', tipoCopia: $('rem-copia').value, observaciones: $('rem-obs').value.trim(),
+    archivoUrl: S.remito.archivoUrl || '', archivoHash: S.remito.archivoHash || '', origenCarga: S.remito.origenCarga || 'MANUAL',
+    lineas: S.remito.lineas.map(l => Object.assign({ tipo: l.tipo, serie: norm(l.serie), pesoKg: Number(l.pesoKg) || '', serieLeidaIA: l.serieLeidaIA || '' },
+      l.dudosa ? { dudosa: true, sugerida: l.sugerida || '', aprobada: !!l.aprobada } : {}))
+  } };
+}
+
+async function validarRemito() {
+  ocupado(enBorrador() ? 'Validando el borrador…' : 'Validando contra el historial…');
+  try {
+    const r = enBorrador() ? await llamar('apiValidarBorrador', opRemito().datos) : await llamar('apiValidar', [opRemito()]);
+    const malas = {}; r.resultados[0].errores.forEach(e => { if (e.serie) malas[e.serie] = true; });
+    pintarLineas(malas);
+    $('rem-resultado').innerHTML = htmlResultados(r.resultados);
+    S.remitoValidado = r.ok; $('btn-confirmar-remito').disabled = !r.ok;
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+
+async function confirmarRemito() {
+  if (!S.remitoValidado) return;
+  if (enBorrador()) return guardarBorrador();
+  ocupado('Guardando…');
+  try {
+    const r = await llamar('apiConfirmar', [opRemito()]);
+    if (!r.ok) { $('rem-resultado').innerHTML = htmlResultados(r.resultados); S.remitoValidado = false; $('btn-confirmar-remito').disabled = true; libre(); return; }
+    aviso(`Remito guardado (${r.confirmadas[0].id}). ${r.mensaje}`);
+    const eraPendiente = !!S.remito.idPendiente;
+    limpiarRemito();
+    if (eraPendiente) await verPendientesAprobacion(true);
+    aplicarCilindros(r.cilindros);
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+
+/* ======================================================================
+ *  Carga inicial en borrador (v1.6)
+ * ==================================================================== */
+function enBorrador() { return !!(S.ini && S.ini.cargaInicial && S.ini.cargaInicial.activa); }
+function pintarCargaInicial() {
+  const ci = S.ini.cargaInicial, admin = S.ini.usuario.rol === 'ADMIN', abiertos = ci.pendientes + ci.conError;
+  $('ci-tarjeta').style.display = 'none'; // la carga inicial de remitos en borrador no está en la app nueva
+  const cuentas = `Pendientes: <strong>${ci.pendientes}</strong> · Con error: <strong>${ci.conError}</strong>`;
+  $('ci-estado').innerHTML = ci.activa
+    ? `<div class="nota adv"><strong>Carga inicial activa.</strong> Los remitos se guardan como borrador. Se controla el número (no se repite en ninguna plaza), la fecha, el depósito, las series y la carga; los circuitos se validan al procesar, todos juntos por fecha.</div><p class="ayuda">${cuentas}</p>`
+    : `<p class="ayuda">Para cargar remitos históricos de varias plazas sin que te frenen los circuitos a medio cerrar, activá la carga inicial: los remitos quedan en borrador y al final se procesan todos juntos por fecha.${abiertos ? '<br>' + cuentas : ''}</p>`;
+  $('ci-acciones').innerHTML =
+    `<button onclick="verBorradores()">${$('ci-lista').style.display === 'none' ? 'Ver borradores' : 'Actualizar lista'} (${abiertos})</button>` +
+    (admin && abiertos ? `<button class="exito" onclick="procesarCargaInicial()">Procesar carga inicial (${abiertos})</button>` : '') +
+    (admin ? `<button onclick="cambiarModoCarga(${!ci.activa})">${ci.activa ? 'Desactivar carga inicial' : 'Activar carga inicial'}</button>` : '');
+  $('rem-modo').style.display = ci.activa ? '' : 'none';
+  $('btn-confirmar-remito').textContent = ci.activa ? 'Guardar borrador' : 'Guardar remito';
+  if (S.remito) pintarLineas();
+}
+async function cambiarModoCarga(activar) {
+  ocupado(activar ? 'Activando…' : 'Desactivando…');
+  try {
+    S.ini.cargaInicial = await llamar('apiModoCargaInicial', activar);
+    pintarCargaInicial(); remitoCambio();
+    aviso(activar ? 'Carga inicial activa: los remitos se guardan como borrador.' : 'Carga inicial desactivada.' + (S.ini.cargaInicial.pendientes + S.ini.cargaInicial.conError ? ' Quedan borradores sin procesar.' : ''));
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+async function guardarBorrador() {
+  ocupado('Guardando borrador…');
+  try {
+    const r = await llamar('apiGuardarBorrador', opRemito().datos);
+    if (!r.ok) { $('rem-resultado').innerHTML = htmlResultados(r.resultados); S.remitoValidado = false; $('btn-confirmar-remito').disabled = true; libre(); return; }
+    limpiarRemito();
+    S.ini.cargaInicial = r.cargaInicial;
+    pintarCargaInicial();
+    if ($('ci-lista').style.display !== 'none') await verBorradores(true);
+    aviso(`Borrador guardado (${r.id}). Se registra al procesar la carga inicial.${r.avisoArchivo ? " " + r.avisoArchivo : ""}`, r.avisoArchivo ? "err" : undefined);
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+async function verBorradores(silencioso) {
+  if (!silencioso) ocupado('Cargando borradores…');
+  try {
+    S.borradores = await llamar('apiBorradores');
+    $('ci-lista').style.display = '';
+    const txtEstado = { PENDIENTE: ['Pendiente', ''], CON_ERROR: ['Con error', 'mal'] };
+    $('ci-tabla').innerHTML = !S.borradores.length ? '<tbody><tr><td class="ayuda">Todavía no hay borradores.</td></tr></tbody>' :
+      '<thead><tr><th>Fecha</th><th>N° remito</th><th>Depósito</th><th>Entr.</th><th>Ret.</th><th>Estado</th><th>Detalle</th><th></th></tr></thead><tbody>' +
+      S.borradores.map(b => {
+        const ent = b.datos.lineas.filter(l => l.tipo === 'ENTREGA').length, ret = b.datos.lineas.filter(l => l.tipo === 'RETIRO').length;
+        const [t, c] = txtEstado[b.estado] || [b.estado, ''];
+        const acciones = `<button class="link" onclick="editarBorrador('${esc(b.id)}')">Editar</button> · <button class="link" onclick="eliminarBorrador('${esc(b.id)}', this)">Eliminar</button>`;
+        return `<tr class="${b.estado === 'CON_ERROR' ? 'mal' : ''}"><td>${esc(fechaTxt(b.fecha))}</td><td class="mono">${esc(b.datos.nroRemito)}</td><td>${esc(nombreDeposito(b.idDeposito))}</td><td>${ent}</td><td>${ret}</td>` +
+          `<td><span class="etiqueta ${c}">${esc(t)}</span></td><td style="font-size:13px">${esc(b.errores || '')}</td><td style="white-space:nowrap">${acciones}</td></tr>`;
+      }).join('') + '</tbody>';
+    pintarCargaInicial();
+  } catch (e) { aviso(e.message, 'err'); }
+  if (!silencioso) libre();
+}
+function editarBorrador(id) {
+  const b = (S.borradores || []).find(x => x.id === id);
+  if (!b) return;
+  if (!enBorrador()) { aviso('Para editar un borrador, la carga inicial tiene que estar activa.', 'err'); return; }
+  $('rem-ia-nota').innerHTML = '';
+  abrirFormRemito(Object.assign({}, b.datos, { idBorrador: b.id, lineas: b.datos.lineas.map(l => Object.assign({}, l)) }), b.datos.archivoUrl ? { url: b.datos.archivoUrl, nombre: 'archivo del remito' } : null);
+  $('rem-obs').value = b.datos.observaciones || '';
+  if (b.estado === 'CON_ERROR') $('rem-resultado').innerHTML = `<div class="nota err"><strong>Error al procesar:</strong> ${esc(b.errores)}</div>`;
+  if ($('rem-form').scrollIntoView) $('rem-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function eliminarBorrador(id, btn) {
+  const td = btn.parentElement;
+  td.innerHTML = `¿Eliminar ${esc(id)}? <button class="link" onclick="confirmarEliminarBorrador('${esc(id)}')">Sí</button> · <button class="link" onclick="verBorradores(true)">No</button>`;
+}
+async function confirmarEliminarBorrador(id) {
+  ocupado('Eliminando…');
+  try { S.ini.cargaInicial = await llamar('apiEliminarBorrador', id); pintarCargaInicial(); await verBorradores(true); aviso('Borrador ' + id + ' eliminado.'); }
+  catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+async function procesarCargaInicial() {
+  ocupado('Procesando la carga inicial por fecha…');
+  try {
+    const r = await llamar('apiProcesarCargaInicial');
+    await recargar();
+    await verBorradores(true);
+    $('ci-resultado').innerHTML = `<div class="nota ${r.conError.length ? 'adv' : 'ok'}">${esc(r.mensaje)}</div>` +
+      (r.conError.length ? '<ul class="ayuda">' + r.conError.map(e => `<li><strong>${esc(fechaTxt(e.fecha))} · ${esc(e.nroRemito)} · ${esc(nombreDeposito(e.idDeposito))}:</strong> ${esc(e.errores)}</li>`).join('') + '</ul>' : '');
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+
+/* ======================================================================
+ *  Recambios y consumo (v1.5)
+ * ==================================================================== */
+const MESES_TXT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+function mesTxt(mm, conAnio) { const [a, m] = mm.split('-'); return MESES_TXT[Number(m) - 1] + (conAnio ? ' ' + a : ''); }
+function numTxt(n) { return n === null || n === undefined ? '—' : String(n).replace('.', ','); }
+async function cargarRecambios() {
+  const meses = $('rc-meses').value;
+  if (!S.recambios[meses]) {
+    ocupado('Calculando recambios…');
+    try { S.recambios[meses] = await llamar('apiRecambios', Number(meses)); }
+    catch (e) { libre(); aviso(e.message, 'err'); return; }
+    libre();
+  }
+  pintarRecambios();
+}
+function pintarRecambios() {
+  const r = S.recambios[$('rc-meses').value];
+  if (!r) return;
+  const a = alcance();
+  const cls = r.clientes.filter(c => a.todo || a.zonas.has(c.zonaId));
+  const kg = cls.reduce((a, c) => a + c.kg, 0);
+  const kgMes = cls.reduce((a, c) => a + (c.kgMes || 0), 0);
+  const atrasados = cls.filter(c => c.diasParaProximo !== null && c.diasParaProximo < 0).length;
+  const semana = cls.filter(c => c.diasParaProximo !== null && c.diasParaProximo >= 0 && c.diasParaProximo <= 7).length;
+  const periodo = r.meses ? `últimos ${r.meses} meses` : 'todo el historial';
+  $('rc-metricas').innerHTML = [
+    ['Kg por mes estimado', numTxt(Math.round(kgMes * 10) / 10), 'suma del promedio de cada cliente'],
+    ['Kg consumidos', kg, periodo],
+    ['Recambios atrasados', atrasados, 'ya pasó la fecha estimada'],
+    ['Próximos 7 días', semana, 'recambios estimados']
+  ].map(([t, n, d]) => `<div class="metrica"><div class="t">${esc(t)}</div><div class="n">${esc(String(n))}</div><div class="t">${esc(d)}</div></div>`).join('');
+  $('rc-titulo-graf').textContent = 'Kg consumidos por mes · ' + textoFiltro();
+  pintarGraficoRecambios(r.mensual.map(m => ({ mes: m.mes, kg: a.todo ? m.total : [...a.zonas].reduce((t, z) => t + (m.porZona[z] || 0), 0), enCurso: m.enCurso })));
+  $('rc-tabla').innerHTML = !cls.length ? '<tbody><tr><td class="ayuda">Todavía no hay entregas ni retiros en clientes' + (a.todo ? '' : ' de ' + esc(textoFiltro())) + '.</td></tr></tbody>' :
+    '<thead><tr><th>Cliente</th><th>Plaza · zona</th><th>Recambios</th><th>Kg consumidos</th><th>Kg por mes</th><th>Cada (días)</th><th>Último</th><th>Próximo estimado</th><th>Kg en el cliente</th></tr></thead><tbody>' +
+    cls.map(c => {
+      const d = c.diasParaProximo;
+      const prox = !c.proximo ? '<span class="ayuda">sin datos</span>' :
+        `${esc(fechaTxt(c.proximo))} <span class="etiqueta ${d < 0 ? 'mal' : d <= 7 ? 'cerca' : ''}">${d < 0 ? 'atrasado ' + (-d) + ' d' : d === 0 ? 'hoy' : 'en ' + d + ' d'}</span>`;
+      return `<tr class="${d !== null && d < 0 ? 'dudosa' : ''}"><td><button class="link" onclick="verCliente('${esc(c.id)}')">${esc(c.nombre)}</button>${c.activo ? '' : ' <span class="ayuda">(inactivo)</span>'}</td>` +
+        `<td>${esc(lugarCliente(cliente(c.id) || { zonaId: c.zonaId, plazaId: (zona(c.zonaId) || {}).plazaId }))}</td><td>${c.recambios}</td><td>${c.kg}${c.sinCarga ? ' <span class="ayuda" title="Vacíos sin carga registrada">(+' + c.sinCarga + ' s/c)</span>' : ''}</td>` +
+        `<td>${c.kgMes === null ? '<span class="ayuda" title="Menos de 30 días de datos">—</span>' : numTxt(c.kgMes)}</td><td>${c.intervalo === null ? '—' : c.intervalo}</td>` +
+        `<td>${esc(fechaTxt(c.ultimo)) || '—'}</td><td>${prox}</td><td>${c.kgEnCliente}</td></tr>`;
+    }).join('') + '</tbody>';
+}
+function pintarGraficoRecambios(datos) {
+  // El ancho real del contenedor: así el texto queda en 12 px también en el celular.
+  const W = Math.max(300, Math.round($('rc-grafico').clientWidth || 720)), H = W < 500 ? 200 : 240, m = { t: 16, r: 8, b: 30, l: 36 };
+  const ancho = W - m.l - m.r, alto = H - m.t - m.b;
+  const max = Math.max(1, ...datos.map(d => d.kg));
+  const paso = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000].find(p => max / p <= 4) || Math.ceil(max / 4);
+  const tope = Math.ceil(max / paso) * paso;
+  const y = v => m.t + alto - (v / tope) * alto;
+  const banda = ancho / datos.length, barra = Math.min(36, banda - 6);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Kg consumidos por mes">`;
+  for (let v = 0; v <= tope; v += paso) {
+    svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" class="grilla${v === 0 ? ' base' : ''}"/>` +
+      `<text x="${m.l - 8}" y="${y(v) + 4}" class="eje" text-anchor="end">${v}</text>`;
+  }
+  datos.forEach((d, i) => {
+    const cx = m.l + banda * i + banda / 2, h = (d.kg / tope) * alto, x = cx - barra / 2, top = m.t + alto - h;
+    if (h > 0) {
+      const rr = Math.min(4, h, barra / 2);
+      svg += `<path class="barra${d.enCurso ? ' en-curso' : ''}" d="M${x},${m.t + alto} V${top + rr} Q${x},${top} ${x + rr},${top} H${x + barra - rr} Q${x + barra},${top} ${x + barra},${top + rr} V${m.t + alto} Z"/>`;
+    }
+    const mostrarEtiqueta = banda >= 30 || i % 2 === datos.length % 2 || i === datos.length - 1;
+    svg += (mostrarEtiqueta ? `<text x="${cx}" y="${H - 10}" class="eje" text-anchor="middle">${mesTxt(d.mes)}</text>` : '') +
+      `<rect class="golpe" x="${m.l + banda * i}" y="${m.t}" width="${banda}" height="${alto}" data-i="${i}"/>`;
+  });
+  svg += '</svg>';
+  $('rc-grafico').innerHTML = svg;
+  const tip = $('rc-tooltip');
+  $('rc-grafico').querySelectorAll('rect.golpe').forEach(rc => {
+    const mostrar = () => {
+      const d = datos[Number(rc.dataset.i)];
+      tip.innerHTML = `<strong>${esc(mesTxt(d.mes, true))}</strong>${d.enCurso ? ' (en curso)' : ''}<br>${d.kg} kg consumidos`;
+      const caja = $('rc-grafico').getBoundingClientRect(), r2 = rc.getBoundingClientRect();
+      tip.style.left = Math.min(caja.width - 150, Math.max(0, r2.left - caja.left + r2.width / 2 - 70)) + 'px';
+      tip.style.display = 'block';
+      $('rc-grafico').querySelectorAll('path.barra').forEach(p => p.classList.remove('activa'));
+      rc.classList.add('sobre');
+    };
+    rc.addEventListener('pointerenter', mostrar);
+    rc.addEventListener('click', mostrar);
+    rc.addEventListener('pointerleave', () => { tip.style.display = 'none'; rc.classList.remove('sobre'); });
+  });
+}
+let _rcAncho = 0;
+window.addEventListener('resize', () => {
+  const w = $('rc-grafico').clientWidth;
+  if (w && w !== _rcAncho && $('p-recambios').classList.contains('activo')) { _rcAncho = w; pintarRecambios(); }
+});
+function verCliente(id) {
+  mostrarPanel('p-consulta');
+  $('q-cliente-filtro').value = ''; filtrarClientes('q-cliente');
+  $('q-cliente').value = id; fichaCliente();
+}
+
+/* ======================================================================
+ *  Consultas
+ * ==================================================================== */
+function pintarListaSeries() {
+  $('lista-series').innerHTML = S.ini.cilindros.filter(c => depEnAlcance(c.depOrigen)).map(c => `<option value="${esc(c.serie)}">`).join('');
+}
+/* Stock por depósito y carga, calculado con los cilindros en circuito que ya tiene la app. */
+function pintarStock() {
+  const filas = {}, cargas = S.ini.cargas.length ? S.ini.cargas : [''], a = S._alcance || alcance();
+  const fila = (id, peso) => {
+    const k = id + '|' + peso, d = deposito(id);
+    return filas[k] = filas[k] || { id, nombre: d ? d.nombre : 'Depósito inexistente: ' + id, inexistente: !d, pesoKg: peso, llenos: 0, vacios: 0, enClientes: 0 };
+  };
+  S.ini.depositos.filter(d => a.todo || a.depositos.has(d.id)).forEach(d => cargas.forEach(p => fila(d.id, p)));
+  S.ini.cilindros.forEach(c => {
+    if (!(a.todo || a.depositos.has(c.depOrigen))) return;
+    const d = fila(c.depOrigen, c.pesoKg || '');
+    if (c.estado === 'LLENO_DISPONIBLE') d.llenos++; else if (c.estado === 'VACIO_DISPONIBLE') d.vacios++; else if (c.estado === 'EN_USO') d.enClientes++;
+  });
+  const lista = Object.values(filas).sort((x, y) => (x.inexistente - y.inexistente) || x.nombre.localeCompare(y.nombre) || (Number(x.pesoKg) - Number(y.pesoKg)));
+  const t = lista.reduce((s, d) => ({ l: s.l + d.llenos, v: s.v + d.vacios, c: s.c + d.enClientes }), { l: 0, v: 0, c: 0 });
+  $('tabla-stock').innerHTML = !lista.length ? `<tbody><tr><td class="ayuda">No hay depósitos de CO₂ en ${esc(textoFiltro())}.</td></tr></tbody>` :
+    '<thead><tr><th>Depósito</th><th>Carga</th><th>Llenos</th><th>Vacíos</th><th>En clientes</th><th>Total</th></tr></thead><tbody>' +
+    lista.map(d => `<tr class="${d.inexistente ? 'mal' : ''}"><td>${esc(d.nombre)}</td><td>${esc(cargaTxt(d.pesoKg))}</td><td>${d.llenos}</td><td>${d.vacios}</td><td>${d.enClientes}</td><td><strong>${d.llenos + d.vacios + d.enClientes}</strong></td></tr>`).join('') +
+    `<tr><td><strong>Total</strong></td><td></td><td><strong>${t.l}</strong></td><td><strong>${t.v}</strong></td><td><strong>${t.c}</strong></td><td><strong>${t.l + t.v + t.c}</strong></td></tr></tbody>`;
+}
+/* El saldo con LINDE necesita los circuitos: se pide al abrir Consultas y queda hasta el próximo guardado. */
+async function cargarSaldo() {
+  if (S.saldo || S._pidiendoSaldo) return pintarSaldoLinde();
+  S._pidiendoSaldo = true;
+  try { S.saldo = await llamar('apiSaldoLinde'); } catch (e) { $('tabla-linde').innerHTML = `<tbody><tr><td class="nota err">${esc(e.message)}</td></tr></tbody>`; }
+  S._pidiendoSaldo = false;
+  pintarSaldoLinde();
+}
+function pintarSaldoLinde() {
+  if (!S.saldo) return;
+  const a = S._alcance || alcance(), en = id => a.todo || a.depositos.has(id);
+  const r = { filas: S.saldo.filas.filter(f => en(f.depositoId)), series: S.saldo.series.filter(x => en(x.depositoId)) };
+  const t = r.filas.reduce((s, f) => ({ r: s.r + f.recibidos, i: s.i + f.inicial, d: s.d + f.devueltos, p: s.p + f.enPoder }), { r: 0, i: 0, d: 0, p: 0 });
+  $('tabla-linde').innerHTML = '<thead><tr><th>Depósito</th><th>Carga</th><th>Recibidos por remito</th><th>Inventario inicial</th><th>Devueltos</th><th>En nuestro poder</th></tr></thead><tbody>' +
+    r.filas.map(f => `<tr class="${f.inexistente ? 'mal' : ''}"><td>${esc(f.nombre)}</td><td>${esc(cargaTxt(f.pesoKg))}</td><td>${f.recibidos}</td><td>${f.inicial}</td><td>${f.devueltos}</td><td><strong>${f.enPoder}</strong></td></tr>`).join('') +
+    `<tr><td><strong>Total</strong></td><td></td><td><strong>${t.r}</strong></td><td><strong>${t.i}</strong></td><td><strong>${t.d}</strong></td><td><strong>${t.p}</strong></td></tr></tbody>`;
+  const lista = r.series;
+  $('tabla-linde-series').innerHTML = !lista.length ? '<tbody><tr><td class="ayuda">No hay cilindros de LINDE en nuestro poder.</td></tr></tbody>' :
+    '<thead><tr><th>Serie</th><th>Carga</th><th>Depósito</th><th>Dónde está</th><th>Estado</th><th>Recibido el</th><th>Remito LINDE</th><th>Días</th></tr></thead><tbody>' +
+    lista.map(x => `<tr class="${x.inexistente ? 'mal' : ''}"><td class="mono"><a href="#" onclick="verSerie('${esc(x.serie)}');return false">${esc(x.serie)}</a></td><td>${esc(cargaTxt(x.pesoKg))}</td><td>${esc(x.deposito)}</td><td>${esc(x.ubicacion)}</td><td>${esc(x.estado)}</td><td>${esc(fechaTxt(x.desde))}</td><td class="mono">${esc(x.remito)}</td><td>${x.dias}</td></tr>`).join('') + '</tbody>';
+}
+async function fichaSerie() {
+  const s = norm($('q-serie').value);
+  if (!s) return;
+  ocupado('Buscando…');
+  try {
+    const f = await llamar('apiFichaSerie', s);
+    if (!f.existe) { $('ficha-serie').innerHTML = `<div class="nota adv">La serie ${esc(s)} no tiene movimientos registrados.</div>`; libre(); return; }
+    const e = f.estado || { estado: '', ubicacion: 'Sin movimientos vigentes', depOrigen: '—' };
+    $('ficha-serie').innerHTML = `
+      <div class="metricas" style="margin-top:12px">
+        <div class="metrica"><div class="t">Estado</div><div class="n" style="font-size:18px">${esc(estadoTxt(e.estado))}</div></div>
+        <div class="metrica"><div class="t">Ubicación</div><div class="n" style="font-size:18px">${esc(e.ubicacion)}</div></div>
+        <div class="metrica"><div class="t">Carga</div><div class="n" style="font-size:18px">${esc(cargaTxt(e.pesoKg))}</div></div>
+        <div class="metrica"><div class="t">Origen del circuito</div><div class="n" style="font-size:18px">${esc(e.depOrigen)}</div></div>
+        <div class="metrica"><div class="t">Circuitos</div><div class="n">${f.circuitos.length}</div></div>
+      </div>
+      <h3>Historial</h3>
+      <div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>Movimiento</th><th>Desde</th><th>Hacia</th><th>Estado</th><th>Circuito</th><th>Operación</th></tr></thead><tbody>
+      ${f.movimientos.map(m => `<tr style="${m.anulado ? 'text-decoration:line-through;color:#8a95a3' : ''}"><td>${fechaTxt(m.fecha)}</td><td>${esc(m.tipoMov.replace(/_/g, ' ').toLowerCase())}</td><td>${esc(m.origen)}</td><td>${esc(m.destino)}</td><td>${esc(estadoTxt(m.estadoNuevo))}</td><td class="mono">${esc(m.idCircuito)}</td><td class="mono">${esc(m.refId)}${m.anulado ? ' (anulado)' : ''}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+async function fichaCliente() {
+  const id = $('q-cliente').value;
+  if (!id) { $('ficha-cliente').innerHTML = ''; return; }
+  ocupado('Buscando…');
+  try {
+    const f = await llamar('apiFichaCliente', id);
+    $('ficha-cliente').innerHTML = `
+      <div class="nota info">${esc(f.cliente.nombre)} tiene hoy <strong>${f.series.length}</strong> cilindro(s)${f.series.length ? ': <span class="mono">' + esc(f.series.join(', ')) + '</span>' : '.'}</div>
+      <h3>Últimos trabajos</h3>
+      ${f.trabajos.length ? `<div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Entregadas</th><th>Retiradas</th><th>Estado</th></tr></thead><tbody>
+      ${f.trabajos.map(t => `<tr><td>${fechaTxt(t.fecha)}</td><td>${esc(TIPO_TXT[t.tipo] || t.tipo)}</td><td class="mono">${esc(t.entregadas)}</td><td class="mono">${esc(t.retiradas)}</td><td>${esc(t.estado)}</td></tr>`).join('')}
+      </tbody></table></div>` : '<p class="vacio">Sin trabajos registrados.</p>'}`;
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+
+/* ======================================================================
+ *  Revisión: inconsistencias, últimas operaciones, anulación
+ * ==================================================================== */
+async function cargarRevision() {
+  try {
+    const [inc, rec, al] = await Promise.all([llamar('apiInconsistencias'), llamar('apiRecientes'), llamar('apiAlertas')]);
+    pintarAlertas(al);
+    $('inconsistencias').innerHTML = inc.length ? inc.map(i => `<div class="lote-item"><div class="cab"><strong class="mono">${esc(i.id)} · ${esc(i.codigo)}</strong>
+      <button class="chico solo-carga" onclick="resolverInc('${esc(i.id)}')">Marcar resuelta</button></div>
+      <div class="ayuda" style="margin:4px 0 0">${esc(i.detalle)}${i.ref ? ' · Operación ' + esc(i.ref) : ''}</div></div>`).join('') : '<p class="vacio">No hay inconsistencias abiertas.</p>';
+    $('recientes').innerHTML = '<thead><tr><th>Operación</th><th>Fecha</th><th>Detalle</th><th>Estado</th><th>Cargó</th><th></th></tr></thead><tbody>' +
+      (rec.map(o => `<tr><td class="mono">${esc(o.id)}<div class="ayuda" style="margin:0">${esc(o.clase)}</div></td><td>${fechaTxt(o.fecha)}</td><td style="font-size:13px">${esc(o.detalle)}${o.url ? ` · <a href="${esc(o.url)}" target="_blank">documento</a>` : ''}</td>
+        <td>${esc(o.estado)}</td><td style="font-size:12.5px">${esc(o.por)}</td>
+        <td>${o.estado !== 'CONFIRMADO' ? '' : /^OT-/.test(o.id) ? '<span class="ayuda" style="margin:0">Se anula con la OT, en la app</span>' : `<button class="chico solo-admin" onclick="anular('${esc(o.id)}')">Anular</button>`}</td></tr>`).join('') || '<tr><td colspan="6" class="vacio">Sin operaciones.</td></tr>') + '</tbody>';
+  } catch (e) { aviso(e.message, 'err'); }
+}
+const ALERTA_TXT = { DEPOSITO_INEXISTENTE: 'Depósito de origen inexistente', CLIENTE_INEXISTENTE: 'Cliente inexistente',
+  CILINDRO_INMOVILIZADO: 'Inmovilizados en cliente', VACIO_SIN_DEVOLVER: 'Vacíos sin devolver a LINDE' };
+function pintarAlertas(r) {
+  const lim = { CILINDRO_INMOVILIZADO: r.diasCliente, VACIO_SIN_DEVOLVER: r.diasVacio };
+  $('alertas').innerHTML = Object.keys(ALERTA_TXT).map(cod => {
+    const siempre = !(cod in lim);
+    const lista = r.alertas.filter(a => a.codigo === cod);
+    if (siempre && !lista.length) return ''; // las referencias rotas solo se muestran si hay casos
+    if (!siempre && !lim[cod]) return `<div class="alerta-grupo"><h3>${ALERTA_TXT[cod]} <span class="insignia pend">apagado</span></h3></div>`;
+    return `<div class="alerta-grupo"><h3>${ALERTA_TXT[cod]} <span class="insignia ${siempre ? 'err' : lista.length ? 'adv' : 'ok'}">${lista.length}</span>
+      <span class="ayuda" style="margin:0;font-weight:400">${siempre ? 'se cambió o borró en las hojas maestras' : 'más de ' + lim[cod] + ' días'}</span></h3>
+      ${siempre ? `<div class="nota err">${lista.map(a => esc(a.mensaje)).join('<br>')}</div>` : ''}
+      ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Serie</th><th>Dónde</th><th>Desde</th><th>Días</th><th></th></tr></thead><tbody>
+      ${lista.map(a => `<tr><td class="mono">${esc(a.serie)}</td><td>${esc(a.ubicacion)}</td><td>${fechaTxt(a.desde)}</td><td><strong>${a.dias || '—'}</strong></td>
+        <td><button class="chico" onclick="verSerie('${esc(a.serie)}')">Ver ficha</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="vacio">Sin casos.</p>'}</div>`;
+  }).join('');
+}
+function verSerie(s) { mostrarPanel('p-consulta'); $('q-serie').value = s; fichaSerie(); }
+async function resolverInc(id) {
+  const txt = prompt('¿Cómo se resolvió ' + id + '?');
+  if (!txt) return;
+  ocupado('Guardando…');
+  try { await llamar('apiResolverInconsistencia', id, txt); aviso('Marcada como resuelta.'); await cargarRevision(); } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+async function anular(id) {
+  const motivo = prompt('Vas a anular ' + id + '. Sus movimientos dejan de contar y el estado de las series se recalcula.\n\nEscribí el motivo:');
+  if (!motivo) return;
+  ocupado('Anulando…');
+  try {
+    const r = await llamar('apiAnular', id, motivo);
+    if (!r.ok) aviso(r.errores.map(e => e.mensaje).join(' '), 'err');
+    else { aviso(r.mensaje); await recargar(); await cargarRevision(); }
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+
+/* ======================================================================
+ *  Inventario inicial (administradores)
+ * ==================================================================== */
+function altaUbicacion() {
+  const cli = $('alta-ubic').value === 'CLIENTE';
+  $('alta-cliente-bloque').style.display = cli ? '' : 'none';
+  $('alta-estado-bloque').style.display = cli ? 'none' : '';
+}
+function agregarAltas() {
+  const fecha = $('alta-fecha').value, dep = $('alta-deposito').value, ubic = $('alta-ubic').value, pesoKg = Number($('alta-carga').value);
+  const idCliente = ubic === 'CLIENTE' ? $('alta-cliente').value : '';
+  const series = $('alta-series').value.split(/[\s,;]+/).map(norm).filter(Boolean);
+  if (!fecha || !dep || !pesoKg) return aviso('Completá fecha, depósito de origen y carga.', 'err');
+  if (ubic === 'CLIENTE' && !idCliente) return aviso('Elegí el cliente.', 'err');
+  if (!series.length) return aviso('Cargá al menos una serie.', 'err');
+  const estado = ubic === 'CLIENTE' ? 'EN_USO' : $('alta-estado').value;
+  series.forEach(serie => S.altas.push({ clase: 'ALTA', datos: { fecha, serie, pesoKg, idDepositoOrigen: dep, ubicacion: ubic, idCliente, estado } }));
+  $('alta-series').value = '';
+  altasCambio();
+}
+function altasCambio() {
+  S.altasValidado = false; $('btn-guardar-altas').disabled = true; guardarPendiente();
+  $('altas-cant').textContent = S.altas.length;
+  $('altas').innerHTML = S.altas.length ? '<div class="tabla-scroll"><table><thead><tr><th>Serie</th><th>Carga</th><th>Origen</th><th>Ubicación</th><th>Estado</th><th></th></tr></thead><tbody>' +
+    S.altas.map((a, i) => { const d = a.datos, c = d.idCliente && cliente(d.idCliente);
+      return `<tr><td class="mono">${esc(d.serie)}</td><td>${d.pesoKg} kg</td><td>${esc(nombreDeposito(d.idDepositoOrigen))}</td><td>${d.ubicacion === 'CLIENTE' ? esc(c ? c.nombre : d.idCliente) : 'Depósito'}</td><td>${esc(estadoTxt(d.estado))}</td>
+      <td><button class="chico" onclick="S.altas.splice(${i},1);altasCambio()">✕</button></td></tr>`; }).join('') + '</tbody></table></div>' : '<p class="vacio">Sin altas.</p>';
+}
+async function validarAltas() {
+  if (!S.altas.length) return;
+  ocupado('Validando…');
+  try {
+    const r = await llamar('apiValidar', S.altas.map(o => ({ clase: o.clase, datos: o.datos })));
+    // Las altas siempre traen el aviso "sin remito"; solo se muestran los errores.
+    const soloErrores = r.resultados.map(x => ({ errores: x.errores, advertencias: [] }));
+    $('altas-resultado').innerHTML = htmlResultados(soloErrores, i => S.altas[i].datos.serie);
+    S.altasValidado = r.ok; $('btn-guardar-altas').disabled = !r.ok;
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+async function guardarAltas() {
+  if (!S.altasValidado) return;
+  ocupado('Guardando…');
+  try {
+    const r = await llamar('apiConfirmar', S.altas.map(o => ({ clase: o.clase, datos: o.datos })));
+    if (!r.ok) { $('altas-resultado').innerHTML = htmlResultados(r.resultados, i => S.altas[i].datos.serie); S.altasValidado = false; $('btn-guardar-altas').disabled = true; libre(); return; }
+    aviso(r.mensaje); S.altas = []; altasCambio(); $('altas-resultado').innerHTML = '';
+    aplicarCilindros(r.cilindros);
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+
+altasCambio();
+exigirSesion().then(() => { recargar(); botonExcel(() => document.querySelector('section.panel.activo'), () => 'FADEFIL CO2 ' + ((document.querySelector('nav button.activo') || {}).textContent || '')); })
+  .catch(e => { if (e.message !== 'SIN_SESION') $('error-global').innerHTML = `<div class="nota err">${esc(e.message)}</div>`; });
+</script>
+</body>
+</html>

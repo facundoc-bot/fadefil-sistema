@@ -4,9 +4,15 @@
   "type": "module",
   "description": "Sistema FADEFIL: pruebas del motor de reglas y de la función del servidor.",
   "scripts": {
-    "test": "bash tests/db/probar.sh"
+    "test": "bash tests/db/probar.sh",
+    "librerias": "node scripts/copiar_librerias.mjs"
   },
   "devDependencies": {
     "postgres": "3.4.7"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.119.2",
+    "exceljs": "4.4.0",
+    "pdfjs-dist": "4.10.38"
   }
 }

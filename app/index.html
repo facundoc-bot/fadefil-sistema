@@ -1,0 +1,2058 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E💧%3C/text%3E%3C/svg%3E">
+<script src="lib/supabase.js"></script>
+<script src="config.js"></script>
+<script src="comun.js"></script>
+<title>Sistema FADEFIL</title>
+<style>
+  :root {
+    --tinta: #16212e; --suave: #5a6878; --linea: #d9e0e8; --fondo: #f4f6f9; --tarjeta: #ffffff;
+    --marca: #1f3a5f; --marca-2: #2f5d8f; --ok: #1e7a4c; --ok-f: #e6f4ec; --adv: #8a5a00; --adv-f: #fff4dc;
+    --err: #a3261f; --err-f: #fde9e7; --radio: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--tinta); background: var(--fondo); }
+  header { background: var(--marca); color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  header .filtros { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  header .filtros label { color: #cfdbe8; margin: 0; }
+  header .filtros select { width: auto; min-width: 120px; padding: 6px 8px; font-weight: 600; background: #fff2cc; border-color: #fff2cc; }
+  header .usuario { margin-left: auto; font-size: 13px; opacity: .9; }
+  header button { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.5); }
+  nav { display: flex; gap: 4px; padding: 8px 12px 0; background: var(--marca); overflow-x: auto; }
+  nav button { background: transparent; color: #cfdbe8; border: 0; border-radius: 8px 8px 0 0; padding: 10px 14px; font-weight: 600; white-space: nowrap; }
+  nav button.activo { background: var(--fondo); color: var(--marca); }
+  nav a.nav-enlace { color: #cfdbe8; padding: 10px 14px; font-weight: 600; white-space: nowrap; text-decoration: none; }
+  nav a.nav-enlace:hover { color: #fff; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  section.panel { display: none; } section.panel.activo { display: block; }
+  .tarjeta { background: var(--tarjeta); border: 1px solid var(--linea); border-radius: var(--radio); padding: 16px; margin-bottom: 14px; }
+  .tarjeta h2 { font-size: 16px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; } .tarjeta h3 { font-size: 14px; margin: 14px 0 6px; }
+  .ayuda { color: var(--suave); font-size: 13px; margin: 0 0 12px; }
+  .fila { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .ancho2 { grid-column: span 2; } @media (max-width: 600px) { .ancho2 { grid-column: auto; } }
+  label { display: block; font-size: 12.5px; font-weight: 600; color: var(--suave); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .3px; }
+  input, select, textarea { width: 100%; font: inherit; padding: 9px 10px; border: 1px solid var(--linea); border-radius: 8px; background: #fff; color: var(--tinta); }
+  input[readonly] { background: #eef1f4; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--marca-2); outline-offset: -1px; }
+  textarea { min-height: 54px; resize: vertical; }
+  button { font: inherit; font-weight: 600; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--linea); background: #fff; color: var(--tinta); cursor: pointer; }
+  button.primario { background: var(--marca); border-color: var(--marca); color: #fff; }
+  button.exito { background: var(--ok); border-color: var(--ok); color: #fff; }
+  button.alerta { background: var(--adv); border-color: var(--adv); color: #fff; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.chico { padding: 4px 9px; font-size: 13px; }
+  button.link { border: 0; background: none; padding: 0; color: var(--marca); font-weight: 600; text-decoration: underline; cursor: pointer; font-size: inherit; }
+  .acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+  .segmentado { display: flex; flex-wrap: wrap; gap: 6px; }
+  .segmentado button { padding: 7px 11px; font-size: 14px; }
+  .segmentado button.activo { background: var(--marca); border-color: var(--marca); color: #fff; }
+  .selector { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; gap: 8px; }
+  @media (max-width: 600px) { .selector { grid-template-columns: 1fr; } }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 38px; padding: 6px; border: 1px solid var(--linea); border-radius: 8px; background: #fff; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: #e8eef5; color: var(--marca); border-radius: 999px; padding: 3px 10px; font-weight: 600; font-size: 13px; }
+  .chip button { border: 0; background: transparent; padding: 0 2px; color: var(--suave); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .3px; color: var(--suave); border-bottom: 1px solid var(--linea); padding: 6px; }
+  td { border-bottom: 1px solid var(--linea); padding: 6px; vertical-align: middle; }
+  td input, td select { padding: 6px 8px; }
+  tr.clic { cursor: pointer; } tr.clic:hover td { background: #f0f4f9; }
+  tr.mal td { background: var(--err-f); } tr.neg td.n { color: var(--err); font-weight: 700; }
+  .tabla-scroll { overflow-x: auto; }
+  .mono { font-family: ui-monospace, Menlo, monospace; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .nota { border-radius: 8px; padding: 10px 12px; margin: 10px 0; font-size: 14px; }
+  .nota.err { background: var(--err-f); color: var(--err); } .nota.adv { background: var(--adv-f); color: var(--adv); }
+  .nota.ok { background: var(--ok-f); color: var(--ok); } .nota.info { background: #e8eef5; color: var(--marca); }
+  .nota ul { margin: 6px 0 0 18px; padding: 0; }
+  .lote-item { border: 1px solid var(--linea); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: #fff; }
+  .lote-item .cab { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .lote-item .cab strong { flex: 1; }
+  .insignia { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .insignia.ok { background: var(--ok-f); color: var(--ok); } .insignia.err { background: var(--err-f); color: var(--err); }
+  .insignia.pend { background: #eef1f4; color: var(--suave); } .insignia.adv { background: var(--adv-f); color: var(--adv); }
+  .metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .metrica { background: #fff; border: 1px solid var(--linea); border-radius: var(--radio); padding: 12px; }
+  .metrica .n { font-size: 26px; font-weight: 700; } .metrica .t { font-size: 12.5px; color: var(--suave); }
+  .metrica.err .n { color: var(--err); } .metrica.adv .n { color: var(--adv); }
+  .info-cliente { background: #f7f9fb; border: 1px solid var(--linea); border-radius: 8px; padding: 10px 12px; font-size: 14px; margin-bottom: 12px; }
+  .info-cliente .gris { color: var(--suave); }
+  .datos { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; font-size: 14px; }
+  .datos div span { display: block; font-size: 12px; color: var(--suave); text-transform: uppercase; letter-spacing: .3px; }
+  .vacio { color: var(--suave); font-style: italic; }
+  .sem-Vencido { color: var(--err); font-weight: 700; } .sem-Próximo { color: var(--adv); font-weight: 700; } .sem-Al { color: var(--ok); }
+  #ocupado { position: fixed; inset: 0; background: rgba(22,33,46,.35); display: none; align-items: center; justify-content: center; z-index: 10; }
+  #ocupado div { background: #fff; padding: 18px 22px; border-radius: var(--radio); font-weight: 600; box-shadow: 0 8px 30px rgba(0,0,0,.15); }
+  #aviso { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: 92vw; display: none; z-index: 11; }
+  .solo-admin, .solo-carga { display: none !important; }
+  body.rol-ADMIN .solo-admin, body.rol-ADMIN .solo-carga, body.rol-CARGA .solo-carga { display: revert !important; }
+  @media (max-width: 600px) { main { padding: 10px; } .tarjeta { padding: 12px; } }
+  /* Listas con buscador */
+  .buscador { position: absolute; z-index: 1000; background: #fff; border: 1px solid #b9c4d2; border-radius: 8px; box-shadow: 0 8px 24px rgba(20, 40, 70, .18); padding: 6px; }
+  .buscador input { margin: 0 0 6px; }
+  .buscador .opciones { max-height: 300px; overflow-y: auto; }
+  .buscador .op { padding: 6px 8px; border-radius: 5px; cursor: pointer; font-size: 14px; }
+  .buscador .op.activa { background: #e3ecf7; }
+  .buscador .op.elegida { font-weight: 600; }
+  .buscador .op.dis { color: #9aa5b1; cursor: default; }
+  .buscador .grupo { padding: 6px 8px 2px; font-size: 12px; font-weight: 700; color: #5f6b7a; text-transform: uppercase; }
+  .buscador .vacio { padding: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>FADEFIL · Clientes</h1>
+  <div class="filtros">
+    <label for="f-region">Región</label><select id="f-region" onchange="cambiarFiltro('region')"></select>
+    <label for="f-plaza">Plaza</label><select id="f-plaza" onchange="cambiarFiltro('plaza')"></select>
+    <label for="f-zona">Zona</label><select id="f-zona" onchange="cambiarFiltro('zona')"></select>
+  </div>
+  <span class="usuario" id="usuario">Cargando…</span>
+  <button class="chico alerta" id="sin-guardar" style="display:none" onclick="irASinGuardar()" title="Hay trabajo cargado en la app que todavía no se guardó"></button>
+  <button class="chico" onclick="recargar()" title="Vuelve a traer los datos. No borra lo que tengas sin guardar.">Actualizar datos</button>
+  <button class="chico" onclick="salir()" title="Cerrar la sesión en este dispositivo">Salir</button>
+</header>
+<nav id="pestanas">
+  <button data-panel="p-inicio">Inicio</button>
+  <button data-panel="p-ot" class="solo-carga">Nueva OT</button>
+  <button data-panel="p-envios" class="solo-carga">Envíos</button>
+  <button data-panel="p-revision" class="solo-carga">Revisión</button>
+  <button data-panel="p-reparacion" class="solo-carga">Reparación</button>
+  <button data-panel="p-stock">Stock</button>
+  <button data-panel="p-clientes">Clientes</button>
+  <button data-panel="p-maquinas">Máquinas</button>
+  <a id="nav-co2" class="nav-enlace" href="co2.html" style="display:none" title="Remitos de LINDE, inventario inicial y consultas de cilindros">CO₂ ↗</a>
+  <button data-panel="p-tecnicos">Técnicos</button>
+  <button data-panel="p-admin" class="solo-admin">Administración</button>
+  <a class="nav-enlace solo-admin" href="datos.html" title="Depósitos, plazas, zonas, técnicos, usuarios, catálogo y carga masiva">Datos ↗</a>
+</nav>
+
+<main>
+  <div id="error-global"></div>
+  <div id="borrador-aviso"></div>
+
+  <!-- ============================ INICIO ============================ -->
+  <section class="panel" id="p-inicio">
+    <div class="metricas" id="ini-metricas"></div>
+    <div class="tarjeta">
+      <h2>Mantenimientos vencidos y próximos</h2>
+      <p class="ayuda">Ordenados por fecha. "Trabajos a realizar" es lo que hay que indicarle al técnico (pendientes de la última visita; los filtros se suman más adelante).</p>
+      <div class="tabla-scroll"><table id="ini-mant"></table></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Máquinas a revisar</h2>
+      <div class="tabla-scroll"><table id="ini-taller"></table></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Envíos en camino</h2>
+      <div class="tabla-scroll"><table id="ini-envios"></table></div>
+    </div>
+  </section>
+
+  <!-- ============================ NUEVA OT ============================ -->
+  <section class="panel" id="p-ot">
+    <div class="tarjeta">
+      <h2>Nueva OT</h2>
+      <p class="ayuda">Cargá el trabajo según lo que informó el técnico y agregalo a la lista. Podés sumar varias OT y guardarlas juntas. Los clientes nuevos se dan de alta en la instalación.</p>
+      <div class="fila">
+        <div><label for="ot-fecha">Fecha del trabajo</label><input type="date" id="ot-fecha" onchange="otCambio()"></div>
+        <div class="ancho2" id="ot-cliente-bloque"><label for="ot-cliente">Cliente</label>
+          <div class="selector"><input id="ot-cliente-filtro" placeholder="Buscar nombre o ID…" aria-label="Buscar cliente" oninput="filtrarClientesOT()"><select id="ot-cliente" onchange="clienteOTElegido()"></select></div></div>
+        <div><label for="ot-persat">N° OT Persat</label><input id="ot-persat" placeholder="Opcional"></div>
+      </div>
+      <div id="ot-cliente-info"></div>
+      <div style="margin-bottom:12px">
+        <label>Tipo de trabajo</label>
+        <div class="segmentado" id="ot-tipos"></div>
+      </div>
+      <div id="ot-campos"></div>
+      <div id="ot-co2"></div>
+      <div id="ot-items-bloque">
+      <h3>Ítems <span class="ayuda" style="font-weight:400;text-transform:none" id="ot-items-ayuda"></span></h3>
+      <div class="tabla-scroll"><table id="ot-items"></table></div>
+      <div class="acciones">
+        <button class="chico" onclick="agregarItemOT()">+ Agregar ítem</button>
+        <button class="chico" id="btn-precargar" style="display:none" onclick="precargarRetiro()">Precargar lo que tiene el cliente</button>
+        <button class="chico" id="btn-precargar-rec" style="display:none" onclick="precargarRecambios()">Precargar recambios a cambiar</button>
+      </div>
+      </div>
+      <div class="acciones"><button class="primario" onclick="agregarOTALista()">Agregar a la lista</button>
+        <button onclick="otraOTMismaVisita()" title="Agrega esta OT a la lista y empieza otra para el mismo cliente, fecha y técnico (cada trabajo queda como una OT aparte)">+ Otra OT en esta visita</button>
+        <button onclick="limpiarOT()">Limpiar</button></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Lista para guardar <span id="lote-cant" class="insignia pend">0</span></h2>
+      <p class="ayuda">Se guardan todas juntas y en orden. "Guardar todo" valida y guarda en un solo paso; si una tiene un error, no se guarda ninguna: corregila o quitala y volvé a guardar. "Validar" sirve para revisar sin guardar.</p>
+      <div id="lote"></div>
+      <div id="lote-resultado"></div>
+      <div class="acciones">
+        <button class="primario" onclick="validarLote()">Validar lista</button>
+        <button class="exito" id="btn-guardar-lote" disabled onclick="guardarLote(false)">Guardar todo</button>
+        <button class="alerta" id="btn-guardar-lote-adv" style="display:none" onclick="guardarLote(true)">Guardar igual (acepto los avisos)</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ ENVÍOS ============================ -->
+  <section class="panel" id="p-envios">
+    <div class="tarjeta">
+      <h2>Nuevo envío</h2>
+      <p class="ayuda">Los envíos salen del depósito central (CABA). Para devolver algo al central (retorno), elegí como origen el depósito de la plaza. El stock suma al destino recién cuando se confirma la recepción.</p>
+      <div class="fila">
+        <div><label for="env-fecha">Fecha de despacho</label><input type="date" id="env-fecha"></div>
+        <div><label for="env-origen">Origen</label><select id="env-origen" onchange="origenEnvioCambio()"></select></div>
+        <div><label for="env-destino">Destino</label><select id="env-destino" onchange="envioCambio()"></select></div>
+        <div><label for="env-transporte">Transporte</label><input id="env-transporte" list="lista-transportes"></div>
+        <div><label for="env-guia">N° de guía o remito</label><input id="env-guia"></div>
+      </div>
+      <datalist id="lista-transportes"></datalist>
+      <h3>Ítems</h3>
+      <div class="fila">
+        <div class="ancho2"><label for="env-item">Ítem</label><select id="env-item"></select></div>
+        <div><label for="env-cant">Cantidad</label><input type="number" id="env-cant" min="1" value="1"></div>
+        <div id="env-desde-bloque" style="display:none"><label for="env-desde">Sale de</label>
+          <select id="env-desde"><option value="DISPONIBLE">Stock disponible</option><option value="PARA_CABA">Revisado para CABA</option></select></div>
+        <div style="align-self:end"><button onclick="agregarItemEnvio()">Agregar ítem</button></div>
+      </div>
+      <h3>Máquinas</h3>
+      <div class="fila"><div class="ancho2"><label for="env-serie">Agregar máquina</label><select id="env-serie" onchange="agregarSerieEnvio(this)"></select></div></div>
+      <div id="env-carrito"></div>
+      <div class="fila"><div><label for="env-coment">Comentarios</label><textarea id="env-coment"></textarea></div></div>
+      <div id="env-resultado"></div>
+      <div class="acciones">
+        <button class="exito" onclick="guardarEnvio(false)">Guardar envío</button>
+        <button class="alerta" id="btn-env-adv" style="display:none" onclick="guardarEnvio(true)">Guardar igual (acepto los avisos)</button>
+        <button onclick="limpiarEnvio()">Vaciar</button>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <h2>Envíos en camino</h2>
+      <p class="ayuda">Cuando llega, indicá la fecha y confirmá la recepción.</p>
+      <div class="tabla-scroll"><table id="env-transito"></table></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Últimos envíos recibidos</h2>
+      <div class="tabla-scroll"><table id="env-recibidos"></table></div>
+    </div>
+  </section>
+
+  <!-- ============================ REVISIÓN ============================ -->
+  <section class="panel" id="p-revision">
+    <div class="tarjeta">
+      <h2>Máquinas a revisar</h2>
+      <p class="ayuda">Toda máquina retirada de un cliente queda acá. Cerrala como Apta (pasa a Usada sin hacerle nada), Reparada (con los ítems usados), Enviar a CABA o Baja. También se cierra como Reparada desde la pestaña Reparación.</p>
+      <div class="tabla-scroll"><table id="rev-maquinas"></table></div>
+      <div id="cierre-form" style="display:none;margin-top:14px">
+        <h3 id="cierre-titulo"></h3>
+        <div class="fila">
+          <div><label for="cie-fecha">Fecha</label><input type="date" id="cie-fecha"></div>
+          <div><label for="cie-falla">Falla</label><input id="cie-falla" list="lista-fallas"></div>
+          <div class="ancho2"><label for="cie-diag">Diagnóstico / qué se hizo</label><input id="cie-diag"></div>
+          <div><label for="cie-tecnico">Técnico</label><input id="cie-tecnico" list="lista-tecnicos-dep"></div>
+        </div>
+        <label>Resultado</label>
+        <div class="segmentado" id="cie-resultado">
+          <button data-r="APTA" onclick="elegirResultado('APTA')">Apta</button>
+          <button data-r="REPARADA" onclick="elegirResultado('REPARADA')">Reparada</button>
+          <button data-r="ENVIAR_CABA" onclick="elegirResultado('ENVIAR_CABA')">Enviar a CABA</button>
+          <button data-r="BAJA" onclick="elegirResultado('BAJA')">Baja</button>
+        </div>
+        <div id="cie-items-bloque" style="display:none">
+          <h3>Ítems usados <span class="ayuda" style="font-weight:400;text-transform:none">(los mismos que en una reparación en cliente)</span></h3>
+          <div class="tabla-scroll"><table id="cie-items"></table></div>
+          <div class="acciones"><button class="chico" onclick="S.cierre.items.push({codigo:'',cantidad:1});pintarItemsCierre()">+ Agregar</button></div>
+        </div>
+        <div id="cie-resultado-nota"></div>
+        <div class="acciones">
+          <button class="exito" onclick="guardarCierre(false)">Guardar cierre</button>
+          <button class="alerta" id="btn-cie-adv" style="display:none" onclick="guardarCierre(true)">Guardar igual (acepto los avisos)</button>
+          <button onclick="cerrarFormCierre()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <h2>Ingreso manual a revisión</h2>
+      <p class="ayuda">Para una máquina que está en el depósito y se detecta con falla (no viene de una OT).</p>
+      <div class="fila">
+        <div><label for="ing-fecha">Fecha</label><input type="date" id="ing-fecha"></div>
+        <div><label for="ing-serie">Máquina</label><select id="ing-serie"></select></div>
+        <div class="ancho2"><label for="ing-falla">Falla</label><input id="ing-falla" list="lista-fallas"></div>
+      </div>
+      <div class="acciones"><button class="primario" onclick="guardarIngreso()">Ingresar a revisión</button></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Ítems retirados a revisar</h2>
+      <p class="ayuda">Cada retiro con su cliente, fecha y OT. Indicá cuánto queda disponible para otra instalación, cuánto vuelve a CABA y cuánto se descarta (lo descartado sale del stock). Lo que no completes queda a revisar.</p>
+      <div class="fila" style="max-width:260px"><div><label for="revi-fecha">Fecha de la revisión</label><input type="date" id="revi-fecha"></div></div>
+      <div id="rev-items"></div>
+    </div>
+    <datalist id="lista-fallas"></datalist>
+    <datalist id="lista-tecnicos-dep"></datalist>
+  </section>
+
+  <!-- ============================ REPARACIÓN EN DEPÓSITO ============================ -->
+  <section class="panel" id="p-reparacion">
+    <div class="tarjeta">
+      <h2>Reparación en depósito</h2>
+      <p class="ayuda">Para una máquina que está en un depósito (también el central), esté o no a revisar. Los ítems son los mismos que en una reparación en cliente (insumos, repuestos, filtros y recambio) y salen del stock del depósito. Queda en el historial de la máquina. Si la máquina estaba a revisar, su revisión se cierra como Reparada.</p>
+      <div class="fila">
+        <div><label for="rep-fecha">Fecha</label><input type="date" id="rep-fecha"></div>
+        <div class="ancho2"><label for="rep-serie">Máquina</label><select id="rep-serie" onchange="repSerieCambio()"></select></div>
+        <div><label for="rep-falla">Falla</label><input id="rep-falla" list="lista-fallas"></div>
+        <div><label for="rep-tecnico">Técnico</label><input id="rep-tecnico" list="lista-tecnicos-dep"></div>
+      </div>
+      <div id="rep-info"></div>
+      <div class="fila"><div><label for="rep-diag">Trabajo realizado</label><input id="rep-diag" placeholder="Qué se reparó o cambió"></div></div>
+      <h3>Ítems usados</h3>
+      <div class="tabla-scroll"><table id="rep-items"></table></div>
+      <div class="acciones"><button class="chico" onclick="S.rep.items.push({codigo:'',cantidad:1});pintarItemsRep()">+ Agregar ítem</button></div>
+      <div id="rep-resultado"></div>
+      <div class="acciones">
+        <button class="exito" onclick="guardarReparacion(false)">Guardar reparación</button>
+        <button class="alerta" id="btn-rep-adv" style="display:none" onclick="guardarReparacion(true)">Guardar igual (acepto los avisos)</button>
+        <button onclick="limpiarReparacion()">Limpiar</button>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <h2>Últimas reparaciones</h2>
+      <p class="ayuda">Reparaciones en depósito y revisiones cerradas como Reparada, con los ítems usados.</p>
+      <div class="tabla-scroll"><table id="rep-recientes"></table></div>
+    </div>
+  </section>
+
+  <!-- ============================ STOCK ============================ -->
+  <section class="panel" id="p-stock">
+    <div class="tarjeta">
+      <h2>Stock de ítems por depósito</h2>
+      <p class="ayuda">Disponible: para entregar. A revisar: retirado de clientes, sin revisar. Para CABA: revisado para devolver. En camino: en envíos todavía no recibidos.
+        Ingresos del período: envíos recibidos, ítems retirados que la revisión dejó disponibles y ajustes que suman. Salidas del período: lo entregado a clientes, lo usado en máquinas (en calle o en depósito) y los ajustes que restan (pérdida, rotura, conteo).</p>
+      <div class="fila" style="max-width:900px">
+        <div><label for="stk-cat">Categoría</label><select id="stk-cat" onchange="pintarStock()"><option value="">Todas</option></select></div>
+        <div><label for="stk-periodo">Período</label><select id="stk-periodo" onchange="elegirPeriodoStock()">
+          <option value="MES">Mes en curso</option><option value="MES_ANT">Mes anterior</option><option value="D30">Últimos 30 días</option>
+          <option value="ANIO">Año en curso</option><option value="HIST">Histórico (todo)</option><option value="PERS">Personalizado</option></select></div>
+        <div><label for="stk-desde">Desde</label><input type="date" id="stk-desde" onchange="$('stk-periodo').value='PERS';pintarStock()"></div>
+        <div><label for="stk-hasta">Hasta</label><input type="date" id="stk-hasta" onchange="$('stk-periodo').value='PERS';pintarStock()"></div>
+      </div>
+      <div id="stk-salidas-resumen"></div>
+      <div class="tabla-scroll"><table id="stk-items"></table></div>
+    </div>
+    <div class="tarjeta" id="mov-item-tarjeta">
+      <h2>Movimientos de un ítem</h2>
+      <p class="ayuda">Cada ingreso y salida del ítem en Disponible, A revisar y Para CABA, con el saldo después de cada movimiento por depósito. Usa el período y la plaza de arriba. También se abre tocando un ítem en la tabla de stock.</p>
+      <div class="fila" style="max-width:520px"><div><label for="mov-item">Ítem</label><select id="mov-item" onchange="elegirMovItem(this.value)"></select></div></div>
+      <div id="mov-item-res"></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Máquinas por depósito y modelo</h2>
+      <div class="tabla-scroll"><table id="stk-maquinas"></table></div>
+    </div>
+    <div class="tarjeta solo-admin">
+      <h2>Ajuste de stock</h2>
+      <p class="ayuda">Inventario inicial y compra local suman. Pérdida y rotura descuentan (cargá la cantidad en positivo). Diferencia de conteo: positiva suma, negativa resta.
+        El saldo indica de qué parte del stock del depósito se trata: <b>Disponible</b> (lo que está para entregar, el caso normal), <b>A revisar</b> (retirado de clientes y todavía sin revisar) o <b>Para CABA</b> (revisado y apartado para devolver).</p>
+      <div class="fila">
+        <div><label for="aj-fecha">Fecha</label><input type="date" id="aj-fecha"></div>
+        <div><label for="aj-tipo">Tipo</label><select id="aj-tipo" onchange="ajTipoCambio()"></select></div>
+        <div><label for="aj-dep">Depósito</label><select id="aj-dep"></select></div>
+        <div class="ancho2"><label for="aj-item">Ítem</label><select id="aj-item"></select></div>
+        <div><label for="aj-cant" id="aj-cant-label">Cantidad</label><input type="number" id="aj-cant"></div>
+        <div><label for="aj-saldo" id="aj-saldo-label">Saldo</label><select id="aj-saldo"><option value="DISPONIBLE">Disponible (para entregar)</option><option value="A_REVISAR">A revisar (retirado, sin revisar)</option><option value="PARA_CABA">Para CABA (revisado, a devolver)</option></select></div>
+        <div class="ancho2"><label for="aj-motivo">Detalle (opcional)</label><input id="aj-motivo"></div>
+      </div>
+      <div id="aj-resultado"></div>
+      <div class="acciones"><button class="exito" onclick="guardarAjuste(false)">Guardar ajuste</button>
+        <button class="alerta" id="btn-aj-adv" style="display:none" onclick="guardarAjuste(true)">Guardar igual (acepto los avisos)</button></div>
+    </div>
+  </section>
+
+  <!-- ============================ CLIENTES ============================ -->
+  <section class="panel" id="p-clientes">
+    <div class="tarjeta">
+      <h2>Clientes <span class="insignia pend" id="cli-cant">0</span>
+</h2>
+      <p class="ayuda">Los clientes nuevos se dan de alta en Nueva OT → Instalación (Cliente nuevo).</p>
+      <div class="fila">
+        <div class="ancho2"><label for="cli-buscar">Buscar</label><input id="cli-buscar" placeholder="Nombre, ID, razón social, zona o serie…" oninput="pintarClientes()"></div>
+        <div><label for="cli-estado">Estado</label><select id="cli-estado" onchange="pintarClientes()"><option value="">Todos</option></select></div>
+      </div>
+      <div class="tabla-scroll"><table id="cli-tabla"></table></div>
+    </div>
+    <div class="tarjeta" id="cli-form" style="display:none">
+      <h2 id="cli-form-titulo">Editar cliente</h2>
+      <div class="fila">
+        <div><label for="cf-id">ID (Persat)</label><input id="cf-id" class="mono"></div>
+        <div class="ancho2"><label for="cf-nombre">Nombre de fantasía</label><input id="cf-nombre"></div>
+        <div class="ancho2"><label for="cf-razon">Razón social / CUIT</label><input id="cf-razon" list="lista-razones"></div>
+        <div><label for="cf-sector">Sector / puesto</label><input id="cf-sector" placeholder="Salón, cocina…"></div>
+        <div><label for="cf-tipo">Tipo de cliente</label><select id="cf-tipo"></select></div>
+        <div><label for="cf-modalidad">Modalidad comercial</label><select id="cf-modalidad"></select></div>
+        <div><label for="cf-plaza">Plaza</label><select id="cf-plaza" onchange="zonasFormCliente()"></select></div>
+        <div><label for="cf-zona">Zona</label><select id="cf-zona"></select></div>
+        <div><label for="cf-frecuencia">Mantenimiento cada (días)</label><input type="number" id="cf-frecuencia" min="1" placeholder="Vacío = por defecto"></div>
+        <div class="ancho2"><label for="cf-coment">Comentarios</label><input id="cf-coment"></div>
+      </div>
+      <datalist id="lista-razones"></datalist>
+      <div class="acciones"><button class="exito" onclick="guardarCliente()">Guardar cliente</button><button onclick="$('cli-form').style.display='none'">Cancelar</button></div>
+    </div>
+    <div class="tarjeta" id="cli-ficha" style="display:none"></div>
+  </section>
+
+  <!-- ============================ MÁQUINAS ============================ -->
+  <section class="panel" id="p-maquinas">
+    <div class="tarjeta">
+      <h2>Máquinas <span class="insignia pend" id="maq-cant">0</span></h2>
+      <div class="fila">
+        <div class="ancho2"><label for="maq-buscar">Buscar</label><input id="maq-buscar" placeholder="Serie, modelo o cliente…" oninput="pintarMaquinas()"></div>
+        <div><label for="maq-estado">Estado</label><select id="maq-estado" onchange="pintarMaquinas()"><option value="">Todos</option></select></div>
+      </div>
+      <div class="tabla-scroll"><table id="maq-tabla"></table></div>
+    </div>
+    <div class="tarjeta" id="maq-ficha" style="display:none"></div>
+    <div class="tarjeta solo-carga">
+      <h2>Alta de máquinas</h2>
+      <p class="ayuda">Quedan Nuevas en su depósito inicial. Las que salen del depósito central se dan de alta ahí y después se envían.</p>
+      <div class="fila">
+        <div><label for="am-modelo">Modelo</label><select id="am-modelo"></select></div>
+        <div><label for="am-dep">Depósito inicial</label><select id="am-dep"></select></div>
+        <div><label for="am-fecha">Fecha de alta</label><input type="date" id="am-fecha"></div>
+        <div class="ancho2"><label for="am-coment">Comentarios</label><input id="am-coment"></div>
+      </div>
+      <div class="fila"><div><label for="am-series">Series (una por línea o separadas por coma)</label><textarea id="am-series" class="mono"></textarea></div></div>
+      <div class="acciones"><button class="exito" onclick="altaMaquinas()">Dar de alta</button></div>
+    </div>
+  </section>
+
+  <!-- ============================ TÉCNICOS (v1.3) ============================ -->
+  <section class="panel" id="p-tecnicos">
+    <div class="tarjeta">
+      <h2>Técnicos</h2>
+      <p class="ayuda">Trabajos de cada técnico en el período, con el filtro de región y plaza de arriba. Un trabajo hecho de a dos cuenta para los dos. <strong>Retrabajo:</strong> hubo que volver al mismo cliente por una reparación dentro de los <span id="tec-dias"></span> días siguientes (cuenta para instalaciones, mantenimientos, reparaciones y cambios de modelo). No cuentan las altas iniciales ni las OT anuladas. Tocá un técnico para ver sus trabajos.</p>
+      <div class="fila" style="max-width:640px">
+        <div><label for="tec-desde">Desde</label><input type="date" id="tec-desde"></div>
+        <div><label for="tec-hasta">Hasta</label><input type="date" id="tec-hasta"></div>
+        <div style="align-self:end"><button class="primario" onclick="cargarTecnicos()">Ver informe</button></div>
+      </div>
+      <div class="tabla-scroll"><table id="tec-tabla"></table></div>
+      <div id="tec-detalle"></div>
+    </div>
+  </section>
+
+  <!-- ============================ ADMINISTRACIÓN ============================ -->
+  <section class="panel" id="p-admin">
+    <div class="tarjeta">
+      <h2>Control</h2>
+      <p class="ayuda">Cada guardado actualiza al momento las tablas de estado (clientes, stock, máquinas, revisiones). Todas las noches el sistema rearma todo desde el registro de operaciones, lo compara con esas tablas y corrige lo que no coincida (queda anotado en Inconsistencias como "Estado corregido"), además de lo que no cierra: plazas o depósitos inexistentes, stock negativo, operaciones que dejaron de ser válidas. "Auditar ahora" hace lo mismo en el momento.
+        Los maestros (regiones, plazas, zonas, depósitos, modelos, catálogo, listas, reglas por tipo y usuarios) se editan en <a href="datos.html">Datos</a>; después de editarlos, tocá "Actualizar maestros" para que esta pantalla los tome al instante (si no, los toma sola en 10 minutos).</p>
+      <div class="acciones"><button class="primario" onclick="auditar()">Auditar ahora</button><button onclick="actualizarMaestros()">Actualizar maestros</button></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Inconsistencias abiertas</h2>
+      <div id="adm-inc"><p class="vacio">Cargando…</p></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Últimas operaciones</h2>
+      <p class="ayuda">Nada se borra. Un error se corrige anulando la operación y volviendo a cargarla. Solo se anula si ninguna operación posterior depende de ella.</p>
+      <div class="tabla-scroll"><table id="adm-recientes"></table></div>
+    </div>
+  </section>
+</main>
+
+<div id="ocupado"><div id="ocupado-texto">Procesando…</div></div>
+<div id="aviso" class="nota ok"></div>
+
+<script>
+/* ======================================================================
+ *  Estado y utilidades
+ * ==================================================================== */
+const S = {
+  ini: null, region: '', plaza: '', zona: '',
+  ot: { tipo: 'MANTENIMIENTO', idCliente: '', items: [], modoCliente: 'EXISTENTE', co2: { entregadas: [], retiradas: [] }, modalidadCo2: '' },
+  lote: [], loteValidado: false,
+  envio: { lineas: [], series: [] },
+  cierre: null,
+  rep: { items: [] },
+  reac: {}
+};
+/* Depósito central (Depósito CABA): sirve a las plazas CABA y GBA, registra ingresos y salidas sin frenar por faltantes. */
+const depCentral = () => (S.ini && S.ini.depositoCentral) || 'Depósito CABA';
+const TIPOS_ORDEN = ['INSTALACION', 'MANTENIMIENTO', 'REPARACION', 'REPARACION_BACKUP', 'CAMBIO_MODELO', 'ENTREGA_ADICIONALES', 'ENTREGA_CO2', 'DESINSTALACION_MOMENTANEA', 'DESINSTALACION', 'ALTA_INICIAL'];
+/* CO₂ (v1.1): en qué OT van cilindros (igual que el motor). Mantenimiento y reparación no llevan: se carga otra OT "Entrega de CO₂" en la misma visita. */
+const CO2_EN_OT = { ENTREGA_CO2: { entrega: true, retiro: true }, INSTALACION: { entrega: true }, DESINSTALACION_MOMENTANEA: { retiro: true }, DESINSTALACION: { retiro: true } };
+const SIN_COBRANZA = ['ALTA_INICIAL', 'INSTALACION', 'CAMBIO_MODELO', 'DESINSTALACION_MOMENTANEA', 'DESINSTALACION'];
+const MOV_TXT = { ENTREGADO: 'Entregado', RETIRADO: 'Retirado', CAMBIO: 'Cambio', NO_DEVUELTO: 'No devuelto' };
+const CAT_TXT = { INSUMO: 'Insumos', ADICIONAL: 'Adicionales', REPUESTO: 'Repuestos', FILTRO: 'Filtros', RECAMBIO_FILTRO: 'Recambio de filtros' };
+/* Qué pide cada tipo de trabajo. */
+const CAMPOS = {
+  ALTA_INICIAL: { serieIn: true, alta: true, ayuda: 'Para clientes que ya existían antes del sistema: registra su estado actual. Se usa una sola vez por ID. Los ítems y el sistema que se dejan en el cliente entran al depósito con un ajuste "Alta inicial" y salen como entrega, los dos con la fecha de instalación (no hace falta que haya stock).' },
+  INSTALACION: { serieIn: true, ayuda: 'La máquina sale del depósito de la plaza. Cargá los insumos y adicionales que quedan en el cliente (por acuerdo): quedan en comodato y se retiran al desinstalar.' },
+  MANTENIMIENTO: { ayuda: 'Reinicia el contador de mantenimiento.' },
+  REPARACION: { falla: true, ayuda: 'No reinicia el contador de mantenimiento.' },
+  REPARACION_BACKUP: { serieOut: true, serieIn: true, falla: true, ayuda: 'La máquina retirada queda A revisar en el depósito; el backup queda definitivo y reinicia el contador.' },
+  CAMBIO_MODELO: { serieOut: true, serieIn: true, ayuda: 'La retirada queda A revisar; reinicia el contador. El sistema de purificación se mantiene salvo que lo cambies. Cargá los insumos y adicionales que se entregan o retiran según el modelo nuevo: lo entregado pasa al comodato, lo retirado sale del comodato y queda A revisar.' },
+  ENTREGA_ADICIONALES: { ayuda: 'Adicionales entregados, retirados o cambiados: quedan en las líneas de la OT para cobranzas. Lo entregado es del cliente (no se pide al desinstalar); un cambio no toca el comodato. A un ex cliente o desinstalado momentáneo no se le entrega nada: solo se le retira lo pendiente.' },
+  ENTREGA_CO2: { ayuda: 'Cilindros de CO₂ por serie: entrega, retiro o recambio (las dos cosas en la misma visita). Para entregar aparecen los llenos del depósito de la plaza del cliente; para retirar, los que tiene hoy (vuelven vacíos al depósito). Solo la emergencia con costo va a cobranzas. A un ex cliente o desinstalado momentáneo solo se le retira, y a un cliente Hielogic no se le entrega.' },
+  DESINSTALACION_MOMENTANEA: { serieOut: true, ayuda: 'Pausa el mantenimiento. Registrá solo lo que efectivamente se retira: podés elegir cualquier ítem del catálogo (si no figura en el cliente, avisa al guardar) y va a revisión.' },
+  DESINSTALACION: { serieOut: 'siActivo', ayuda: 'Se precarga el comodato (lo entregado en la instalación). Cargá lo que realmente se retira, aunque sea más o menos: todo va a revisión y el faltante o lo retirado de más queda en la ficha. Los adicionales son del cliente y no se piden. Se puede retirar cualquier ítem del catálogo: si no figura en el cliente, avisa al guardar.' }
+};
+
+/* App nueva: cada pedido va a la función del servidor (mismas funciones que en Sheets). */
+function llamar(fn, ...args) { return servidor('api', { fn, args }); }
+const $ = id => document.getElementById(id);
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function norm(s) { return String(s || '').toUpperCase().replace(/\s+/g, ''); }
+function sinAcentos(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+function fechaTxt(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : (iso || ''); }
+function ocupado(txt) { $('ocupado-texto').textContent = txt || 'Procesando…'; $('ocupado').style.display = 'flex'; }
+function libre() { $('ocupado').style.display = 'none'; }
+function aviso(txt, clase) { const a = $('aviso'); a.className = 'nota ' + (clase || 'ok'); a.textContent = txt; a.style.display = 'block'; clearTimeout(a._t); a._t = setTimeout(() => a.style.display = 'none', clase === 'err' ? 7000 : 3000); }
+function errorGlobal(e) { $('error-global').innerHTML = `<div class="nota err">${esc(e.message || e)}</div>`; }
+function opciones(lista, previo, vacio) { return (vacio !== undefined ? `<option value="">${esc(vacio)}</option>` : '') + lista.map(v => `<option value="${esc(v)}"${v === previo ? ' selected' : ''}>${esc(v)}</option>`).join(''); }
+function opcionesVT(lista, previo, vacio) { return (vacio !== undefined ? `<option value="">${esc(vacio)}</option>` : '') + lista.map(x => `<option value="${esc(x.v)}"${x.v === previo ? ' selected' : ''}>${esc(x.t)}</option>`).join(''); }
+function guardarPref(k, v) { try { localStorage.setItem('fadefil.' + k, v); } catch (e) { /* sin almacenamiento: no pasa nada */ } }
+function leerPref(k) { try { return localStorage.getItem('fadefil.' + k) || ''; } catch (e) { return ''; } }
+
+/* Datos de referencia */
+function cliente(id) { return S.ini.clientes.find(c => String(c.id) === String(id)); }
+function item(cod) { return S.ini.catalogo.find(c => c.codigo === cod); }
+function nombreItem(cod) { const i = item(cod); return i ? i.descripcion : cod; }
+function plazaInfo(p) { return S.ini.plazas.find(x => x.plaza === p); }
+function nomPlaza(p) { const x = plazaInfo(p); return x ? x.nombre : (p || ''); }
+function zonaInfo(z) { return (S.ini.zonas || []).find(x => x.id === z); }
+function depInfo(d) { return S.ini.depositos.find(y => y.id === d); }
+function nomDep(d) { const x = depInfo(d); return x ? x.nombre : (d || ''); }
+function depDePlaza(p) { const x = plazaInfo(p); return x ? x.deposito : ''; }
+function plazaDeDep(d) { const x = depInfo(d); return x ? x.plaza : ''; }
+function regionDePlaza(p) { const x = plazaInfo(p); return x ? x.region : ''; }
+function plazaYZona(c) { return nomPlaza(c.plaza) + (c.zona ? ' · ' + c.zona : ''); }
+/* Filtros Región → Plaza → Zona. Lo que depende de una plaza (clientes, máquinas) o de un depósito (stock, revisión, envíos) se filtra por región y plaza; los clientes, además, por zona. */
+function enPlaza(p) {
+  if (!S.region && !S.plaza) return true;
+  if (!p) return false;
+  return (!S.region || regionDePlaza(p) === S.region) && (!S.plaza || p === S.plaza);
+}
+function enCli(c) { return !!c && enPlaza(c.plaza) && (!S.zona || c.zonaId === S.zona); }
+function enDep(d) { const x = depInfo(d); if (!S.region && !S.plaza) return true; return !!x && (x.plazas || [x.plaza]).some(enPlaza); }
+function enEnvio(e) { return enDep(e.destino) || enDep(e.origen); }
+function depositosVisibles() { return S.ini.depositos.filter(d => d.activo !== false && enDep(d.id)); }
+/* Depósito donde está una máquina (las del depósito central pueden venir marcadas 'CABA' de antes). */
+function depDeMaq(m) { return m.ubicTipo === 'DEPOSITO' ? m.ubicId : m.ubicTipo === 'CABA' ? depCentral() : ''; }
+function textoCant(mapa) { return Object.keys(mapa || {}).filter(k => mapa[k] > 0).sort().map(k => mapa[k] + ' ' + nombreItem(k)).join(', '); }
+function ubicacionTxt(m) {
+  if (m.ubicTipo === 'CLIENTE') { const c = cliente(m.ubicId); return 'Cliente ' + (c ? c.nombre + ' (' + c.id + ')' : m.ubicId); }
+  if (m.ubicTipo === 'DEPOSITO' || m.ubicTipo === 'CABA') return nomDep(depDeMaq(m));
+  if (m.ubicTipo === 'TRANSITO') return 'En camino (' + m.ubicId + ')';
+  return m.ubicTipo || '';
+}
+
+/* Errores y advertencias del motor, agrupados por operación. */
+function htmlResultados(resultados, etiqueta) {
+  let html = '', todoOk = true, hayAdv = false;
+  resultados.forEach((r, i) => {
+    const pref = etiqueta ? etiqueta(i) + ': ' : '';
+    if (r.errores.length) { todoOk = false; html += `<div class="nota err"><strong>${esc(pref)}${r.errores.length} error(es)</strong><ul>${r.errores.map(e => `<li>${esc(e.mensaje)}</li>`).join('')}</ul></div>`; }
+    if (r.advertencias.length) { hayAdv = true; html += `<div class="nota adv"><strong>${esc(pref)}Atención</strong><ul>${r.advertencias.map(e => `<li>${esc(e.mensaje)}</li>`).join('')}</ul></div>`; }
+  });
+  if (todoOk) html = `<div class="nota ok">${hayAdv ? 'Válido, con avisos: revisalos antes de guardar.' : 'Todo válido.'}</div>` + html;
+  return html;
+}
+function hayAdvertencias(r) { return r.resultados.some(x => x.advertencias.length); }
+
+/* Guarda operaciones: si hay avisos sin aceptar, los muestra y habilita "Guardar igual". */
+async function confirmarOps(ops, aceptar, destino, botonAdv, etiqueta, alResultados) {
+  ocupado('Guardando…');
+  try {
+    const r = await llamar('apiConfirmar', ops, aceptar);
+    if (!r.ok) {
+      $(destino).innerHTML = htmlResultados(r.resultados, etiqueta);
+      if (botonAdv) $(botonAdv).style.display = r.requiereConfirmacion ? '' : 'none';
+      if (alResultados) alResultados(r);
+      libre();
+      return null;
+    }
+    if (botonAdv) $(botonAdv).style.display = 'none';
+    $(destino).innerHTML = '';
+    aviso(r.mensaje);
+    // El guardado ya trae los datos actualizados: no hace falta volver a pedirlos.
+    if (r.ini) { aplicarIni(r.ini); libre(); } else await recargar();
+    return r;
+  } catch (e) { aviso(e.message, 'err'); libre(); return null; }
+}
+
+/* ======================================================================
+ *  Arranque, pestañas y plaza
+ * ==================================================================== */
+document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => mostrarPanel(b.dataset.panel)));
+
+function mostrarPanel(id) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('activo', b.dataset.panel === id));
+  document.querySelectorAll('section.panel').forEach(s => s.classList.toggle('activo', s.id === id));
+  if (id === 'p-admin') cargarAdmin();
+  if (id === 'p-stock') { refrescarMovItem(); pintarStock(); }
+}
+
+async function recargar() {
+  ocupado('Cargando datos…');
+  try {
+    aplicarIni(await llamar('apiInicio'));
+  } catch (e) { errorGlobal(e); $('usuario').textContent = 'Sin acceso'; }
+  libre();
+}
+/* Pinta la app con los datos del servidor (al abrir, o los que devuelve un guardado). */
+function aplicarIni(ini) {
+    S.ini = ini;
+    S.movItemData = null; S.movPeriodo = null; // los movimientos se vuelven a pedir con los datos nuevos
+    $('error-global').innerHTML = '';
+    document.body.className = 'rol-' + S.ini.usuario.rol;
+    $('usuario').textContent = `${S.ini.usuario.nombre} · ${S.ini.usuario.rol} · v${S.ini.version}`;
+    if (!S.filtrosListos) { S.region = leerPref('region'); S.plaza = leerPref('plaza'); S.zona = leerPref('zona'); S.filtrosListos = true; }
+    armarFiltros();
+    ['ot-fecha', 'env-fecha', 'cie-fecha', 'ing-fecha', 'revi-fecha', 'aj-fecha', 'am-fecha', 'rep-fecha'].forEach(id => { $(id).max = S.ini.hoy; if (!$(id).value) $(id).value = S.ini.hoy; });
+    $('stk-hasta').max = S.ini.hoy;
+    $('lista-transportes').innerHTML = S.ini.listas.transporte.map(t => `<option value="${esc(t)}">`).join('');
+    $('lista-fallas').innerHTML = S.ini.listas.falla.map(t => `<option value="${esc(t)}">`).join('');
+    $('cli-estado').innerHTML = '<option value="">Todos</option>' + Object.keys(S.ini.estadosCliente).map(k => `<option value="${k}">${esc(S.ini.estadosCliente[k])}</option>`).join('');
+    $('maq-estado').innerHTML = '<option value="">Todos</option>' + Object.keys(S.ini.estadosMaquina).map(k => `<option value="${k}">${esc(S.ini.estadosMaquina[k])}</option>`).join('');
+    const prevCat = $('stk-cat').value;
+    $('stk-cat').innerHTML = '<option value="">Todas</option>' + Object.keys(CAT_TXT).map(k => `<option value="${k}">${CAT_TXT[k]}</option>`).join('');
+    $('stk-cat').value = prevCat;
+    if (!$('stk-desde').dataset.listo) { $('stk-periodo').value = leerPref('stk.periodo') || 'MES'; $('stk-desde').dataset.listo = '1'; elegirPeriodoStock(true); }
+    const prevTipo = $('aj-tipo').value;
+    $('aj-tipo').innerHTML = Object.keys(S.ini.tiposAjuste).filter(k => !S.ini.tiposAjuste[k].automatico).map(k => `<option value="${k}">${esc(S.ini.tiposAjuste[k].texto)}</option>`).join('');
+    if (prevTipo) $('aj-tipo').value = prevTipo;
+    ajTipoCambio();
+    pintarTodo();
+    if (!S.borradorListo) recuperarBorrador();
+    if (!document.querySelector('nav button.activo')) mostrarPanel('p-inicio');
+}
+/* Filtros en cascada: la plaza se elige dentro de la región y la zona dentro de la plaza ("Todos" en cada nivel). */
+function armarFiltros() {
+  if (!S.ini.regiones.some(r => r.id === S.region)) S.region = '';
+  const plazas = S.ini.plazas.filter(p => !S.region || p.region === S.region);
+  if (!plazas.some(p => p.plaza === S.plaza)) S.plaza = '';
+  const zonas = S.plaza ? (S.ini.zonas || []).filter(z => z.plaza === S.plaza) : [];
+  if (!zonas.some(z => z.id === S.zona)) S.zona = '';
+  $('f-region').innerHTML = opcionesVT(S.ini.regiones.map(r => ({ v: r.id, t: r.nombre || r.id })), S.region, 'Todas');
+  $('f-plaza').innerHTML = opcionesVT(plazas.map(p => ({ v: p.plaza, t: p.nombre })), S.plaza, 'Todas');
+  $('f-zona').innerHTML = opcionesVT(zonas.map(z => ({ v: z.id, t: z.nombre })), S.zona, S.plaza ? 'Todas' : '— Elegí una plaza —');
+  $('f-zona').disabled = !S.plaza;
+  ['region', 'plaza', 'zona'].forEach(k => guardarPref(k, S[k]));
+  actualizarEnlaceCo2();
+}
+/* Sección CO₂ (depósitos y consultas): se abre con el mismo filtro. */
+function actualizarEnlaceCo2() {
+  const a = $('nav-co2'), url = S.ini && S.ini.urlApp;
+  a.style.display = url && hayCo2() ? '' : 'none';
+  if (url) a.href = url + '?' + ['region', 'plaza', 'zona'].map(k => S[k] ? k + '=' + encodeURIComponent(S[k]) : '').filter(String).join('&');
+}
+function cambiarFiltro(nivel) {
+  S[nivel] = $('f-' + nivel).value;
+  if (nivel === 'region') { S.plaza = ''; S.zona = ''; }
+  if (nivel === 'plaza') { S.zona = ''; if (S.plaza) S.region = regionDePlaza(S.plaza) || S.region; }
+  armarFiltros();
+  pintarTodo();
+}
+
+function pintarTodo() {
+  pintarInicio();
+  pintarTiposOT(); filtrarClientesOT();
+  armarEnvio(); pintarTransito();
+  pintarRevision(); pintarReparacion();
+  armarStock(); pintarStock();
+  armarFormCliente(); pintarClientes();
+  armarAltaMaquinas(); pintarMaquinas();
+  pintarLote();
+  pintarTecnicos();
+}
+
+/* ======================================================================
+ *  Inicio
+ * ==================================================================== */
+function pintarInicio() {
+  const mant = S.ini.mantenimiento.filter(m => enCli(cliente(m.id)));
+  const venc = mant.filter(m => m.semaforo === 'Vencido'), prox = mant.filter(m => m.semaforo === 'Próximo');
+  const taller = S.ini.taller.filter(t => t.estado === 'Abierta' && enDep(t.deposito));
+  const transito = S.ini.envios.filter(e => e.estado === 'EN_TRANSITO' && enEnvio(e));
+  const activos = S.ini.clientes.filter(c => c.estado === 'ACTIVO' && enCli(c)).length;
+  const negativos = S.ini.stock.filter(s => s.disponible < 0 && enDep(s.deposito) && (depInfo(s.deposito) || {}).controlaStock !== false).length;
+  const met = (n, t, cl) => `<div class="metrica ${cl || ''}"><div class="n">${n}</div><div class="t">${t}</div></div>`;
+  $('ini-metricas').innerHTML = met(activos, 'Clientes activos') + met(venc.length, 'Mantenimientos vencidos', venc.length ? 'err' : '') +
+    met(prox.length, 'Mantenimientos próximos', prox.length ? 'adv' : '') + met(taller.length, 'Máquinas a revisar') + met(transito.length, 'Envíos en camino') +
+    met(negativos, 'Ítems con stock negativo', negativos ? 'err' : '');
+  const lista = venc.concat(prox).sort((a, b) => String(a.proximo).localeCompare(String(b.proximo)));
+  $('ini-mant').innerHTML = lista.length ? '<thead><tr><th>Próximo</th><th>Días</th><th>Cliente</th><th>Plaza / zona</th><th>Serie</th><th>Trabajos a realizar</th><th></th></tr></thead><tbody>' +
+    lista.map(m => `<tr><td>${fechaTxt(m.proximo)}</td><td class="sem-${esc(m.semaforo.split(' ')[0])} num">${m.dias}</td><td>${esc(m.nombre)} <span class="mono ayuda">${esc(m.id)}</span></td>
+      <td>${esc(plazaYZona(m))}</td><td class="mono">${esc(m.serie)}</td><td>${esc(m.trabajos) || '<span class="vacio">—</span>'}</td>
+      <td><button class="chico solo-carga" onclick="otDesdeInicio('${esc(m.id)}','MANTENIMIENTO')">Cargar OT</button></td></tr>`).join('') + '</tbody>'
+    : '<tbody><tr><td class="vacio">No hay mantenimientos vencidos ni próximos.</td></tr></tbody>';
+  $('ini-taller').innerHTML = taller.length ? '<thead><tr><th>Serie</th><th>Modelo</th><th>Depósito</th><th>Desde</th><th>Días</th><th>Cliente</th><th>Tipo de OT</th><th>Falla</th></tr></thead><tbody>' +
+    taller.map(t => `<tr><td class="mono">${esc(t.serie)}</td><td>${esc(t.modelo)}</td><td>${esc(t.deposito)}</td><td>${fechaTxt(t.fecha)}</td><td class="num">${t.dias}</td><td>${esc(t.cliente)}</td><td>${esc(t.tipoOT)}</td><td>${esc(t.falla)}</td></tr>`).join('') + '</tbody>'
+    : '<tbody><tr><td class="vacio">No hay máquinas a revisar.</td></tr></tbody>';
+  $('ini-envios').innerHTML = transito.length ? '<thead><tr><th>Envío</th><th>Salió</th><th>Origen → destino</th><th>Contenido</th></tr></thead><tbody>' +
+    transito.map(e => `<tr><td class="mono">${esc(e.id)}</td><td>${fechaTxt(e.fecha)}</td><td>${esc(e.origen)} → ${esc(e.destino)}</td><td>${esc(contenidoEnvio(e))}</td></tr>`).join('') + '</tbody>'
+    : '<tbody><tr><td class="vacio">No hay envíos en camino.</td></tr></tbody>';
+}
+function contenidoEnvio(e) {
+  const p = e.lineas.map(l => l.cantidad + ' ' + l.descripcion);
+  if (e.series.length) p.push(e.series.length + ' máquina(s): ' + e.series.join(', '));
+  return p.join(', ');
+}
+function otDesdeInicio(id, tipo) {
+  mostrarPanel('p-ot');
+  $('ot-cliente-filtro').value = '';
+  filtrarClientesOT();
+  $('ot-cliente').value = id;
+  clienteOTElegido();
+  elegirTipoOT(tipo);
+}
+
+/* ======================================================================
+ *  Nueva OT
+ * ==================================================================== */
+function pintarTiposOT() {
+  $('ot-tipos').innerHTML = TIPOS_ORDEN.map(t => `<button data-tipo="${t}" class="${t === S.ot.tipo ? 'activo' : ''}${t === 'ALTA_INICIAL' ? ' solo-admin' : ''}" onclick="elegirTipoOT('${t}')">${esc(S.ini.tipos[t])}</button>`).join('');
+}
+function filtrarClientesOT() {
+  const sel = $('ot-cliente'), f = sinAcentos($('ot-cliente-filtro').value), previo = sel.value || S.ot.idCliente;
+  const reinst = S.ot.tipo === 'INSTALACION'; // reinstalación: solo clientes sin equipo
+  const lista = S.ini.clientes.filter(c => enCli(c) && (!reinst || c.estado !== 'ACTIVO') && (!f || sinAcentos([c.nombre, c.id, c.razon, c.sector, c.zona].join(' ')).includes(f)));
+  const grupos = {};
+  lista.forEach(c => { const g = (S.plaza ? '' : nomPlaza(c.plaza) + ' · ') + (c.zona || 'Sin zona'); (grupos[g] = grupos[g] || []).push(c); });
+  sel.innerHTML = `<option value="">— ${lista.length ? 'Elegí un cliente (' + lista.length + ')' : 'Ningún cliente coincide'} —</option>` +
+    Object.keys(grupos).sort().map(g => `<optgroup label="${esc(g)}">${grupos[g].map(c =>
+      `<option value="${esc(c.id)}">${esc(c.nombre)}${c.sector ? ' · ' + esc(c.sector) : ''} · ${esc(c.id)}${c.estado !== 'ACTIVO' ? ' · ' + esc(S.ini.estadosCliente[c.estado]) : ''}</option>`).join('')}</optgroup>`).join('');
+  if (lista.some(c => String(c.id) === previo)) sel.value = previo;
+  else if (lista.length === 1) sel.value = lista[0].id;
+  if (sel.value !== S.ot.idCliente) clienteOTElegido();
+}
+function clienteOTElegido() {
+  const nuevo = $('ot-cliente').value || '';
+  const otroCliente = nuevo !== S.ot.idCliente;
+  if (otroCliente) { S.ot.items = []; limpiarCo2OT(); }
+  S.ot.idCliente = nuevo;
+  if (otroCliente) precargarCo2Retiro();
+  const c = nuevo && cliente(nuevo);
+  if (!c) { $('ot-cliente-info').innerHTML = ''; pintarCamposOT(); return; }
+  const mant = S.ini.mantenimiento.find(m => m.id === c.id);
+  const enLista = S.lote.filter(o => o.datos.idCliente === c.id).length;
+  $('ot-cliente-info').innerHTML = `<div class="info-cliente"><strong>${esc(c.nombre)}</strong> <span class="mono gris">${esc(c.id)}</span> · ${esc(plazaYZona(c))} ·
+    <strong>${esc(S.ini.estadosCliente[c.estado])}</strong>${c.serie ? ' · Serie <span class="mono">' + esc(c.serie) + '</span> (' + esc(c.modelo) + ')' : ''}
+    <br><span class="gris">En comodato:</span> ${esc(textoCant(c.comodato)) || '—'} · <span class="gris">Adicionales:</span> ${esc(textoCant(c.adicionales)) || '—'}
+    ${textoCant(c.faltante) ? `<br><span class="gris">Pendiente de retirar (no lo devolvió al desinstalar):</span> <strong>${esc(textoCant(c.faltante))}</strong>` : ''}
+    ${cilindrosDelCliente(c).length ? `<br><span class="gris">Cilindros de CO₂:</span> <span class="mono">${esc(cilindrosDelCliente(c).map(x => x.serie).join(', '))}</span>` : ''}
+    ${mant ? `<br><span class="gris">Próximo mantenimiento:</span> ${fechaTxt(mant.proximo)} (<span class="sem-${esc(mant.semaforo.split(' ')[0])}">${esc(mant.semaforo)}</span>)` : ''}
+    ${c.sistema || c.prefiltro ? `<br><span class="gris">Sistema:</span> ${esc(c.sistema || '—')} · <span class="gris">Prefiltro:</span> ${esc(c.prefiltro || '—')}` : ''}
+    ${textoACambiar(c) ? `<br><span class="gris">Filtros en esta visita:</span> <strong>${esc(textoACambiar(c))}</strong>` : ''}
+    ${c.pendiente ? `<br><span class="gris">Pendiente de la última visita:</span> <strong>${esc(c.pendiente)}</strong>` : ''}
+    ${c.ultimaFechaOT ? `<br><span class="gris">Última OT:</span> ${fechaTxt(c.ultimaFechaOT)}` : ''}
+    ${enLista ? `<br><span class="sem-Próximo">Tiene ${enLista} OT en la lista sin guardar: lo de arriba todavía no las refleja.</span>` : ''}</div>`;
+  if (c.estado === 'SIN_DATOS' && S.ot.tipo !== 'INSTALACION' && S.ot.tipo !== 'ALTA_INICIAL') elegirTipoOT('INSTALACION', 'EXISTENTE');
+  else { pintarCamposOT(); if (S.ot.tipo === 'MANTENIMIENTO' && !S.ot.items.length) precargarRecambios(true); }
+}
+/* Instalación y alta inicial pueden dar de alta al cliente. Por defecto: instalación = cliente nuevo; alta inicial = cliente ya cargado. */
+const MODO_CLIENTE_DEFECTO = { INSTALACION: 'NUEVO', ALTA_INICIAL: 'EXISTENTE' };
+function esAltaCliente() { return !!MODO_CLIENTE_DEFECTO[S.ot.tipo] && S.ot.modoCliente === 'NUEVO'; }
+function elegirModoCliente(m) {
+  S.ot.modoCliente = m;
+  if (m === 'EXISTENTE') filtrarClientesOT();
+  pintarCamposOT();
+}
+/* Cliente de la OT: el elegido en la lista o, si es un alta, el que se está cargando. */
+function clienteDeLaOT() {
+  if (!esAltaCliente()) return S.ot.idCliente && cliente(S.ot.idCliente);
+  const v = id => ($(id) ? $(id).value.trim() : '');
+  return { id: v('nc-id'), nombre: v('nc-nombre'), plaza: v('nc-plaza'), zonaId: v('nc-zona'), tipoCliente: v('nc-tipo'), estado: 'SIN_DATOS', sistema: '', prefiltro: '', nuevo: true };
+}
+function elegirTipoOT(t, modo) {
+  const cambio = t !== S.ot.tipo;
+  if (cambio) { S.ot.items = []; limpiarCo2OT(); }
+  S.ot.tipo = t;
+  if (cambio || modo) S.ot.modoCliente = modo || MODO_CLIENTE_DEFECTO[t] || 'EXISTENTE';
+  document.querySelectorAll('#ot-tipos button').forEach(b => b.classList.toggle('activo', b.dataset.tipo === t));
+  if (cambio) filtrarClientesOT();
+  pintarCamposOT();
+  if (cambio && t === 'MANTENIMIENTO' && !S.ot.items.length) precargarRecambios(true);
+  if ((t === 'DESINSTALACION' || t === 'DESINSTALACION_MOMENTANEA') && S.ot.idCliente) precargarRetiro();
+  if (cambio) { precargarCo2Retiro(); pintarCo2OT(); }
+}
+function otCambio() { /* la fecha no cambia los campos */ }
+
+/* Series disponibles para instalar: Nuevas o Usadas en el depósito de la plaza del cliente, sin las ya usadas en la lista. */
+function seriesParaInstalar(c, tipo) {
+  const usadas = S.lote.map(o => o.datos.serieInstalada).filter(Boolean);
+  const dep = depDePlaza(c.plaza);
+  // Alta inicial (migración): cualquier máquina sin instalar del depósito de la plaza del cliente.
+  if (tipo === 'ALTA_INICIAL') return S.ini.maquinas.filter(m => depDeMaq(m) === dep && m.estado !== 'BAJA' && !m.ingresoAbierto && !usadas.includes(m.serie));
+  return S.ini.maquinas.filter(m => depDeMaq(m) === dep && (m.estado === 'NUEVA' || m.estado === 'USADA') && !m.ingresoAbierto && !usadas.includes(m.serie));
+}
+/* Alta inicial (migración): máquinas sin instalar de otros depósitos (o del central); al elegirlas se registra el envío. */
+function seriesDeOtrosLugares(c) {
+  const usadas = S.lote.map(o => o.datos.serieInstalada).filter(Boolean), dep = depDePlaza(c.plaza);
+  return S.ini.maquinas.filter(m => depDeMaq(m) && depDeMaq(m) !== dep && m.estado !== 'BAJA' && !m.ingresoAbierto && !usadas.includes(m.serie))
+    .sort((a, b) => String(depDeMaq(a)).localeCompare(String(depDeMaq(b))) || a.serie.localeCompare(b.serie));
+}
+function pintarCamposOT() {
+  const t = S.ot.tipo, cfg = CAMPOS[t], alta = esAltaCliente();
+  const val = id => $(id) ? $(id).value : '';
+  const prev = { serieIn: val('ot-serie-in'), falla: val('ot-falla'), tecnico: val('ot-tecnico'), tecnico2: val('ot-tecnico2'), sistema: val('ot-sistema'), prefiltro: val('ot-prefiltro'),
+    coment: val('ot-coment'), pendiente: val('ot-pendiente'), estadoIni: val('ot-estado-ini'), fInst: val('ot-f-inst'), fBase: val('ot-f-base'), fUlt: val('ot-f-ult'),
+    ncId: val('nc-id'), ncNombre: val('nc-nombre'), ncRazon: val('nc-razon'), ncSector: val('nc-sector'), ncTipo: val('nc-tipo'), ncModalidad: val('nc-modalidad'),
+    ncPlaza: $('nc-plaza') ? val('nc-plaza') : S.plaza, ncZona: $('nc-zona') ? val('nc-zona') : S.zona, ncFrec: val('nc-frec'), ncComent: val('nc-coment'),
+    serieNueva: val('ot-serie-nueva'), modeloNueva: val('ot-modelo-nueva'),
+    acc_sis: val('ot-acc-sis'), acc_pre: val('ot-acc-pre'), nd_sis: val('ot-nd-sis'), nd_pre: val('ot-nd-pre'),
+    ret_sis: $('ot-ret-sis') ? $('ot-ret-sis').checked : true, ret_pre: $('ot-ret-pre') ? $('ot-ret-pre').checked : true, fechas: {} };
+  document.querySelectorAll('#ot-campos input[data-fs-cod]').forEach(i => { prev.fechas[i.id] = i.value; });
+  $('ot-cliente-bloque').style.display = alta ? 'none' : '';
+  if (alta) $('ot-cliente-info').innerHTML = '';
+  let h = '';
+  if (MODO_CLIENTE_DEFECTO[t]) {
+    h += `<div class="segmentado" id="ot-modo-cliente" style="margin-bottom:10px">
+      <button data-m="NUEVO" class="${alta ? 'activo' : ''}" onclick="elegirModoCliente('NUEVO')">Cliente nuevo</button>
+      <button data-m="EXISTENTE" class="${alta ? '' : 'activo'}" onclick="elegirModoCliente('EXISTENTE')">${t === 'INSTALACION' ? 'Reinstalación (el cliente ya existe)' : 'Cliente ya cargado'}</button></div>`;
+  }
+  if (alta) {
+    const zonas = (S.ini.zonas || []).filter(z => z.plaza === prev.ncPlaza && z.activa !== false).map(z => ({ v: z.id, t: z.nombre }));
+    const plazasNc = S.ini.plazas.filter(p => p.activa !== false && (!S.region || p.region === S.region)).map(p => ({ v: p.plaza, t: p.nombre }));
+    h += `<h3>Datos del cliente nuevo</h3><div class="fila">
+      <div><label for="nc-id">ID (Persat)</label><input id="nc-id" class="mono" value="${esc(prev.ncId)}" oninput="revisarIdNuevo()"></div>
+      <div class="ancho2"><label for="nc-nombre">Nombre de fantasía</label><input id="nc-nombre" value="${esc(prev.ncNombre)}"></div>
+      <div class="ancho2"><label for="nc-razon">Razón social / CUIT</label><input id="nc-razon" list="lista-razones" value="${esc(prev.ncRazon)}"></div>
+      <div><label for="nc-sector">Sector / puesto</label><input id="nc-sector" placeholder="Salón, cocina…" value="${esc(prev.ncSector)}"></div>
+      <div><label for="nc-tipo">Tipo de cliente</label><select id="nc-tipo" onchange="pintarCo2OT()">${opciones(S.ini.listas.tipoCliente, prev.ncTipo, '—')}</select></div>
+      <div><label for="nc-modalidad">Modalidad comercial</label><select id="nc-modalidad">${opciones(S.ini.listas.modalidad, prev.ncModalidad, '—')}</select></div>
+      <div><label for="nc-plaza">Plaza</label><select id="nc-plaza" onchange="pintarCamposOT()">${opcionesVT(plazasNc, prev.ncPlaza, '— Elegí —')}</select></div>
+      <div><label for="nc-zona">Zona</label><select id="nc-zona">${opcionesVT(zonas, prev.ncZona, zonas.length ? '— Elegí —' : 'La plaza no tiene zonas: cargalas en Datos')}</select></div>
+      <div><label for="nc-frec">Mantenimiento cada (días)</label><input type="number" id="nc-frec" min="1" placeholder="Vacío = por defecto" value="${esc(prev.ncFrec)}"></div>
+      <div class="ancho2"><label for="nc-coment">Comentarios de la ficha</label><input id="nc-coment" value="${esc(prev.ncComent)}"></div>
+    </div><div id="nc-aviso"></div><h3>${t === 'INSTALACION' ? 'Instalación' : 'Estado actual'}</h3>`;
+  }
+  const c = clienteDeLaOT();
+  h += `<p class="ayuda">${esc(cfg.ayuda)}</p><div class="fila">`;
+  const pideOut = cfg.serieOut === true || (cfg.serieOut === 'siActivo' && c && c.estado === 'ACTIVO');
+  if (cfg.alta) {
+    h += `<div><label for="ot-estado-ini">Estado actual del cliente</label><select id="ot-estado-ini" onchange="pintarCamposOT()">
+      ${['ACTIVO', 'DESINSTALADO_MOMENTANEO', 'EX_CLIENTE'].map(e => `<option value="${e}"${(prev.estadoIni || 'ACTIVO') === e ? ' selected' : ''}>${esc(S.ini.estadosCliente[e])}</option>`).join('')}</select></div>`;
+  }
+  const altaActivo = !cfg.alta || (prev.estadoIni || 'ACTIVO') === 'ACTIVO';
+  if (pideOut) h += `<div><label>Serie retirada (queda A revisar)</label><input id="ot-serie-out" class="mono" readonly value="${esc(c ? c.serie : '')}" placeholder="${c ? 'El cliente no tiene máquina' : 'Elegí el cliente'}"></div>`;
+  if (cfg.serieIn && altaActivo) {
+    const conPlaza = c && c.plaza;
+    const lista = conPlaza ? seriesParaInstalar(c, t) : [];
+    const depP = conPlaza ? depDePlaza(c.plaza) : '';
+    const opc = m => `<option value="${esc(m.serie)}"${m.serie === prev.serieIn ? ' selected' : ''}>${esc(m.serie)} · ${esc(m.modelo)} · ${esc(S.ini.estadosMaquina[m.estado])}${t === 'ALTA_INICIAL' ? ' · ' + esc(ubicacionTxt(m)) : ''}</option>`;
+    const migra = t === 'ALTA_INICIAL' && conPlaza && depP;
+    const otras = migra ? seriesDeOtrosLugares(c) : [];
+    h += `<div class="ancho2"><label for="ot-serie-in">${t === 'ALTA_INICIAL' ? 'Serie instalada' : 'Serie que se instala'}${depP ? ' (del ' + esc(nomDep(depP)) + ')' : ''}</label>
+      <select id="ot-serie-in" class="mono"${conPlaza ? '' : ' disabled'}${migra ? ' onchange="pintarCamposOT()"' : ''}><option value="">${!conPlaza ? (alta ? 'Elegí la plaza' : 'Elegí el cliente') : !depP ? 'La plaza no tiene depósito (plazas.deposito_id)' : lista.length ? '— Elegí (' + lista.length + ' disponibles) —' : (migra ? '— Elegí —' : 'No hay máquinas disponibles en el ' + esc(nomDep(depP)))}</option>
+      ${migra ? `<optgroup label="En el ${esc(nomDep(depP))}">${lista.map(opc).join('') || '<option disabled>No hay máquinas libres en este depósito</option>'}</optgroup>
+        ${otras.length ? `<optgroup label="En otro depósito (se registra el envío)">${otras.map(opc).join('')}</optgroup>` : ''}
+        <optgroup label="No está en máquinas"><option value="__NUEVA__"${prev.serieIn === '__NUEVA__' ? ' selected' : ''}>Otra serie (darla de alta)…</option></optgroup>`
+        : lista.map(opc).join('')}</select></div>`;
+    if (migra && prev.serieIn === '__NUEVA__') {
+      h += `<div><label for="ot-serie-nueva">Serie nueva</label><input id="ot-serie-nueva" class="mono" value="${esc(prev.serieNueva)}"></div>
+        <div><label for="ot-modelo-nueva">Modelo</label><select id="ot-modelo-nueva">${opciones(S.ini.modelos, prev.modeloNueva, '— Elegí —')}</select></div>`;
+    }
+  }
+  if (cfg.falla) h += `<div class="ancho2"><label for="ot-falla">Falla</label><input id="ot-falla" list="lista-fallas" value="${esc(prev.falla)}"></div>`;
+  if (cfg.alta) {
+    if (altaActivo) {
+      h += `<div><label for="ot-f-inst">Fecha de instalación</label><input type="date" id="ot-f-inst" value="${esc(prev.fInst)}"></div>
+        <div><label for="ot-f-base">Último mantenimiento (fecha base)</label><input type="date" id="ot-f-base" value="${esc(prev.fBase)}"></div>`;
+    }
+    h += `<div><label for="ot-f-ult">Última visita</label><input type="date" id="ot-f-ult" value="${esc(prev.fUlt)}"></div>`;
+  }
+  const tecnicos = c && c.plaza ? ((plazaInfo(c.plaza) || {}).tecnicos || []) : [];
+  const listaTec = t === 'ALTA_INICIAL' ? [] : tecnicosObligatorios(c && c.plaza ? regionDePlaza(c.plaza) : '');
+  if (listaTec.length) { // v1.3: AMBA: se eligen de la lista (uno o dos, si el trabajo se hizo de a dos)
+    h += `<div><label for="ot-tecnico">Técnico</label><select id="ot-tecnico">${opciones(listaTec, prev.tecnico, '— Elegí —')}</select></div>
+      <div><label for="ot-tecnico2">Segundo técnico (si fueron dos)</label><select id="ot-tecnico2">${opciones(listaTec, prev.tecnico2, '— Ninguno —')}</select></div>`;
+  } else {
+    h += `<div><label for="ot-tecnico">Técnico / prestador</label><input id="ot-tecnico" list="lista-tecnicos" value="${esc(prev.tecnico)}"><datalist id="lista-tecnicos">${tecnicos.map(x => `<option value="${esc(x)}">`).join('')}</datalist></div>`;
+  }
+  h += htmlSistemaOT(t, c, prev);
+  h += `</div>${htmlNotaSistemaOT(t, c, prev)}${htmlSistemasIncompletos(t)}<div class="fila"><div class="ancho2"><label for="ot-coment">Comentarios</label><textarea id="ot-coment">${esc(prev.coment)}</textarea></div>
+    <div class="ancho2"><label for="ot-pendiente">Pendiente para la próxima visita (indicación al técnico)</label><textarea id="ot-pendiente" placeholder="Ej.: Cambio de frente de equipo por estar roto">${esc(prev.pendiente)}</textarea></div></div>`;
+  $('ot-campos').innerHTML = h;
+  $('btn-precargar').style.display = (t === 'DESINSTALACION' || t === 'DESINSTALACION_MOMENTANEA' || (t === 'ENTREGA_ADICIONALES' && c && textoCant(c.faltante))) ? '' : 'none';
+  $('btn-precargar').textContent = t === 'ENTREGA_ADICIONALES' ? 'Precargar lo pendiente de retirar' : 'Precargar lo que tiene el cliente';
+  $('btn-precargar-rec').style.display = (t === 'MANTENIMIENTO' || t === 'REPARACION') && c && (c.filtros || []).length ? '' : 'none';
+  if (alta) revisarIdNuevo();
+  pintarItemsOT();
+  pintarCo2OT();
+}
+/* Avisa si el ID del cliente nuevo ya existe (o ya está en la lista). */
+function revisarIdNuevo() {
+  if (!$('nc-aviso')) return;
+  const id = $('nc-id').value.trim(), ya = id && cliente(id);
+  const enLista = id && S.lote.some(o => o.datos.clienteNuevo && o.datos.idCliente === id);
+  $('nc-aviso').innerHTML = ya ? `<div class="nota err">Ya existe el cliente ${esc(id)} (${esc(ya.nombre)}, ${esc(S.ini.estadosCliente[ya.estado])}). Si vuelve a tener equipo, elegí ${S.ot.tipo === 'INSTALACION' ? 'Reinstalación' : 'Cliente ya cargado'}.</div>`
+    : enLista ? `<div class="nota err">El ID ${esc(id)} ya está en la lista como cliente nuevo.</div>` : '';
+}
+
+/* ======================================================================
+ *  Sistemas de purificación en la OT
+ * ==================================================================== */
+const SLOTS_SIS = ['SISTEMA', 'PREFILTRO'];
+const TIPOS_CAMBIO_SISTEMA = ['MANTENIMIENTO', 'REPARACION', 'REPARACION_BACKUP', 'CAMBIO_MODELO'];
+function hayMaestroSis() { return (S.ini.sistemas || []).length > 0; }
+function defSis(n) { return (S.ini.sistemas || []).find(x => x.nombre === n); }
+/* Nombres para elegir: los sistemas completos y activos de SISTEMAS_PURIFICACION (sin maestro, las listas de antes). */
+function sistemasDe(slot) {
+  if (!hayMaestroSis()) return slot === 'SISTEMA' ? S.ini.listas.sistema : S.ini.listas.prefiltro;
+  return S.ini.sistemas.filter(x => x.tipo === slot && x.activo).map(x => x.nombre);
+}
+function nombreSlot(c, slot) { return c ? (slot === 'SISTEMA' ? c.sistema : c.prefiltro) || '' : ''; }
+function sumarDiasJS(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + Number(n || 0)); return d.toISOString().slice(0, 10); }
+/* Recambios a cambiar en esta visita: vencidos o que vencen hasta 20 días después (CONFIGURACION: DIAS_ANTICIPO_FILTROS). */
+function recambiosACambiar(c, fecha) {
+  if (!c || !c.filtros) return [];
+  const lim = sumarDiasJS(fecha || S.ini.hoy, S.ini.diasAnticipoFiltros == null ? 20 : S.ini.diasAnticipoFiltros);
+  return c.filtros.filter(x => x.rol === 'RECAMBIO' && x.vence && x.vence <= lim);
+}
+function textoACambiar(c) {
+  const f = $('ot-fecha') ? $('ot-fecha').value : S.ini.hoy;
+  const p = recambiosACambiar(c, f).map(x => x.descripcion + ' (vence ' + fechaTxt(x.vence) + ')');
+  const cons = (c.filtros || []).filter(x => x.rol === 'CONSUMO').map(x => 'revisar nivel de ' + x.descripcion.toLowerCase());
+  return (p.length ? 'cambiar ' + p.join(', ') : '') + (p.length && cons.length ? ' · ' : '') + cons.join(' · ');
+}
+function precargarRecambios(silencioso) {
+  const c = clienteDeLaOT();
+  if (!c || !(c.filtros || []).length) { if (!silencioso) aviso('El cliente no tiene filtros registrados.', 'info'); return; }
+  const cam = recambiosACambiar(c, $('ot-fecha').value);
+  const ya = S.ot.items.map(l => l.codigo);
+  cam.forEach(x => { if (!ya.includes(x.codigo)) S.ot.items.push({ codigo: x.codigo, cantidad: x.unidades, mov: 'ENTREGADO', codigoRetirado: '', dto: '' }); });
+  pintarItemsOT();
+  if (cam.length) aviso('Se precargaron ' + cam.length + ' recambio(s) vencidos o que vencen en los próximos ' + (S.ini.diasAnticipoFiltros == null ? 20 : S.ini.diasAnticipoFiltros) + ' días. Dejá solo los que se cambiaron.', 'info');
+  else if (!silencioso) aviso('No hay recambios por vencer para esta visita.', 'info');
+}
+/* Campos de sistema y prefiltro según el tipo de OT. */
+function htmlSistemaOT(t, c, prev) {
+  let h = '';
+  if (t === 'INSTALACION' || t === 'ALTA_INICIAL') {
+    // Instalación: el sistema es obligatorio (en una reinstalación se propone el que tenía); el prefiltro es opcional.
+    const sis = prev.sistema || nombreSlot(c, 'SISTEMA'), pre = prev.prefiltro || nombreSlot(c, 'PREFILTRO');
+    h += `<div><label for="ot-sistema">Sistema de purificación${t === 'INSTALACION' ? ' (obligatorio)' : ''}</label><select id="ot-sistema" onchange="pintarCamposOT()">${opciones(sistemasDe('SISTEMA'), sis, t === 'INSTALACION' ? '— Elegí —' : 'Sin dato')}</select></div>`;
+    h += `<div><label for="ot-prefiltro">Prefiltro (opcional)</label><select id="ot-prefiltro" onchange="pintarCamposOT()">${opciones(sistemasDe('PREFILTRO'), pre, 'Sin prefiltro / sin dato')}</select></div>`;
+    return h;
+  }
+  if (!hayMaestroSis()) { // sin maestro de sistemas: como antes, el nombre actualiza la ficha
+    if (t === 'DESINSTALACION' || t === 'DESINSTALACION_MOMENTANEA' || t === 'ENTREGA_ADICIONALES') return h;
+    h += `<div><label for="ot-sistema">Sistema de purificación${c && c.sistema ? ' (hoy: ' + esc(c.sistema) + ')' : ''}</label><select id="ot-sistema">${opciones(sistemasDe('SISTEMA'), prev.sistema, 'Sin cambio')}</select></div>`;
+    h += `<div><label for="ot-prefiltro">Prefiltro${c && c.prefiltro ? ' (hoy: ' + esc(c.prefiltro) + ')' : ''}</label><select id="ot-prefiltro">${opciones(sistemasDe('PREFILTRO'), prev.prefiltro, 'Sin cambio')}</select></div>`;
+    return h;
+  }
+  SLOTS_SIS.forEach(slot => {
+    const actual = nombreSlot(c, slot), k = slot === 'SISTEMA' ? 'sis' : 'pre', campo = slot === 'SISTEMA' ? 'sistema' : 'prefiltro';
+    const txt = slot === 'SISTEMA' ? 'Sistema de purificación' : 'Prefiltro';
+    if (TIPOS_CAMBIO_SISTEMA.includes(t)) {
+      const acc = prev['acc_' + k] || '';
+      h += `<div><label for="ot-acc-${k}">${txt} (${actual ? 'hoy: ' + esc(actual) : 'no tiene'})</label><select id="ot-acc-${k}" onchange="pintarCamposOT()">
+        <option value="">Sin cambio</option><option value="CAMBIAR"${acc === 'CAMBIAR' ? ' selected' : ''}>${actual ? 'Cambiar por otro' : 'Instalar'}</option>
+        ${actual ? `<option value="BACKUP"${acc === 'BACKUP' ? ' selected' : ''}>Backup del mismo</option>` : ''}</select></div>`;
+      if (acc === 'CAMBIAR') h += `<div><label for="ot-${campo}">${slot === 'SISTEMA' ? 'Sistema nuevo' : 'Prefiltro nuevo'}</label><select id="ot-${campo}" onchange="pintarCamposOT()">${opciones(sistemasDe(slot).filter(n => n !== actual), prev[campo], '— Elegí —')}</select></div>`;
+    } else if (t === 'DESINSTALACION_MOMENTANEA' && actual) {
+      h += `<div><label><input type="checkbox" id="ot-ret-${k}"${prev['ret_' + k] ? ' checked' : ''} onchange="pintarCamposOT()" style="width:auto;margin-right:6px">Se retiró ${slot === 'SISTEMA' ? 'el sistema' : 'el prefiltro'} ${esc(actual)}</label></div>`;
+    } else if (t === 'DESINSTALACION' && actual) {
+      h += `<div><label for="ot-nd-${k}">${txt} ${esc(actual)}</label><select id="ot-nd-${k}" onchange="pintarCamposOT()"><option value="RETIRADO">Retirado (a revisión)</option>
+        <option value="NO_DEVUELTO"${prev['nd_' + k] === 'NO_DEVUELTO' ? ' selected' : ''}>No devuelto</option></select></div>`;
+    }
+  });
+  return h;
+}
+/* v1.1.1: por qué no aparece un sistema en la lista (le faltan códigos del catálogo en sistemas_purificacion). */
+function htmlSistemasIncompletos(t) {
+  const inc = S.ini.sistemasIncompletos || [];
+  if (!inc.length || !['INSTALACION', 'ALTA_INICIAL'].concat(TIPOS_CAMBIO_SISTEMA).includes(t)) return '';
+  const ninguno = !sistemasDe('SISTEMA').length;
+  return `<div class="nota ${ninguno ? 'err' : 'adv'}">${ninguno ? '<strong>No hay ningún sistema de purificación listo para usar.</strong> ' : ''}No aparecen en la lista porque les faltan códigos del catálogo en <strong>sistemas_purificacion</strong> (planilla Maestros): ${esc(inc.join(', '))}. Completá <em>codigo_filtro</em> y <em>codigo_componente</em> con códigos que existan en <em>catalogo</em> y tocá "Actualizar maestros".</div>`;
+}
+/* Qué pasa con el stock por el sistema (se descuenta / va a revisión) y, en el alta inicial, la fecha del último cambio de cada componente. */
+function htmlNotaSistemaOT(t, c, prev) {
+  if (!hayMaestroSis()) return '';
+  const sale = [], entra = [], fechas = [];
+  const txt = ps => ps.map(p => p.unidades + ' ' + p.descripcion).join(', ');
+  SLOTS_SIS.forEach(slot => {
+    const k = slot === 'SISTEMA' ? 'sis' : 'pre';
+    // Mismos valores con los que se arman los campos (prev), así la nota coincide con lo que se ve.
+    const actual = nombreSlot(c, slot), dA = defSis(actual), previo = prev[slot === 'SISTEMA' ? 'sistema' : 'prefiltro'] || '';
+    let instala = '', retira = false;
+    if (t === 'INSTALACION' || t === 'ALTA_INICIAL') { const el = previo || actual; if (el && el !== actual) { instala = el; retira = !!actual; } }
+    else if (TIPOS_CAMBIO_SISTEMA.includes(t)) {
+      const acc = prev['acc_' + k] || '';
+      if (acc === 'BACKUP' && actual) { instala = actual; retira = true; } else if (acc === 'CAMBIAR' && previo && previo !== actual) { instala = previo; retira = !!actual; }
+    } else if (t === 'DESINSTALACION_MOMENTANEA') retira = !!actual && prev['ret_' + k] !== false;
+    else if (t === 'DESINSTALACION') retira = !!actual && prev['nd_' + k] !== 'NO_DEVUELTO';
+    if (retira && dA) entra.push(txt(dA.partes));
+    const dI = defSis(instala);
+    if (dI && t !== 'ALTA_INICIAL') sale.push(txt(dI.partes));
+    if (dI && t === 'ALTA_INICIAL') {
+      dI.comps.filter(x => x.rol !== 'INSTALACION').forEach(x => {
+        const id = 'fs-' + slot + '-' + x.codigo;
+        fechas.push(`<div><label for="${esc(id)}">${esc(x.descripcion)}: último cambio</label><input type="date" id="${esc(id)}" data-fs-slot="${slot}" data-fs-cod="${esc(x.codigo)}" value="${esc(prev.fechas[id] || '')}"></div>`);
+      });
+    }
+  });
+  let h = '';
+  if (t === 'ALTA_INICIAL' && c && c.plaza) {
+    const sel = prev.serieIn, dep = depDePlaza(c.plaza), m = S.ini.maquinas.find(x => x.serie === sel);
+    const fi = prev.fInst ? fechaTxt(prev.fInst) : 'la fecha de instalación';
+    if (sel === '__NUEVA__') h += dep === depCentral() ? `<div class="nota info">La serie se da de alta en máquinas, en el ${esc(nomDep(dep))}.</div>`
+      : `<div class="nota info">La serie se da de alta en máquinas (en el ${esc(nomDep(depCentral()))}) y se registran el envío a ${esc(dep)} y su recepción el ${esc(fi)}.</div>`;
+    else if (m && depDeMaq(m) !== dep) h += `<div class="nota info">La serie está en ${esc(nomDep(depDeMaq(m)))}: se registran el envío a ${esc(dep)} y su recepción el ${esc(fi)}, y después se instala.</div>`;
+  }
+  if (sale.length || entra.length) h += `<div class="nota info">${sale.length ? 'Sale del depósito: ' + esc(sale.join(', ')) + '.' : ''}${sale.length && entra.length ? ' ' : ''}${entra.length ? 'Queda a revisar: ' + esc(entra.join(', ')) + '.' : ''}</div>`;
+  if (fechas.length) h += `<p class="ayuda">Fecha del último cambio de cada componente (vacía = la del último mantenimiento).</p><div class="fila">${fechas.join('')}</div>`;
+  return h;
+}
+
+/* Cliente sin equipo (ex cliente o desinstalado momentáneo): no se le entrega nada, solo se le retira. */
+function soloRetiros(c) { return !!c && (c.estado === 'EX_CLIENTE' || c.estado === 'DESINSTALADO_MOMENTANEO'); }
+/* Movimientos permitidos por tipo y categoría (igual que el motor). */
+/* v1.2.1: en las desinstalaciones se puede retirar cualquier ítem del catálogo (si no figura en el cliente, el motor avisa). */
+const TIPOS_RETIRO_LIBRE = ['DESINSTALACION_MOMENTANEA', 'DESINSTALACION'];
+function movsPara(tipo, cat, c) {
+  if (tipo === 'ENTREGA_ADICIONALES' && soloRetiros(c)) return ['RETIRADO'];
+  if (TIPOS_RETIRO_LIBRE.includes(tipo)) return ['RETIRADO'];
+  if (cat !== 'INSUMO' && cat !== 'ADICIONAL') return ['ENTREGADO'];
+  if (tipo === 'ALTA_INICIAL' || tipo === 'INSTALACION') return ['ENTREGADO'];
+  if (tipo === 'DESINSTALACION_MOMENTANEA') return ['RETIRADO'];
+  if (tipo === 'DESINSTALACION') return ['RETIRADO']; // v0.9.4: el faltante del comodato se calcula solo
+  return ['ENTREGADO', 'RETIRADO', 'CAMBIO'];
+}
+function itemsPermitidos(tipo, c) {
+  const cats = S.ini.reglas[tipo] || [];
+  // A un ex cliente se le puede retirar después lo que quedó sin devolver, aunque sea un insumo.
+  const pendientes = tipo === 'ENTREGA_ADICIONALES' && soloRetiros(c) ? Object.keys(c.faltante || {}) : [];
+  if (TIPOS_RETIRO_LIBRE.includes(tipo)) return S.ini.catalogo.filter(i => i.activo);
+  return S.ini.catalogo.filter(i => i.activo && (cats.includes(i.categoria) || pendientes.includes(i.codigo)));
+}
+function opcionesItems(lista, previo) {
+  const g = {};
+  lista.forEach(i => (g[i.categoria] = g[i.categoria] || []).push(i));
+  if (!lista.length) return '<option value="">— No hay ítems para esta OT en el catálogo —</option>';
+  return '<option value="">— Ítem —</option>' + Object.keys(g).map(cat => `<optgroup label="${esc(CAT_TXT[cat] || cat)}">${g[cat].map(i =>
+    `<option value="${esc(i.codigo)}"${i.codigo === previo ? ' selected' : ''}>${esc(i.descripcion)}</option>`).join('')}</optgroup>`).join('');
+}
+function pintarItemsOT() {
+  const t = S.ot.tipo, cOT = clienteDeLaOT(), lista = itemsPermitidos(t, cOT);
+  const cats = (S.ini.reglas[t] || []).map(c => CAT_TXT[c] || c).join(', ');
+  $('ot-items-ayuda').textContent = cats ? '· En esta OT: ' + cats.toLowerCase() : '';
+  const cobra = l => { const i = item(l.codigo); return i && (i.categoria === 'INSUMO' || i.categoria === 'ADICIONAL') && !SIN_COBRANZA.includes(t) && (l.mov === 'ENTREGADO' || l.mov === 'CAMBIO'); };
+  const cambiables = S.ini.catalogo.filter(i => i.activo && (i.categoria === 'INSUMO' || i.categoria === 'ADICIONAL'));
+  $('ot-items').innerHTML = S.ot.items.length ? '<thead><tr><th>Ítem</th><th>Cantidad</th><th>Movimiento</th><th>Detalle</th><th></th></tr></thead><tbody>' + S.ot.items.map((l, i) => {
+    const it = item(l.codigo), movs = it ? movsPara(t, it.categoria, cOT) : movsPara(t, '', cOT);
+    if (!movs.includes(l.mov)) l.mov = movs[0];
+    let det = '';
+    if (l.mov === 'CAMBIO') det += `<select aria-label="Ítem retirado" onchange="S.ot.items[${i}].codigoRetirado=this.value">${opcionesItems(cambiables, l.codigoRetirado || l.codigo).replace('— Ítem —', '— Retira el mismo —')}</select>`;
+    if (cobra(l)) det += `<input aria-label="Dto" placeholder="Dto${it.categoria === 'INSUMO' ? ' (vacío = Sin cargo)' : ''}" value="${esc(l.dto || '')}" oninput="S.ot.items[${i}].dto=this.value" style="margin-top:4px">`;
+    return `<tr><td><select aria-label="Ítem" onchange="S.ot.items[${i}].codigo=this.value;pintarItemsOT()">${opcionesItems(lista, l.codigo)}</select></td>
+      <td style="width:110px"><input type="number" min="1" step="1" aria-label="Cantidad" value="${esc(l.cantidad)}" oninput="S.ot.items[${i}].cantidad=Number(this.value)"></td>
+      <td style="width:160px"><select aria-label="Movimiento" onchange="S.ot.items[${i}].mov=this.value;pintarItemsOT()">${movs.map(m => `<option value="${m}"${m === l.mov ? ' selected' : ''}>${MOV_TXT[m]}</option>`).join('')}</select></td>
+      <td>${det || '<span class="vacio">—</span>'}</td>
+      <td><button class="chico" title="Quitar" onclick="S.ot.items.splice(${i},1);pintarItemsOT()">✕</button></td></tr>`;
+  }).join('') + '</tbody>' : '<tbody><tr><td class="vacio">Sin ítems.</td></tr></tbody>';
+}
+function agregarItemOT() { S.ot.items.push({ codigo: '', cantidad: 1, mov: soloRetiros(clienteDeLaOT()) ? 'RETIRADO' : 'ENTREGADO', codigoRetirado: '', dto: '' }); pintarItemsOT(); }
+/* Desinstalaciones: carga todo lo que tiene el cliente, marcado como Retirado. */
+function precargarRetiro() {
+  const c = S.ot.idCliente && cliente(S.ot.idCliente);
+  if (!c) return aviso('Elegí primero el cliente.', 'err');
+  if (S.ot.tipo === 'ENTREGA_ADICIONALES') { // ex cliente: lo que quedó pendiente de retirar
+    S.ot.items = Object.keys(c.faltante || {}).filter(k => c.faltante[k] > 0).map(k => ({ codigo: k, cantidad: c.faltante[k], mov: 'RETIRADO', codigoRetirado: '', dto: '' }));
+    pintarItemsOT();
+    return aviso(S.ot.items.length ? 'Se precargó lo pendiente de retirar. Dejá solo lo que efectivamente se retiró.' : 'El cliente no tiene nada pendiente de retirar.', 'info');
+  }
+  const todo = Object.assign({}, c.comodato); // v0.9.4: se espera retirar solo el comodato (los adicionales son del cliente)
+  S.ot.items = Object.keys(todo).filter(k => todo[k] > 0).map(k => ({ codigo: k, cantidad: todo[k], mov: 'RETIRADO', codigoRetirado: '', dto: '' }));
+  pintarItemsOT();
+  if (!S.ot.items.length) aviso('El cliente no tiene nada en comodato registrado.', 'info');
+  else aviso('Se precargó el comodato. Ajustá las cantidades a lo que realmente se retira: el faltante o lo retirado de más queda en la ficha.', 'info');
+}
+
+/* ======================================================================
+ *  CO₂ en la OT (v1.1): cilindros por serie
+ * ==================================================================== */
+const MOD_CO2_TXT = { TRADICIONAL: 'Tradicional', EMERGENCIA_CON_COSTO: 'Emergencia con costo', EMERGENCIA_SIN_COSTO: 'Emergencia sin costo' };
+const MOD_CO2_AYUDA = { TRADICIONAL: 'La pidió en tiempo y forma', EMERGENCIA_CON_COSTO: 'Va a cobranzas', EMERGENCIA_SIN_COSTO: 'No va a cobranzas' };
+function hayCo2() { return !!(S.ini && S.ini.co2); }
+function reglasCo2(t) { return CO2_EN_OT[t] || null; }
+function esHielogic(c) { return /hielogic/i.test(String((c && c.tipoCliente) || '')); }
+function seriesCo2EnLote(campo) { return S.lote.flatMap(o => ((o.datos.co2 || {})[campo]) || []); }
+function cilindrosDelCliente(c) { return hayCo2() && c && c.id ? (S.ini.co2.enCliente[c.id] || []) : []; }
+/* Para entregar: llenos del depósito de la plaza del cliente. Para retirar: los que tiene hoy. Sin los ya elegidos en esta OT o en la lista. */
+function disponiblesCo2(campo, c) {
+  const usadas = seriesCo2EnLote(campo).concat(S.ot.co2[campo]);
+  const base = campo === 'entregadas' ? (hayCo2() && c && c.plaza ? (S.ini.co2.llenos[depDePlaza(c.plaza)] || []) : []) : cilindrosDelCliente(c);
+  return base.filter(x => !usadas.includes(x.serie));
+}
+function textoCilindro(x) { return x.serie + (x.pesoKg ? ' · ' + x.pesoKg + ' kg' : '') + (x.desde ? ' · desde ' + fechaTxt(x.desde) : ''); }
+function limpiarCo2OT() { S.ot.co2 = { entregadas: [], retiradas: [] }; S.ot.modalidadCo2 = ''; }
+/* Desinstalaciones: se precargan todos los cilindros del cliente como retirados (se quitan los que quedan; quedan pendientes). */
+function precargarCo2Retiro() {
+  const c = clienteDeLaOT(), r = reglasCo2(S.ot.tipo);
+  if (!r || !r.retiro || S.ot.tipo === 'ENTREGA_CO2') return;
+  S.ot.co2.retiradas = cilindrosDelCliente(c).map(x => x.serie).filter(sr => !seriesCo2EnLote('retiradas').includes(sr));
+}
+function opcionesCo2(campo) {
+  const c = clienteDeLaOT(), f = norm(S.co2Busca && S.co2Busca[campo]);
+  const lista = disponiblesCo2(campo, c).filter(x => !f || norm(x.serie).includes(f));
+  return `<option value="">${lista.length ? '— Agregar serie (' + lista.length + (f ? ' coinciden' : ' disponibles') + ') —' : f ? 'Ninguna serie coincide' : 'No hay más disponibles'}</option>` +
+    lista.map(x => `<option value="${esc(x.serie)}">${esc(textoCilindro(x))}</option>`).join('');
+}
+function pickerCo2(campo, titulo) {
+  const elegidas = S.ot.co2[campo];
+  return `<div class="ancho2"><label for="co2-sel-${campo}">${titulo}</label>
+    <input id="co2-busca-${campo}" class="mono" placeholder="Buscar serie…" aria-label="Buscar serie" autocomplete="off" value="${esc((S.co2Busca || {})[campo] || '')}"
+      oninput="buscarSerieCo2('${campo}', this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();agregarPrimeraCo2('${campo}')}">
+    <select id="co2-sel-${campo}" class="mono" onchange="agregarSerieCo2('${campo}', this.value)">${opcionesCo2(campo)}</select>
+    <div class="chips" id="co2-chips-${campo}">${elegidas.map((sr, i) => `<span class="chip mono">${esc(sr)}<button title="Quitar" aria-label="Quitar ${esc(sr)}" onclick="quitarSerieCo2('${campo}', ${i})">✕</button></span>`).join('') || '<span class="vacio">Ninguna</span>'}</div></div>`;
+}
+function buscarSerieCo2(campo, txt) { S.co2Busca = S.co2Busca || {}; S.co2Busca[campo] = txt; $('co2-sel-' + campo).innerHTML = opcionesCo2(campo); }
+function agregarPrimeraCo2(campo) { const o = [...$('co2-sel-' + campo).options].find(x => x.value); if (o) agregarSerieCo2(campo, o.value); }
+function agregarSerieCo2(campo, serie) {
+  if (serie && !S.ot.co2[campo].includes(serie)) S.ot.co2[campo].push(serie);
+  if (S.co2Busca) S.co2Busca[campo] = '';
+  pintarCo2OT();
+  if ($('co2-busca-' + campo)) $('co2-busca-' + campo).focus();
+}
+function quitarSerieCo2(campo, i) { S.ot.co2[campo].splice(i, 1); pintarCo2OT(); }
+function elegirModalidadCo2(m) { S.ot.modalidadCo2 = m; pintarCo2OT(); }
+function pintarCo2OT() {
+  const t = S.ot.tipo, r = reglasCo2(t), c = clienteDeLaOT();
+  $('ot-items-bloque').style.display = t === 'ENTREGA_CO2' ? 'none' : '';
+  if (!r) { limpiarCo2OT(); $('ot-co2').innerHTML = ''; return; }
+  if (!hayCo2()) { $('ot-co2').innerHTML = t === 'ENTREGA_CO2' ? '<div class="nota err">No se pudieron leer los cilindros de CO₂. Tocá Actualizar datos.</div>' : ''; return; }
+  const tieneCliente = c && (c.nuevo ? c.plaza : c.id);
+  const sinEntregas = t === 'ENTREGA_CO2' && soloRetiros(c), hiel = esHielogic(c);
+  const puedeEntregar = r.entrega && tieneCliente && !sinEntregas && !hiel;
+  if (!puedeEntregar) { S.ot.co2.entregadas = []; S.ot.modalidadCo2 = ''; }
+  if (!r.retiro) S.ot.co2.retiradas = [];
+  let h = `<h3>Cilindros de CO₂${t === 'ENTREGA_CO2' ? '' : ' <span class="ayuda" style="font-weight:400;text-transform:none">(opcional)</span>'}</h3>`;
+  if (!tieneCliente) { $('ot-co2').innerHTML = h + `<p class="ayuda">${c && c.nuevo ? 'Elegí la plaza del cliente' : 'Elegí el cliente'} para ver los cilindros.</p>`; return; }
+  const notas = [];
+  if (r.entrega && sinEntregas) notas.push(`El cliente está ${esc(S.ini.estadosCliente[c.estado].toLowerCase())}: no se le entrega CO₂, solo se le retira.`);
+  else if (r.entrega && hiel) notas.push('Cliente Hielogic: no recibe CO₂' + (r.retiro ? ' (solo se le pueden retirar cilindros).' : '.'));
+  if (t === 'ENTREGA_CO2' && puedeEntregar) {
+    h += `<label>Tipo de entrega</label><div class="segmentado" id="co2-modalidad" style="margin-bottom:6px">${Object.keys(MOD_CO2_TXT).map(m =>
+      `<button data-m="${m}" class="${S.ot.modalidadCo2 === m ? 'activo' : ''}" title="${esc(MOD_CO2_AYUDA[m])}" onclick="elegirModalidadCo2('${m}')">${esc(MOD_CO2_TXT[m])}</button>`).join('')}</div>
+      <p class="ayuda">Obligatorio si se entrega. Solo la emergencia con costo va a cobranzas.</p>`;
+  }
+  const bloques = [];
+  if (puedeEntregar) bloques.push(pickerCo2('entregadas', 'Entregados (llenos del ' + esc(nomDep(depDePlaza(c.plaza))) + ')'));
+  if (r.retiro) {
+    const tiene = cilindrosDelCliente(c).length;
+    bloques.push(tiene || S.ot.co2.retiradas.length ? pickerCo2('retiradas', 'Retirados (vuelven vacíos al depósito)') : '<div class="ancho2"><label>Retirados</label><p class="vacio" style="margin:6px 0">El cliente no tiene cilindros.</p></div>');
+  }
+  if ((t === 'DESINSTALACION' || t === 'DESINSTALACION_MOMENTANEA') && cilindrosDelCliente(c).length) {
+    notas.push('Los cilindros que no se retiren quedan en el cliente como pendientes: se retiran después con una OT "Entrega de CO₂".');
+  }
+  $('ot-co2').innerHTML = h + (notas.length ? `<div class="nota info">${notas.join('<br>')}</div>` : '') + `<div class="fila">${bloques.join('')}</div>`;
+}
+
+function datosOT() {
+  const t = S.ot.tipo, cfg = CAMPOS[t], c = clienteDeLaOT();
+  const v = id => ($(id) ? $(id).value.trim() : '');
+  const d = { fecha: $('ot-fecha').value, idCliente: c ? c.id : '', tipo: t, nOtPersat: $('ot-persat').value.trim(),
+    tecnico: v('ot-tecnico'), tecnico2: v('ot-tecnico2'), sistema: v('ot-sistema'), prefiltro: v('ot-prefiltro'), comentarios: v('ot-coment'), pendiente: v('ot-pendiente'),
+    items: S.ot.items.filter(l => l.codigo).map(l => ({ codigo: l.codigo, cantidad: Number(l.cantidad), mov: l.mov, codigoRetirado: l.mov === 'CAMBIO' ? (l.codigoRetirado || l.codigo) : '', dto: l.dto || '' })) };
+  if ($('ot-serie-out') && $('ot-serie-out').value) d.serieRetirada = $('ot-serie-out').value;
+  if (v('ot-serie-in')) d.serieInstalada = v('ot-serie-in');
+  if (t === 'ALTA_INICIAL' && d.serieInstalada) { // migración: una máquina de otro lugar o que no está en MÁQUINAS se trae con envío automático
+    const dep = c && c.plaza ? depDePlaza(c.plaza) : '';
+    if (d.serieInstalada === '__NUEVA__') { d.serieInstalada = norm(v('ot-serie-nueva')); d.traerMaquina = true; d.maquinaNueva = { modelo: v('ot-modelo-nueva') }; }
+    else { const m = S.ini.maquinas.find(x => x.serie === d.serieInstalada); if (m && depDeMaq(m) !== dep) d.traerMaquina = true; }
+  }
+  if (cfg.falla) d.falla = v('ot-falla');
+  if (cfg.alta) {
+    d.estadoInicial = v('ot-estado-ini') || 'ACTIVO';
+    if (v('ot-f-inst')) d.fechaInstalacion = v('ot-f-inst');
+    if (v('ot-f-base')) d.fechaBase = v('ot-f-base');
+    if (v('ot-f-ult')) { d.fechaUltimaVisita = v('ot-f-ult'); d.tipoUltimaVisita = 'MANTENIMIENTO'; }
+  }
+  if (hayMaestroSis()) {
+    if (TIPOS_CAMBIO_SISTEMA.includes(t)) {
+      d.accionSistema = v('ot-acc-sis'); d.accionPrefiltro = v('ot-acc-pre');
+      if (d.accionSistema !== 'CAMBIAR') d.sistema = '';
+      if (d.accionPrefiltro !== 'CAMBIAR') d.prefiltro = '';
+    } else if (t !== 'INSTALACION' && t !== 'ALTA_INICIAL') { d.sistema = ''; d.prefiltro = ''; }
+    if (t === 'DESINSTALACION_MOMENTANEA') { if ($('ot-ret-sis')) d.retirarSistema = $('ot-ret-sis').checked; if ($('ot-ret-pre')) d.retirarPrefiltro = $('ot-ret-pre').checked; }
+    if (t === 'DESINSTALACION') { d.sistemaNoDevuelto = v('ot-nd-sis') === 'NO_DEVUELTO'; d.prefiltroNoDevuelto = v('ot-nd-pre') === 'NO_DEVUELTO'; }
+    if (t === 'ALTA_INICIAL') {
+      d.fechasSistema = {}; d.fechasPrefiltro = {};
+      document.querySelectorAll('#ot-campos input[data-fs-cod]').forEach(i => { if (i.value) (i.dataset.fsSlot === 'SISTEMA' ? d.fechasSistema : d.fechasPrefiltro)[i.dataset.fsCod] = i.value; });
+    }
+  }
+  if (reglasCo2(t) && (S.ot.co2.entregadas.length || S.ot.co2.retiradas.length)) {
+    d.co2 = { entregadas: S.ot.co2.entregadas.slice(), retiradas: S.ot.co2.retiradas.slice() };
+    if (t === 'ENTREGA_CO2' && d.co2.entregadas.length) d.modalidadCo2 = S.ot.modalidadCo2;
+  }
+  if (c && c.nuevo) {
+    d.clienteNuevo = { id: c.id, nombre: c.nombre, razon: v('nc-razon'), sector: v('nc-sector'), tipoCliente: v('nc-tipo'), modalidad: v('nc-modalidad'),
+      zonaId: c.zonaId, frecuencia: v('nc-frec') === '' ? '' : Number(v('nc-frec')), comentarios: v('nc-coment') };
+  }
+  return { d, c };
+}
+function agregarOTALista(mantenerVisita) {
+  const { d, c } = datosOT();
+  if (!d.fecha) return aviso('Falta la fecha.', 'err');
+  if (c && c.nuevo) {
+    if (c.id && cliente(c.id)) return aviso('El ID ' + c.id + ' ya existe: elegí ' + (d.tipo === 'INSTALACION' ? 'Reinstalación.' : 'Cliente ya cargado.'), 'err');
+    if (!c.id || !c.nombre || !c.zonaId) return aviso('Completá ID, nombre, plaza y zona del cliente nuevo.', 'err');
+    if (S.lote.some(o => o.datos.clienteNuevo && o.datos.idCliente === c.id)) return aviso('El ID ' + c.id + ' ya está en la lista como cliente nuevo.', 'err');
+  } else if (!c) return aviso('Elegí un cliente de la lista.', 'err');
+  if (d.tipo === 'INSTALACION' && !d.sistema) return aviso('Elegí el sistema de purificación que se instala.', 'err');
+  if (d.maquinaNueva && (!d.serieInstalada || !d.maquinaNueva.modelo)) return aviso('Escribí la serie nueva y elegí su modelo.', 'err');
+  if ((d.accionSistema === 'CAMBIAR' && !d.sistema) || (d.accionPrefiltro === 'CAMBIAR' && !d.prefiltro)) return aviso('Elegí el sistema o prefiltro nuevo.', 'err');
+  if (d.tipo === 'ENTREGA_CO2') {
+    if (!d.co2) return aviso('Elegí al menos un cilindro entregado o retirado.', 'err');
+    if (d.co2.entregadas.length && !d.modalidadCo2) return aviso('Elegí el tipo de entrega: Tradicional, Emergencia con costo o Emergencia sin costo.', 'err');
+  }
+  if ($('ot-tecnico') && $('ot-tecnico').tagName === 'SELECT' && !d.tecnico) return aviso('Elegí el técnico que hizo el trabajo.', 'err');
+  if (d.tecnico2 && d.tecnico2 === d.tecnico) return aviso('El segundo técnico es el mismo que el primero.', 'err');
+  if (S.ot.items.some(l => !l.codigo)) return aviso('Hay ítems sin elegir: completalos o quitalos.', 'err');
+  if (S.ot.items.some(l => !(Number(l.cantidad) > 0))) return aviso('Las cantidades deben ser mayores que cero.', 'err');
+  S.lote.push({ clase: 'OT', datos: d, estado: 'pend' });
+  limpiarOT();
+  loteCambio();
+  aviso('OT agregada a la lista.', 'info');
+  return true;
+}
+/* Otro trabajo en la misma visita: cada uno es una OT aparte (sirve para medir tiempos), con el mismo cliente, fecha y técnico. */
+function otraOTMismaVisita() {
+  if (esAltaCliente()) return aviso('Para un cliente nuevo, guardá primero la instalación y después cargá el otro trabajo.', 'err');
+  const visita = { idCliente: S.ot.idCliente, fecha: $('ot-fecha').value, tecnico: $('ot-tecnico') ? $('ot-tecnico').value : '', tecnico2: $('ot-tecnico2') ? $('ot-tecnico2').value : '', persat: $('ot-persat').value, tipo: S.ot.tipo };
+  if (!agregarOTALista()) return;
+  $('ot-fecha').value = visita.fecha;
+  $('ot-persat').value = visita.persat;
+  $('ot-cliente').value = visita.idCliente;
+  clienteOTElegido();
+  S.ot.items = []; limpiarCo2OT(); pintarItemsOT(); pintarCo2OT(); // sin precargas: el otro trabajo se elige y se carga aparte
+  if ($('ot-tecnico')) $('ot-tecnico').value = visita.tecnico;
+  if ($('ot-tecnico2')) $('ot-tecnico2').value = visita.tecnico2;
+  aviso('OT agregada. Elegí el tipo del otro trabajo para el mismo cliente.', 'info');
+}
+function limpiarOT() {
+  S.ot.items = []; limpiarCo2OT(); S.co2Busca = {};
+  ['ot-persat', 'ot-cliente-filtro'].forEach(id => $(id).value = '');
+  $('ot-cliente').value = ''; S.ot.idCliente = '';
+  filtrarClientesOT();
+  $('ot-campos').querySelectorAll('input:not([readonly]), textarea').forEach(x => x.value = '');
+  pintarCamposOT();
+}
+function loteCambio() { S.loteValidado = false; $('btn-guardar-lote').disabled = !S.lote.length; $('btn-guardar-lote-adv').style.display = 'none'; S.lote.forEach(o => o.estado = 'pend'); pintarLote(); }
+function resumenOT(d) {
+  const p = [];
+  if (d.serieRetirada) p.push('retira <span class="mono">' + esc(d.serieRetirada) + '</span>');
+  if (d.serieInstalada) p.push('instala <span class="mono">' + esc(d.serieInstalada) + '</span>' + (d.maquinaNueva ? ' (serie nueva, ' + esc(d.maquinaNueva.modelo) + ')' : d.traerMaquina ? ' (con envío automático)' : ''));
+  if (d.falla) p.push('falla: ' + esc(d.falla));
+  if (d.accionSistema === 'BACKUP') p.push('backup del sistema'); else if (d.sistema) p.push((d.tipo === 'INSTALACION' || d.tipo === 'ALTA_INICIAL' ? 'sistema ' : 'cambia el sistema a ') + esc(d.sistema));
+  if (d.accionPrefiltro === 'BACKUP') p.push('backup del prefiltro'); else if (d.prefiltro) p.push('prefiltro ' + esc(d.prefiltro));
+  if (d.items.length) p.push(d.items.map(l => esc(l.cantidad + ' ' + nombreItem(l.codigo) + ' (' + MOV_TXT[l.mov].toLowerCase() + ')')).join(', '));
+  if (d.co2 && d.co2.entregadas.length) p.push('CO₂ entrega <span class="mono">' + esc(d.co2.entregadas.join(', ')) + '</span>' + (d.modalidadCo2 ? ' (' + esc((MOD_CO2_TXT[d.modalidadCo2] || d.modalidadCo2).toLowerCase()) + ')' : ''));
+  if (d.co2 && d.co2.retiradas.length) p.push('CO₂ retira <span class="mono">' + esc(d.co2.retiradas.join(', ')) + '</span>');
+  if (d.pendiente) p.push('pendiente: ' + esc(d.pendiente));
+  if (d.tecnico) p.push('técnico: ' + esc([d.tecnico, d.tecnico2].filter(Boolean).join(' y ')));
+  return p.join(' · ');
+}
+function pintarLote() {
+  guardarBorrador();
+  $('lote-cant').textContent = S.lote.length;
+  $('lote').innerHTML = S.lote.map((o, i) => {
+    const d = o.datos, c = d.clienteNuevo ? { nombre: d.clienteNuevo.nombre + ' (cliente nuevo)' } : cliente(d.idCliente);
+    const ins = { pend: '<span class="insignia pend">Sin validar</span>', ok: '<span class="insignia ok">OK</span>', adv: '<span class="insignia adv">OK con avisos</span>', err: '<span class="insignia err">Con errores</span>' }[o.estado];
+    return `<div class="lote-item"><div class="cab"><strong>#${i + 1} · ${fechaTxt(d.fecha)} · ${esc(S.ini.tipos[d.tipo])} · ${esc(c ? c.nombre : d.idCliente)} <span class="mono ayuda">${esc(d.idCliente)}</span></strong>${ins}
+      <button class="chico" onclick="S.lote.splice(${i},1);loteCambio()">Quitar</button></div>
+      <div class="ayuda" style="margin:4px 0 0">${resumenOT(d) || 'Sin ítems'}</div></div>`;
+  }).join('') || '<p class="vacio">La lista está vacía.</p>';
+}
+async function validarLote() {
+  if (!S.lote.length) return aviso('La lista está vacía.', 'err');
+  ocupado('Validando la lista…');
+  try {
+    const r = await llamar('apiValidar', S.lote.map(o => ({ clase: o.clase, datos: o.datos })));
+    marcarLote(r);
+    $('lote-resultado').innerHTML = htmlResultados(r.resultados, i => '#' + (i + 1));
+    S.loteValidado = r.ok;
+    const adv = r.ok && hayAdvertencias(r);
+    $('btn-guardar-lote').disabled = !r.ok || adv;
+    $('btn-guardar-lote-adv').style.display = adv ? '' : 'none';
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+function marcarLote(r) {
+  r.resultados.forEach((res, i) => { if (S.lote[i]) S.lote[i].estado = res.errores.length ? 'err' : res.advertencias.length ? 'adv' : 'ok'; });
+  pintarLote();
+}
+/* Guarda directo (el servidor valida igual). Si hay avisos, se muestran y se confirma con "Guardar igual". */
+async function guardarLote(aceptar) {
+  if (!S.lote.length) return aviso('La lista está vacía.', 'err');
+  const r = await confirmarOps(S.lote.map(o => ({ clase: o.clase, datos: o.datos })), aceptar, 'lote-resultado', 'btn-guardar-lote-adv', i => '#' + (i + 1), marcarLote);
+  if (r) { S.lote = []; loteCambio(); }
+}
+
+/* ======================================================================
+ *  Listas con buscador: toda lista desplegable con 7 opciones o más se abre con un
+ *  cuadro de búsqueda (por cualquier parte del texto, sin importar acentos).
+ *  Con el teclado sigue funcionando la lista común.
+ * ==================================================================== */
+const BUSCADOR_MIN = 7;
+document.addEventListener('mousedown', e => {
+  const sel = e.target.closest ? e.target.closest('select') : null;
+  if (!sel || sel.disabled || sel.multiple || sel.options.length < BUSCADOR_MIN) return;
+  e.preventDefault();
+  abrirBuscador(sel);
+});
+document.addEventListener('mousedown', e => { const b = $('buscador'); if (b && !b.contains(e.target)) cerrarBuscador(); }, true);
+document.addEventListener('scroll', e => { const b = $('buscador'); if (b && !b.contains(e.target)) cerrarBuscador(); }, true);
+window.addEventListener('resize', () => cerrarBuscador());
+function cerrarBuscador() { const b = $('buscador'); if (b) b.remove(); }
+function abrirBuscador(sel) {
+  cerrarBuscador();
+  const r = sel.getBoundingClientRect();
+  const caja = document.createElement('div');
+  caja.id = 'buscador'; caja.className = 'buscador';
+  const ancho = Math.min(Math.max(r.width, 300), window.innerWidth - 16);
+  caja.style.width = ancho + 'px';
+  caja.style.left = Math.max(8, Math.min(r.left, window.innerWidth - ancho - 8)) + window.scrollX + 'px';
+  caja.style.top = (r.bottom + window.scrollY + 2) + 'px';
+  caja.innerHTML = '<input type="search" placeholder="Buscar…" aria-label="Buscar en la lista"><div class="opciones" role="listbox"></div>';
+  document.body.appendChild(caja);
+  const inp = caja.querySelector('input'), lista = caja.querySelector('.opciones');
+  const items = [...sel.options].map(o => ({ v: o.value, t: o.textContent, g: o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : '', dis: o.disabled }));
+  let activo = Math.max(0, items.findIndex(x => x.v === sel.value && x.v !== '')), vis = [];
+  const pintar = () => {
+    const q = sinAcentos(inp.value).split(/\s+/).filter(Boolean);
+    vis = items.filter(x => !q.length || q.every(p => sinAcentos(x.t + ' ' + x.g).includes(p)));
+    if (activo >= vis.length) activo = Math.max(vis.length - 1, 0);
+    let g = null;
+    lista.innerHTML = vis.map((x, k) => {
+      let h = '';
+      if (x.g !== g) { g = x.g; if (g) h += `<div class="grupo">${esc(g)}</div>`; }
+      return h + `<div class="op${k === activo ? ' activa' : ''}${x.v === sel.value && x.v !== '' ? ' elegida' : ''}${x.dis ? ' dis' : ''}" role="option" data-k="${k}">${esc(x.t)}</div>`;
+    }).join('') || '<div class="vacio">Sin resultados</div>';
+    const a = lista.querySelector('.op.activa');
+    if (a && a.scrollIntoView) a.scrollIntoView({ block: 'nearest' });
+  };
+  const elegirOp = k => {
+    const x = vis[k];
+    if (!x || x.dis) return;
+    cerrarBuscador();
+    sel.value = x.v;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    sel.focus();
+  };
+  inp.addEventListener('input', () => { activo = 0; pintar(); });
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { activo = Math.min(activo + 1, vis.length - 1); pintar(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { activo = Math.max(activo - 1, 0); pintar(); e.preventDefault(); }
+    else if (e.key === 'Enter') { elegirOp(activo); e.preventDefault(); }
+    else if (e.key === 'Escape' || e.key === 'Tab') { cerrarBuscador(); sel.focus(); }
+  });
+  lista.addEventListener('mousedown', e => { const op = e.target.closest('.op'); e.preventDefault(); if (op) elegirOp(Number(op.dataset.k)); });
+  pintar();
+  inp.focus();
+}
+
+/* ======================================================================
+ *  Trabajo sin guardar: contador arriba, copia en el navegador y aviso al cerrar
+ *  (la copia es por usuario y por navegador: no viaja a otra computadora)
+ * ==================================================================== */
+function claveBorrador() { return 'borrador.' + String((S.ini && S.ini.usuario && S.ini.usuario.email) || '').toLowerCase(); }
+function envioEnArmado() { return S.envio.lineas.length + S.envio.series.length > 0; }
+function guardarBorrador() {
+  pintarSinGuardar();
+  if (!S.borradorListo) return; // hasta revisar la copia anterior no se pisa
+  const v = id => ($(id) ? $(id).value : '');
+  const b = !S.lote.length && !envioEnArmado() ? '' : JSON.stringify({
+    cuando: new Date().toISOString(),
+    lote: S.lote.map(o => ({ clase: o.clase, datos: o.datos })),
+    envio: envioEnArmado() ? { lineas: S.envio.lineas, series: S.envio.series, origen: v('env-origen'), destino: v('env-destino'), transporte: v('env-transporte'), guia: v('env-guia'), comentarios: v('env-coment') } : null
+  });
+  try { if (b) localStorage.setItem('fadefil.' + claveBorrador(), b); else localStorage.removeItem('fadefil.' + claveBorrador()); } catch (e) { /* sin almacenamiento: queda el contador y el aviso al cerrar */ }
+}
+function pintarSinGuardar() {
+  const p = [];
+  if (S.lote.length) p.push(S.lote.length + (S.lote.length === 1 ? ' OT' : ' OT'));
+  if (envioEnArmado()) p.push('1 envío');
+  $('sin-guardar').style.display = p.length ? '' : 'none';
+  $('sin-guardar').textContent = p.length ? '⚠ Sin guardar: ' + p.join(' y ') : '';
+}
+function irASinGuardar() {
+  if (S.lote.length) { mostrarPanel('p-ot'); $('lote').scrollIntoView && $('lote').scrollIntoView({ behavior: 'smooth' }); }
+  else if (envioEnArmado()) { mostrarPanel('p-envios'); $('env-carrito').scrollIntoView && $('env-carrito').scrollIntoView({ behavior: 'smooth' }); }
+}
+/* Al abrir la app: si quedó trabajo sin guardar de la vez anterior, vuelve a la lista y al envío. */
+function recuperarBorrador() {
+  S.borradorListo = true;
+  let b = null;
+  try { b = JSON.parse(localStorage.getItem('fadefil.' + claveBorrador()) || 'null'); } catch (e) { b = null; }
+  if (!b || (!(b.lote || []).length && !b.envio)) return;
+  const partes = [];
+  if ((b.lote || []).length) {
+    S.lote = S.lote.concat(b.lote.map(o => ({ clase: o.clase, datos: o.datos, estado: 'pend' })));
+    partes.push(b.lote.length + ' OT en la lista para guardar');
+  }
+  if (b.envio && !envioEnArmado()) {
+    S.envio = { lineas: b.envio.lineas || [], series: b.envio.series || [] };
+    if ([...$('env-origen').options].some(o => o.value === b.envio.origen)) $('env-origen').value = b.envio.origen;
+    origenEnvioCambio(true);
+    if ([...$('env-destino').options].some(o => o.value === b.envio.destino)) $('env-destino').value = b.envio.destino;
+    $('env-transporte').value = b.envio.transporte || ''; $('env-guia').value = b.envio.guia || ''; $('env-coment').value = b.envio.comentarios || '';
+    partes.push('un envío en armado');
+  }
+  loteCambio(); pintarCarrito();
+  const cuando = new Date(b.cuando);
+  const f = isNaN(cuando) ? '' : ' (del ' + cuando.toLocaleDateString('es-AR') + ' ' + cuando.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + ')';
+  $('borrador-aviso').innerHTML = `<div class="nota adv">Recuperé trabajo que no se había guardado${esc(f)}: ${esc(partes.join(' y '))}. Revisalo y guardalo, o descartalo.
+    <div class="acciones" style="margin-top:6px"><button class="chico primario" onclick="irASinGuardar();$('borrador-aviso').innerHTML=''">Ir a revisarlo</button>
+    <button class="chico" onclick="descartarBorrador()">Descartar</button></div></div>`;
+}
+function descartarBorrador() {
+  if (typeof confirm === 'function' && !confirm('Se descarta lo que no se había guardado. ¿Seguro?')) return;
+  S.lote = []; loteCambio(); limpiarEnvio();
+  $('borrador-aviso').innerHTML = '';
+  aviso('Descartado.', 'info');
+}
+/* Si hay algo sin guardar, el navegador pregunta antes de cerrar (algunos navegadores no lo muestran dentro de Google). */
+window.addEventListener('beforeunload', e => {
+  guardarBorrador();
+  if (S.lote.length || envioEnArmado()) { e.preventDefault(); e.returnValue = ''; }
+});
+
+/* ======================================================================
+ *  Envíos
+ * ==================================================================== */
+function etiquetaDep(d) { return d.id === depCentral() ? d.nombre + ' (central)' : d.nombre + ' · ' + (d.plazas || [d.plaza]).map(nomPlaza).join(', '); }
+/* Orígenes: el central siempre (aunque el filtro sea otra región) y los depósitos visibles. */
+function depositosOrigen() { const c = depInfo(depCentral()); return (c ? [c] : []).concat(depositosVisibles().filter(d => d.id !== depCentral())); }
+function armarEnvio() {
+  const deps = depositosOrigen();
+  const prevO = $('env-origen').value || depCentral(), prevD = $('env-destino').value;
+  $('env-origen').innerHTML = deps.map(d => `<option value="${esc(d.id)}">${esc(etiquetaDep(d))}</option>`).join('');
+  $('env-origen').value = deps.some(d => d.id === prevO) ? prevO : depCentral();
+  pintarDestinos(prevD);
+  $('env-item').innerHTML = opcionesItems(S.ini.catalogo.filter(i => i.activo), '');
+  origenEnvioCambio(true);
+}
+function pintarDestinos(prev) {
+  const o = $('env-origen').value;
+  const opts = depositosVisibles().filter(d => d.id !== o && d.id !== depCentral()).map(d => ({ v: d.id, t: etiquetaDep(d) }));
+  if (o !== depCentral()) opts.unshift({ v: depCentral(), t: nomDep(depCentral()) + ' (retorno)' });
+  $('env-destino').innerHTML = '<option value="">— Elegí —</option>' + opts.map(x => `<option value="${esc(x.v)}">${esc(x.t)}</option>`).join('');
+  if (opts.some(x => x.v === prev)) $('env-destino').value = prev;
+  else if (opts.length === 1) $('env-destino').value = opts[0].v;
+}
+function origenEnvioCambio(sinVaciar) {
+  const o = $('env-origen').value;
+  $('env-desde-bloque').style.display = o === depCentral() ? 'none' : '';
+  if (!sinVaciar) { S.envio.series = []; pintarDestinos($('env-destino').value); }
+  pintarSeriesEnvio();
+  pintarCarrito();
+}
+function envioCambio() { $('env-resultado').innerHTML = ''; $('btn-env-adv').style.display = 'none'; }
+function maquinasEnOrigen() {
+  const o = $('env-origen').value;
+  return S.ini.maquinas.filter(m => depDeMaq(m) === o && !m.ingresoAbierto && !S.envio.series.includes(m.serie));
+}
+function pintarSeriesEnvio() {
+  const lista = maquinasEnOrigen();
+  $('env-serie').innerHTML = `<option value="">${lista.length ? '— Agregar máquina (' + lista.length + ' en el origen) —' : 'No hay máquinas disponibles en el origen'}</option>` +
+    lista.map(m => `<option value="${esc(m.serie)}">${esc(m.serie)} · ${esc(m.modelo)} · ${esc(S.ini.estadosMaquina[m.estado])}${m.paraCaba ? ' · para CABA' : ''}</option>`).join('');
+}
+function agregarSerieEnvio(sel) { if (sel.value) S.envio.series.push(sel.value); pintarSeriesEnvio(); pintarCarrito(); envioCambio(); }
+function agregarItemEnvio() {
+  const cod = $('env-item').value, cant = Number($('env-cant').value);
+  if (!cod) return aviso('Elegí un ítem.', 'err');
+  if (!(cant > 0)) return aviso('La cantidad debe ser mayor que cero.', 'err');
+  const desde = $('env-origen').value === depCentral() ? 'DISPONIBLE' : $('env-desde').value;
+  const ya = S.envio.lineas.find(l => l.codigo === cod && l.desde === desde);
+  if (ya) ya.cantidad += cant; else S.envio.lineas.push({ codigo: cod, cantidad: cant, desde });
+  $('env-cant').value = 1; $('env-item').value = '';
+  pintarCarrito(); envioCambio();
+}
+function pintarCarrito() {
+  guardarBorrador();
+  const filas = S.envio.lineas.map((l, i) => `<tr><td>${esc(nombreItem(l.codigo))}</td><td class="num">${l.cantidad}</td><td>${$('env-origen').value === depCentral() ? '' : (l.desde === 'PARA_CABA' ? 'Revisado para CABA' : 'Disponible')}</td>
+    <td><button class="chico" onclick="S.envio.lineas.splice(${i},1);pintarCarrito();envioCambio()">✕</button></td></tr>`)
+    .concat(S.envio.series.map((s, i) => { const m = S.ini.maquinas.find(x => x.serie === s) || {}; return `<tr><td>Máquina <span class="mono">${esc(s)}</span> · ${esc(m.modelo || '')}</td><td class="num">1</td><td></td>
+    <td><button class="chico" onclick="S.envio.series.splice(${i},1);pintarSeriesEnvio();pintarCarrito();envioCambio()">✕</button></td></tr>`; }));
+  $('env-carrito').innerHTML = filas.length ? `<div class="tabla-scroll"><table><thead><tr><th>Contenido del envío</th><th class="num">Cant.</th><th>Sale de</th><th></th></tr></thead><tbody>${filas.join('')}</tbody></table></div>`
+    : '<p class="vacio">El envío está vacío.</p>';
+}
+function limpiarEnvio() { S.envio = { lineas: [], series: [] }; ['env-guia', 'env-coment'].forEach(id => $(id).value = ''); pintarSeriesEnvio(); pintarCarrito(); envioCambio(); }
+async function guardarEnvio(aceptar) {
+  const d = { fecha: $('env-fecha').value, origen: $('env-origen').value, destino: $('env-destino').value, transporte: $('env-transporte').value.trim(),
+    guia: $('env-guia').value.trim(), comentarios: $('env-coment').value.trim(), items: S.envio.lineas.slice(), series: S.envio.series.slice() };
+  if (!d.destino) return aviso('Elegí el destino.', 'err');
+  if (!d.items.length && !d.series.length) return aviso('El envío está vacío.', 'err');
+  const r = await confirmarOps([{ clase: 'ENVIO', datos: d }], aceptar, 'env-resultado', 'btn-env-adv');
+  if (r) limpiarEnvio();
+}
+function pintarTransito() {
+  const tr = S.ini.envios.filter(e => e.estado === 'EN_TRANSITO' && enEnvio(e));
+  $('env-transito').innerHTML = tr.length ? '<thead><tr><th>Envío</th><th>Salió</th><th>Origen → destino</th><th>Contenido</th><th>Llegó el</th><th></th></tr></thead><tbody>' +
+    tr.map(e => `<tr><td class="mono">${esc(e.id)}</td><td>${fechaTxt(e.fecha)}</td><td>${esc(e.origen)} → ${esc(e.destino)}</td><td style="font-size:13px">${esc(contenidoEnvio(e))}</td>
+      <td style="width:150px"><input type="date" id="rec-${esc(e.id)}" value="${esc(S.ini.hoy)}" max="${esc(S.ini.hoy)}" min="${esc(e.fecha)}"></td>
+      <td><button class="chico exito solo-carga" onclick="recibirEnvio('${esc(e.id)}')">Recibir</button></td></tr>`).join('') + '</tbody>'
+    : '<tbody><tr><td class="vacio">No hay envíos en camino.</td></tr></tbody>';
+  const rec = S.ini.envios.filter(e => e.estado === 'RECIBIDO' && enEnvio(e)).slice(0, 20);
+  $('env-recibidos').innerHTML = rec.length ? '<thead><tr><th>Envío</th><th>Salió</th><th>Llegó</th><th>Origen → destino</th><th>Contenido</th></tr></thead><tbody>' +
+    rec.map(e => `<tr><td class="mono">${esc(e.id)}</td><td>${fechaTxt(e.fecha)}</td><td>${fechaTxt(e.fechaRecepcion)}</td><td>${esc(e.origen)} → ${esc(e.destino)}</td><td style="font-size:13px">${esc(contenidoEnvio(e))}</td></tr>`).join('') + '</tbody>'
+    : '<tbody><tr><td class="vacio">Todavía no hay envíos recibidos.</td></tr></tbody>';
+}
+async function recibirEnvio(id) {
+  const f = $('rec-' + id).value;
+  if (!f) return aviso('Indicá la fecha de llegada.', 'err');
+  ocupado('Registrando la recepción…');
+  try {
+    const r = await llamar('apiConfirmar', [{ clase: 'RECEPCION', datos: { fecha: f, idEnvio: id } }], true);
+    if (!r.ok) { aviso(r.resultados[0].errores.map(e => e.mensaje).join(' '), 'err'); libre(); return; }
+    aviso('Envío ' + id + ' recibido.');
+    if (r.ini) { aplicarIni(r.ini); libre(); } else await recargar();
+  } catch (e) { aviso(e.message, 'err'); libre(); }
+}
+
+/* ======================================================================
+ *  Revisión
+ * ==================================================================== */
+function pintarRevision() {
+  const abiertas = S.ini.taller.filter(t => t.estado === 'Abierta' && enDep(t.deposito));
+  $('rev-maquinas').innerHTML = abiertas.length ? '<thead><tr><th>Serie</th><th>Modelo</th><th>Depósito</th><th>Desde</th><th>Días</th><th>Cliente</th><th>Tipo de OT</th><th>OT</th><th>Falla</th><th></th></tr></thead><tbody>' +
+    abiertas.map(t => `<tr><td class="mono">${esc(t.serie)}</td><td>${esc(t.modelo)}</td><td>${esc(t.deposito)}</td><td>${fechaTxt(t.fecha)}</td><td class="num">${t.dias}</td>
+      <td>${esc(t.cliente)}${t.idCliente ? ' <span class="mono ayuda">' + esc(t.idCliente) + '</span>' : ''}</td><td>${esc(t.tipoOT)}</td><td class="mono">${esc(t.origen === 'MANUAL' ? '' : t.origen)}</td><td>${esc(t.falla)}</td><td><button class="chico primario" onclick="abrirCierre('${esc(t.id)}')">Cerrar revisión</button></td></tr>`).join('') + '</tbody>'
+    : '<tbody><tr><td class="vacio">No hay máquinas a revisar.</td></tr></tbody>';
+  if (S.cierre && !abiertas.some(t => t.id === S.cierre.idIngreso)) cerrarFormCierre();
+  const deps = depositosVisibles().map(d => d.id);
+  const tecs = [...new Set(S.ini.plazas.filter(p => enPlaza(p.plaza)).flatMap(p => p.tecnicos || []))];
+  $('lista-tecnicos-dep').innerHTML = tecs.map(x => `<option value="${esc(x)}">`).join('');
+  const disp = S.ini.maquinas.filter(m => deps.includes(depDeMaq(m)) && !m.ingresoAbierto && m.estado !== 'BAJA');
+  $('ing-serie').innerHTML = `<option value="">${disp.length ? '— Elegí (' + disp.length + ') —' : 'No hay máquinas en los depósitos'}</option>` +
+    disp.map(m => `<option value="${esc(m.serie)}">${esc(m.serie)} · ${esc(m.modelo)} · ${esc(depDeMaq(m))} · ${esc(S.ini.estadosMaquina[m.estado])}</option>`).join('');
+  const porDep = {};
+  (S.ini.revisionPendiente || []).filter(l => deps.includes(l.deposito)).forEach(l => (porDep[l.deposito] = porDep[l.deposito] || []).push(l));
+  $('rev-items').innerHTML = Object.keys(porDep).length ? Object.keys(porDep).sort().map(dep => `<h3>${esc(dep)}</h3>
+    <div class="tabla-scroll"><table><thead><tr><th>Retirado el</th><th>Cliente</th><th>Tipo de OT</th><th>OT</th><th>Ítem</th><th class="num">A revisar</th><th>Pasa a disponible</th><th>Vuelve a CABA</th><th>Descarte</th></tr></thead><tbody>
+    ${porDep[dep].map(l => `<tr><td>${fechaTxt(l.fecha)}<div class="ayuda" style="margin:0">${l.dias} días</div></td><td>${esc(l.cliente)}${l.idCliente ? ' <span class="mono ayuda">' + esc(l.idCliente) + '</span>' : ''}</td>
+      <td>${esc(l.tipoOT)}</td><td class="mono">${esc(l.nOt)}</td><td>${esc(l.descripcion)}</td><td class="num">${l.cantidad}</td>
+      <td style="width:130px"><input type="number" min="0" max="${l.cantidad}" data-dep="${esc(dep)}" data-cod="${esc(l.codigo)}" data-lote="${esc(l.lote)}" data-res="DISPONIBLE" value="0" aria-label="Pasa a disponible"></td>
+      <td style="width:130px"><input type="number" min="0" max="${l.cantidad}" data-dep="${esc(dep)}" data-cod="${esc(l.codigo)}" data-lote="${esc(l.lote)}" data-res="ENVIAR_CABA" value="0" aria-label="Vuelve a CABA"></td>
+      <td style="width:130px"><input type="number" min="0" max="${l.cantidad}" data-dep="${esc(dep)}" data-cod="${esc(l.codigo)}" data-lote="${esc(l.lote)}" data-res="DESCARTE" value="0" aria-label="Descarte"></td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="fila" style="max-width:720px;margin-top:8px"><div class="ancho2"><label for="reac-item-${esc(dep)}">Si se reacondicionó un filtro: cartucho usado</label><select id="reac-item-${esc(dep)}">${opcionesItems(S.ini.catalogo.filter(i => i.activo && (i.categoria === 'RECAMBIO_FILTRO' || i.categoria === 'FILTRO')), '')}</select></div>
+      <div><label for="reac-cant-${esc(dep)}">Cantidad</label><input type="number" id="reac-cant-${esc(dep)}" min="1" value="1"></div>
+      <div style="align-self:end"><button class="chico" onclick="agregarReac('${esc(dep)}')">Agregar cartucho</button></div></div>
+    <div id="reac-lista-${esc(dep)}">${htmlReac(dep)}</div>
+    <div id="revi-res-${esc(dep)}"></div><div class="acciones"><button class="exito" onclick="guardarRevisionItems('${esc(dep)}')">Guardar revisión de ${esc(dep)}</button></div>`).join('')
+    : '<p class="vacio">No hay insumos ni adicionales a revisar.</p>';
+}
+function abrirCierre(idIng) {
+  const t = S.ini.taller.find(x => x.id === idIng);
+  S.cierre = { idIngreso: idIng, serie: t.serie, deposito: t.deposito, resultado: '', items: [] };
+  $('cierre-titulo').textContent = `Cerrar la revisión de ${t.serie} (${t.modelo}) · ${t.deposito}`;
+  $('cie-falla').value = t.falla || ''; $('cie-diag').value = ''; $('cie-tecnico').value = ''; $('cie-fecha').value = S.ini.hoy; $('cie-fecha').min = t.fecha;
+  $('cie-resultado-nota').innerHTML = ''; $('btn-cie-adv').style.display = 'none';
+  elegirResultado('');
+  $('cierre-form').style.display = 'block';
+}
+function cerrarFormCierre() { S.cierre = null; $('cierre-form').style.display = 'none'; }
+function elegirResultado(r) {
+  if (!S.cierre) return;
+  S.cierre.resultado = r;
+  document.querySelectorAll('#cie-resultado button').forEach(b => b.classList.toggle('activo', b.dataset.r === r));
+  $('cie-items-bloque').style.display = r === 'REPARADA' ? '' : 'none';
+  if (r !== 'REPARADA') S.cierre.items = [];
+  else if (!S.cierre.items.length) S.cierre.items.push({ codigo: '', cantidad: 1 });
+  pintarItemsCierre();
+}
+function pintarItemsCierre() {
+  if (!S.cierre) return;
+  const lista = itemsReparacion();
+  $('cie-items').innerHTML = '<tbody>' + S.cierre.items.map((l, i) => `<tr><td><select aria-label="Ítem usado" onchange="S.cierre.items[${i}].codigo=this.value">${opcionesItems(lista, l.codigo)}</select></td>
+    <td style="width:110px"><input type="number" min="1" value="${esc(l.cantidad)}" aria-label="Cantidad" oninput="S.cierre.items[${i}].cantidad=Number(this.value)"></td>
+    <td><button class="chico" onclick="S.cierre.items.splice(${i},1);pintarItemsCierre()">✕</button></td></tr>`).join('') + '</tbody>';
+}
+async function guardarCierre(aceptar) {
+  const c = S.cierre;
+  if (!c) return;
+  if (!c.resultado) return aviso('Elegí el resultado.', 'err');
+  const items = c.items.filter(l => l.codigo);
+  const d = { fecha: $('cie-fecha').value, idIngreso: c.idIngreso, serie: c.serie, resultado: c.resultado, falla: $('cie-falla').value.trim(), diagnostico: $('cie-diag').value.trim(),
+    tecnico: $('cie-tecnico').value.trim(), items };
+  const r = await confirmarOps([{ clase: 'CIERRE', datos: d }], aceptar, 'cie-resultado-nota', 'btn-cie-adv');
+  if (r) cerrarFormCierre();
+}
+async function guardarIngreso() {
+  const serie = $('ing-serie').value;
+  if (!serie) return aviso('Elegí la máquina.', 'err');
+  const r = await confirmarOps([{ clase: 'INGRESO', datos: { fecha: $('ing-fecha').value, serie, falla: $('ing-falla').value.trim() } }], true, 'error-global');
+  if (r) $('ing-falla').value = '';
+}
+function htmlReac(dep) {
+  const l = S.reac[dep] || [];
+  return l.length ? '<p class="ayuda">Cartuchos usados para reacondicionar (salen del disponible): ' + l.map((x, i) => `${x.cantidad} ${esc(nombreItem(x.codigo))} <button class="chico" onclick="S.reac['${esc(dep)}'].splice(${i},1);pintarRevision()">✕</button>`).join(' · ') + '</p>' : '';
+}
+function agregarReac(dep) {
+  const cod = $('reac-item-' + dep).value, n = Number($('reac-cant-' + dep).value);
+  if (!cod || !(n > 0)) return aviso('Elegí el cartucho y la cantidad.', 'err');
+  (S.reac[dep] = S.reac[dep] || []).push({ codigo: cod, cantidad: n });
+  $('reac-lista-' + dep).innerHTML = htmlReac(dep);
+}
+async function guardarRevisionItems(dep) {
+  const items = [];
+  document.querySelectorAll('#rev-items input[data-dep]').forEach(inp => {
+    if (inp.dataset.dep !== dep) return;
+    const n = Number(inp.value);
+    if (n > 0) items.push({ codigo: inp.dataset.cod, cantidad: n, resultado: inp.dataset.res, lote: inp.dataset.lote });
+  });
+  if (!items.length) return aviso('Indicá al menos una cantidad.', 'err');
+  const consumos = (S.reac[dep] || []).slice();
+  const r = await confirmarOps([{ clase: 'REVISION_ITEMS', datos: { fecha: $('revi-fecha').value, deposito: dep, items, consumos } }], true, 'revi-res-' + dep);
+  if (r) { S.reac[dep] = []; pintarRevision(); }
+}
+
+/* ======================================================================
+ *  Reparación en depósito
+ * ==================================================================== */
+/* Los mismos ítems que permite la reparación en cliente (REGLAS_TRABAJO), sin adicionales. */
+function itemsReparacion() {
+  const cats = (S.ini.reglas.REPARACION || []).filter(c => c !== 'ADICIONAL');
+  return S.ini.catalogo.filter(i => i.activo && cats.includes(i.categoria));
+}
+function maquinasParaReparar() {
+  const deps = depositosVisibles().map(d => d.id);
+  return S.ini.maquinas.filter(m => deps.includes(depDeMaq(m)) && m.estado !== 'BAJA');
+}
+function pintarReparacion() {
+  const prev = $('rep-serie').value;
+  const lista = maquinasParaReparar().sort((a, b) => (b.estado === 'A_REVISAR') - (a.estado === 'A_REVISAR') || a.serie.localeCompare(b.serie));
+  $('rep-serie').innerHTML = `<option value="">${lista.length ? '— Elegí (' + lista.length + ') —' : 'No hay máquinas en los depósitos'}</option>` +
+    lista.map(m => `<option value="${esc(m.serie)}">${esc(m.serie)} · ${esc(m.modelo)} · ${esc(depDeMaq(m))} · ${esc(S.ini.estadosMaquina[m.estado])}${m.ingresoAbierto ? ' (a revisar)' : ''}</option>`).join('');
+  if (lista.some(m => m.serie === prev)) $('rep-serie').value = prev;
+  repSerieCambio(true);
+  if (!S.rep.items.length) S.rep.items.push({ codigo: '', cantidad: 1 });
+  pintarItemsRep();
+  const rec = S.ini.taller.filter(t => t.estado === 'Cerrada' && t.resultado === 'Reparada' && enDep(t.deposito))
+    .sort((a, b) => String(b.fechaCierre).localeCompare(String(a.fechaCierre))).slice(0, 30);
+  $('rep-recientes').innerHTML = rec.length ? '<thead><tr><th>Fecha</th><th>Serie</th><th>Modelo</th><th>Depósito</th><th>Origen</th><th>Falla</th><th>Trabajo realizado</th><th>Ítems usados</th><th>Técnico</th></tr></thead><tbody>' +
+    rec.map(t => `<tr><td>${fechaTxt(t.fechaCierre)}</td><td class="mono">${esc(t.serie)}</td><td>${esc(t.modelo)}</td><td>${esc(t.deposito)}</td><td>${esc(t.tipoOT)}${t.cliente ? ' · ' + esc(t.cliente) : ''}</td>
+      <td>${esc(t.falla)}</td><td>${esc(t.diagnostico)}</td><td>${esc(t.items) || '<span class="vacio">—</span>'}</td><td>${esc(t.tecnico)}</td></tr>`).join('') + '</tbody>'
+    : '<tbody><tr><td class="vacio">Todavía no hay reparaciones.</td></tr></tbody>';
+}
+function repSerieCambio(sinLimpiar) {
+  const m = S.ini.maquinas.find(x => x.serie === $('rep-serie').value);
+  if (!sinLimpiar) { $('rep-resultado').innerHTML = ''; $('btn-rep-adv').style.display = 'none'; }
+  if (!m) { $('rep-info').innerHTML = ''; return; }
+  const t = m.ingresoAbierto ? S.ini.taller.find(x => x.id === m.ingresoAbierto) : null;
+  $('rep-fecha').min = t ? t.fecha : (m.ultimaFecha || '');
+  if (t && !$('rep-falla').value) $('rep-falla').value = t.falla || '';
+  $('rep-info').innerHTML = t
+    ? `<div class="nota adv">Está a revisar desde el ${fechaTxt(t.fecha)} (${esc(t.tipoOT)}${t.cliente ? ' · ' + esc(t.cliente) : ''}). Al guardar, la revisión ${esc(t.id)} queda cerrada como Reparada.</div>`
+    : `<div class="nota ok">${esc(S.ini.estadosMaquina[m.estado])} en ${esc(nomDep(depDeMaq(m)))}. La reparación queda en su historial.</div>`;
+}
+function pintarItemsRep() {
+  const lista = itemsReparacion();
+  $('rep-items').innerHTML = '<tbody>' + S.rep.items.map((l, i) => `<tr><td><select aria-label="Ítem usado" onchange="S.rep.items[${i}].codigo=this.value">${opcionesItems(lista, l.codigo)}</select></td>
+    <td style="width:110px"><input type="number" min="1" value="${esc(l.cantidad)}" aria-label="Cantidad" oninput="S.rep.items[${i}].cantidad=Number(this.value)"></td>
+    <td><button class="chico" onclick="S.rep.items.splice(${i},1);pintarItemsRep()">✕</button></td></tr>`).join('') + '</tbody>';
+}
+function limpiarReparacion() {
+  S.rep = { items: [{ codigo: '', cantidad: 1 }] };
+  ['rep-falla', 'rep-diag', 'rep-tecnico'].forEach(id => $(id).value = '');
+  $('rep-serie').value = ''; $('rep-fecha').value = S.ini.hoy;
+  repSerieCambio(); pintarItemsRep();
+}
+async function guardarReparacion(aceptar) {
+  const serie = $('rep-serie').value;
+  if (!serie) return aviso('Elegí la máquina.', 'err');
+  if (!$('rep-diag').value.trim()) return aviso('Indicá el trabajo realizado.', 'err');
+  const d = { fecha: $('rep-fecha').value, serie, falla: $('rep-falla').value.trim(), diagnostico: $('rep-diag').value.trim(), tecnico: $('rep-tecnico').value.trim(),
+    items: S.rep.items.filter(l => l.codigo && l.cantidad > 0) };
+  const r = await confirmarOps([{ clase: 'REPARACION_DEPOSITO', datos: d }], aceptar, 'rep-resultado', 'btn-rep-adv');
+  if (r) limpiarReparacion();
+}
+
+/* ======================================================================
+ *  Stock y ajustes
+ * ==================================================================== */
+function armarStock() {
+  const prevD = $('aj-dep').value;
+  $('aj-dep').innerHTML = '<option value="">— Elegí —</option>' + depositosVisibles().map(d => `<option value="${esc(d.id)}">${esc(etiquetaDep(d))}</option>`).join('');
+  if (depositosVisibles().some(d => d.id === prevD)) $('aj-dep').value = prevD;
+  $('aj-item').innerHTML = opcionesItems(S.ini.catalogo.filter(i => i.activo), $('aj-item').value);
+  $('mov-item').innerHTML = opcionesItems(S.ini.catalogo, S.movItem || '');
+}
+
+/* v0.9.4: movimientos de un ítem (kardex). Se pide al servidor con el período elegido; la plaza se filtra acá. */
+function elegirMovItem(codigo) {
+  S.movItem = codigo || ''; S.movItemData = null;
+  if ($('mov-item').value !== S.movItem) $('mov-item').value = S.movItem;
+  refrescarMovItem();
+}
+function verMovItem(codigo) {
+  elegirMovItem(codigo);
+  $('mov-item-tarjeta').scrollIntoView && $('mov-item-tarjeta').scrollIntoView({ behavior: 'smooth' });
+}
+function refrescarMovItem() {
+  if (!S.movItem) { $('mov-item-res').innerHTML = ''; return; }
+  const clave = S.movItem + '|' + $('stk-desde').value + '|' + $('stk-hasta').value;
+  if (S.movItemData && S.movItemData.clave === clave) return pintarMovItem();
+  if (!$('p-stock').classList.contains('activo')) return; // se pide al abrir Stock
+  $('mov-item-res').innerHTML = '<p class="vacio">Cargando movimientos…</p>';
+  llamar('apiMovimientosItem', S.movItem, $('stk-desde').value, $('stk-hasta').value)
+    .then(r => { if (S.movItem + '|' + $('stk-desde').value + '|' + $('stk-hasta').value !== clave) return; S.movItemData = Object.assign(r, { clave }); pintarMovItem(); })
+    .catch(e => { $('mov-item-res').innerHTML = `<p class="vacio">${esc(e.message)}</p>`; });
+}
+function pintarMovItem() {
+  const r = S.movItemData; if (!r) return;
+  const filas = r.filas.filter(x => enDep(x.deposito));
+  const celda = (delta, saldo) => delta ? `<b>${delta > 0 ? '+' : ''}${delta}</b> → ${saldo}` : `<span class="gris">${saldo}</span>`;
+  const desde = $('stk-desde').value;
+  const iniciales = desde ? Object.keys(r.inicial).filter(k => enDep(k.split('|')[0])).map(k => {
+    const s = r.inicial[k];
+    return `<tr class="gris"><td>${fechaTxt(desde)}</td><td>${esc(k.split('|')[0])}</td><td><i>Saldo al inicio del período</i></td><td class="num">${s.DISPONIBLE}</td><td class="num">${s.A_REVISAR}</td><td class="num">${s.PARA_CABA}</td><td></td><td></td><td></td></tr>`;
+  }).join('') : '';
+  const fin = {}; filas.forEach(x => fin[x.deposito] = x);
+  const resumen = Object.keys(fin).sort().map(d => `${esc(d)}: <b>${fin[d].saldoDisponible}</b> disponible${fin[d].saldoARevisar ? ', ' + fin[d].saldoARevisar + ' a revisar' : ''}${fin[d].saldoParaCaba ? ', ' + fin[d].saldoParaCaba + ' para CABA' : ''}`).join(' · ');
+  $('mov-item-res').innerHTML = `<h3>${esc(r.descripcion)} <span class="mono ayuda" style="margin:0">${esc(r.codigo)}</span></h3>` +
+    (filas.length ? `<p class="ayuda">${filas.length} movimiento(s). Saldo al final del período: ${resumen}.</p>` : '') +
+    (filas.length || iniciales ? `<div class="tabla-scroll"><table id="mov-item-tabla"><thead><tr><th>Fecha</th><th>Depósito</th><th>Movimiento</th><th class="num">Disponible</th><th class="num">A revisar</th><th class="num">Para CABA</th><th>Cliente / serie</th><th>Operación</th><th>Detalle</th></tr></thead><tbody>${iniciales}` +
+      filas.map(x => `<tr><td style="white-space:nowrap">${fechaTxt(x.fecha)}</td><td style="white-space:nowrap">${esc(x.deposito)}</td><td>${esc(x.movimiento)}</td>
+        <td class="num">${celda(x.disponible, x.saldoDisponible)}</td><td class="num">${celda(x.aRevisar, x.saldoARevisar)}</td><td class="num">${celda(x.paraCaba, x.saldoParaCaba)}</td>
+        <td>${esc([x.cliente ? x.cliente + (x.idCliente ? ' (' + x.idCliente + ')' : '') : '', x.serie ? 'Serie ' + x.serie : ''].filter(Boolean).join(' · '))}</td>
+        <td class="mono" style="white-space:nowrap">${esc(x.operacion)}</td><td style="font-size:13px">${esc(x.detalle)}</td></tr>`).join('') + '</tbody></table></div>'
+      : '<p class="vacio">Sin movimientos en el período para los filtros elegidos.</p>');
+}
+const MOV_STOCK = {
+  INGRESO: { ENVIO: 'por envío', REVISION: 'por revisión', AJUSTE: 'por ajuste' },
+  SALIDA: { CLIENTE: 'a clientes', MAQUINA: 'en máquinas', REACONDICIONAMIENTO: 'en reacondicionamiento', AJUSTE: 'por ajuste' }
+};
+/* Pone las fechas del período elegido. Histórico = sin fecha desde. */
+function elegirPeriodoStock(sinGuardar) {
+  const p = $('stk-periodo').value, hoy = S.ini.hoy;
+  const [a, m] = hoy.split('-').map(Number);
+  const iso = (y, mm, dd) => `${y}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+  const menosDias = n => { const d = new Date(hoy + 'T12:00:00'); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+  if (p === 'MES') { $('stk-desde').value = iso(a, m, 1); $('stk-hasta').value = hoy; }
+  else if (p === 'MES_ANT') { const ya = m === 1 ? a - 1 : a, ma = m === 1 ? 12 : m - 1; $('stk-desde').value = iso(ya, ma, 1); $('stk-hasta').value = iso(ya, ma, new Date(ya, ma, 0).getDate()); }
+  else if (p === 'D30') { $('stk-desde').value = menosDias(30); $('stk-hasta').value = hoy; }
+  else if (p === 'ANIO') { $('stk-desde').value = iso(a, 1, 1); $('stk-hasta').value = hoy; }
+  else if (p === 'HIST') { $('stk-desde').value = ''; $('stk-hasta').value = ''; }
+  if (!sinGuardar) guardarPref('stk.periodo', p);
+  pintarStock();
+}
+/* Ingresos y salidas del período: se piden al servidor al abrir Stock (y al cambiar el período). */
+function claveMovPeriodo() { return $('stk-desde').value + '|' + $('stk-hasta').value + '|' + S.ini.hoy; }
+function pedirMovPeriodo() {
+  const clave = claveMovPeriodo();
+  if ((S.movPeriodo && S.movPeriodo.clave === clave) || S.pidiendoPeriodo === clave) return;
+  if (!$('p-stock').classList.contains('activo')) return;
+  S.pidiendoPeriodo = clave;
+  llamar('apiIngresosSalidas', $('stk-desde').value, $('stk-hasta').value)
+    .then(filas => { S.pidiendoPeriodo = ''; if (claveMovPeriodo() !== clave) return; S.movPeriodo = { clave, filas }; pintarStock(); })
+    .catch(e => { S.pidiendoPeriodo = ''; $('stk-salidas-resumen').innerHTML = `<p class="vacio">${esc(e.message)}</p>`; });
+}
+function movimientosPeriodo() {
+  const r = {};
+  if (!S.movPeriodo || S.movPeriodo.clave !== claveMovPeriodo()) { pedirMovPeriodo(); return null; }
+  S.movPeriodo.filas.forEach(x => {
+    const k = x.deposito + '|' + x.codigo;
+    r[k] = r[k] || { INGRESO: {}, SALIDA: {} };
+    r[k][x.sentido][x.tipo] = (r[k][x.sentido][x.tipo] || 0) + x.cantidad;
+  });
+  return r;
+}
+function pintarStock() {
+  const cat = $('stk-cat').value;
+  const mov = movimientosPeriodo(), cargando = !mov;
+  const movDe = (s, sentido) => ((mov || {})[s.deposito + '|' + s.codigo] || { INGRESO: {}, SALIDA: {} })[sentido];
+  const suma = o => Object.values(o).reduce((a, b) => a + b, 0);
+  const st = S.ini.stock.filter(s => enDep(s.deposito) && (!cat || s.categoria === cat));
+  const tot = { INGRESO: {}, SALIDA: {} };
+  st.forEach(s => ['INGRESO', 'SALIDA'].forEach(se => Object.entries(movDe(s, se)).forEach(([t, n]) => tot[se][t] = (tot[se][t] || 0) + n)));
+  const desglose = (o, sentido) => Object.keys(MOV_STOCK[sentido]).filter(t => o[t]).map(t => o[t] + ' ' + MOV_STOCK[sentido][t]).join(' · ');
+  const hist = !$('stk-desde').value && !$('stk-hasta').value;
+  const periodo = hist ? 'Histórico (desde el inicio)' : `Del ${fechaTxt($('stk-desde').value) || 'inicio'} al ${fechaTxt($('stk-hasta').value) || 'hoy'}`;
+  $('stk-salidas-resumen').innerHTML = cargando ? `<p class="ayuda">${periodo}: calculando ingresos y salidas…</p>` : `<p class="ayuda">${periodo}: <b>${suma(tot.INGRESO)}</b> ingresos${suma(tot.INGRESO) ? ' (' + desglose(tot.INGRESO, 'INGRESO') + ')' : ''} y <b>${suma(tot.SALIDA)}</b> salidas${suma(tot.SALIDA) ? ' (' + desglose(tot.SALIDA, 'SALIDA') + ')' : ''}.</p>`;
+  const celda = (s, sentido) => { const o = movDe(s, sentido), n = suma(o); return n ? `${n}<div class="ayuda" style="margin:0">${desglose(o, sentido)}</div>` : ''; };
+  $('stk-items').innerHTML = st.length ? '<thead><tr><th>Depósito</th><th>Categoría</th><th>Ítem</th><th class="num">Disponible</th><th class="num">A revisar</th><th class="num">Para CABA</th><th class="num">En camino</th><th class="num">Ingresos</th><th class="num">Salidas</th></tr></thead><tbody>' +
+    st.map(s => `<tr class="${s.disponible < 0 ? 'neg' : ''}"><td>${esc(s.deposito)}</td><td>${esc(CAT_TXT[s.categoria] || s.categoria)}</td><td><button class="link" title="Ver movimientos" onclick="verMovItem('${esc(s.codigo)}')">${esc(s.descripcion)}</button></td>
+      <td class="num n">${s.disponible}</td><td class="num">${s.aRevisar || ''}</td><td class="num">${s.paraCaba || ''}</td><td class="num">${s.enCamino || ''}</td>
+      <td class="num" data-col="ingresos">${celda(s, 'INGRESO')}</td><td class="num" data-col="salidas">${celda(s, 'SALIDA')}</td></tr>`).join('') + '</tbody>'
+    : '<tbody><tr><td class="vacio">Sin stock registrado.</td></tr></tbody>';
+  const sm = S.ini.stockMaquinas.filter(s => enDep(s.deposito));
+  $('stk-maquinas').innerHTML = sm.length ? '<thead><tr><th>Depósito</th><th>Modelo</th><th class="num">Nuevas</th><th class="num">Usadas</th><th class="num">A revisar</th><th class="num">Baja</th><th class="num">En camino</th></tr></thead><tbody>' +
+    sm.map(s => `<tr><td>${esc(s.deposito)}</td><td>${esc(s.modelo)}</td><td class="num">${s.nuevas}</td><td class="num">${s.usadas}</td><td class="num">${s.aRevisar}</td><td class="num">${s.baja}</td><td class="num">${s.enCamino}</td></tr>`).join('') + '</tbody>'
+    : '<tbody><tr><td class="vacio">No hay máquinas en los depósitos.</td></tr></tbody>';
+  refrescarMovItem();
+}
+function ajTipoCambio() {
+  const t = (S.ini && S.ini.tiposAjuste || {})[$('aj-tipo').value];
+  $('aj-cant-label').textContent = !t ? 'Cantidad' : t.signo === 0 ? 'Cantidad (+/−)' : t.signo < 0 ? 'Cantidad a descontar' : 'Cantidad a sumar';
+  $('aj-saldo-label').textContent = !t || t.signo === 0 ? 'Saldo a corregir' : t.signo < 0 ? 'Se descuenta de' : 'Se suma a';
+  $('aj-cant').min = t && t.signo !== 0 ? 1 : '';
+}
+async function guardarAjuste(aceptar) {
+  const tipo = $('aj-tipo').value, t = S.ini.tiposAjuste[tipo] || {};
+  let cant = Number($('aj-cant').value);
+  if (t.signo === -1) cant = -Math.abs(cant); // pérdida y rotura descuentan
+  const d = { fecha: $('aj-fecha').value, tipo, deposito: $('aj-dep').value, codigo: $('aj-item').value, cantidad: cant, saldo: $('aj-saldo').value, motivo: $('aj-motivo').value.trim() };
+  if (!d.deposito || !d.codigo || !d.cantidad) return aviso('Completá depósito, ítem y cantidad.', 'err');
+  const r = await confirmarOps([{ clase: 'AJUSTE', datos: d }], aceptar, 'aj-resultado', 'btn-aj-adv');
+  if (r) { $('aj-cant').value = ''; $('aj-motivo').value = ''; }
+}
+
+/* ======================================================================
+ *  Clientes
+ * ==================================================================== */
+function pintarClientes() {
+  const f = sinAcentos($('cli-buscar').value), est = $('cli-estado').value;
+  const lista = S.ini.clientes.filter(c => enCli(c) && (!est || c.estado === est) && (!f || sinAcentos([c.id, c.nombre, c.razon, c.sector, c.zona, c.serie].join(' ')).includes(f)));
+  $('cli-cant').textContent = lista.length;
+  const max = 300;
+  $('cli-tabla').innerHTML = lista.length ? '<thead><tr><th>ID</th><th>Nombre</th><th>Sector</th><th>Plaza / zona</th><th>Estado</th><th>Serie</th><th>Última visita</th></tr></thead><tbody>' +
+    lista.slice(0, max).map(c => `<tr class="clic" onclick="verCliente('${esc(c.id)}')"><td class="mono">${esc(c.id)}</td><td>${esc(c.nombre)}</td><td>${esc(c.sector)}</td>
+      <td>${esc(plazaYZona(c))}</td><td>${esc(S.ini.estadosCliente[c.estado])}</td><td class="mono">${esc(c.serie)}</td><td>${fechaTxt(c.ultimaVisita)}</td></tr>`).join('') +
+    (lista.length > max ? `<tr><td colspan="7" class="vacio">Se muestran ${max} de ${lista.length}: afiná la búsqueda.</td></tr>` : '') + '</tbody>'
+    : '<tbody><tr><td class="vacio">Ningún cliente coincide.</td></tr></tbody>';
+}
+async function verCliente(id) {
+  ocupado('Buscando…');
+  try {
+    const f = await llamar('apiFichaCliente', id);
+    const c = f.cliente, v = f.vista || {}, m = f.mantenimiento, ci = cliente(id) || {};
+    const dato = (t, x) => `<div><span>${t}</span>${esc(x) || '—'}</div>`;
+    $('cli-ficha').innerHTML = `<h2>${esc(c.nombre)} <span class="mono ayuda" style="margin:0">${esc(c.id)}</span>
+        <button class="chico solo-carga" style="margin-left:auto" onclick="abrirFormCliente('${esc(c.id)}')">Editar</button>
+        <button class="chico primario solo-carga" onclick="otDesdeInicio('${esc(c.id)}','MANTENIMIENTO')">Cargar OT</button></h2>
+      <div class="datos" style="margin-top:10px">${dato('Estado', v.estado)}${dato('Razón social / CUIT', c.razon)}${dato('Sector', c.sector)}${dato('Región / plaza / zona', [c.region, nomPlaza(c.plaza), c.zona].filter(Boolean).join(' · '))}
+        ${dato('Tipo / modalidad', [c.tipoCliente, c.modalidad].filter(Boolean).join(' · '))}
+        ${dato('Serie / modelo', v.serie ? v.serie + ' · ' + v.modelo : '')}${dato('Instalación', fechaTxt(v.fechaInstalacion))}${dato('Último cambio de máquina', fechaTxt(v.fechaCambio))}
+        ${dato('Desinstalación', fechaTxt(v.fechaDesinstalacion))}${dato('Última visita', v.ultimaVisita ? fechaTxt(v.ultimaVisita) + ' · ' + v.tipoUltimaVisita : '')}
+        ${dato('Sistema / prefiltro', [v.sistema, v.prefiltro].filter(Boolean).join(' · '))}${dato('En comodato', v.comodato)}${dato('Adicionales (del cliente)', v.adicionales)}
+        ${(f.cilindros || []).length ? dato('Cilindros de CO₂', f.cilindros.map(x => x.serie + (x.desde ? ' (desde ' + fechaTxt(x.desde) + ')' : '')).join(', ')) : ''}
+        ${dato('Próximo mantenimiento', m ? fechaTxt(m.proximo) + ' · ' + m.semaforo + ' (cada ' + m.frecuencia + ' días)' : '')}${dato('Trabajos a realizar', m ? m.trabajos : '')}
+        ${dato('Comentarios', c.comentarios)}</div>
+      ${v.aRetirar ? `<div class="nota info"><strong>A retirar en una desinstalación:</strong> ${esc(v.aRetirar)}</div>` : ''}
+      ${v.comentarioDesinstalacion ? `<div class="nota adv">${esc(v.comentarioDesinstalacion)}</div>` : ''}
+      ${textoCant(ci.faltante) ? `<div class="nota adv"><strong>Pendiente de retirar:</strong> ${esc(textoCant(ci.faltante))}. Se retira con una Entrega de adicionales (solo retiros).</div>` : ''}
+      ${(ci.filtros || []).length ? `<h3>Filtros instalados</h3><div class="tabla-scroll"><table><thead><tr><th></th><th>Componente</th><th>Último cambio</th><th>Vence</th></tr></thead><tbody>
+        ${ci.filtros.map(x => `<tr><td>${x.slot === 'SISTEMA' ? esc(v.sistema) : esc(v.prefiltro)}</td><td>${esc(x.descripcion)}</td><td>${fechaTxt(x.ultimo)}</td>
+          <td class="${x.vence && x.vence < S.ini.hoy ? 'sem-Vencido' : ''}">${x.rol === 'CONSUMO' ? 'Por consumo (revisar nivel)' : fechaTxt(x.vence)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${f.cuenta.length ? `<h3>Misma cuenta (${esc(c.razon)})</h3><table><tbody>${f.cuenta.map(x => `<tr class="clic" onclick="verCliente('${esc(x.id)}')"><td class="mono">${esc(x.id)}</td><td>${esc(x.nombre)}</td><td>${esc(x.sector)}</td><td>${esc(x.estado)}</td><td class="mono">${esc(x.serie)}</td></tr>`).join('')}</tbody></table>` : ''}
+      <h3>Movimientos de ítems</h3>
+      ${(f.movimientos || []).length ? `<div class="tabla-scroll"><table id="cli-movs"><thead><tr><th>Fecha</th><th>Movimiento</th><th>Ítem</th><th class="num">Cantidad</th><th>Depósito</th><th>Operación</th><th>Detalle</th></tr></thead><tbody>${f.movimientos.map(x => `<tr>
+        <td>${fechaTxt(x.fecha)}</td><td>${esc(x.movimiento)}</td><td><button class="link" onclick="mostrarPanel('p-stock');verMovItem('${esc(x.codigo)}')">${esc(x.descripcion)}</button></td>
+        <td class="num">${Math.abs(x.disponible || x.aRevisar || x.paraCaba)}</td><td>${esc(x.deposito)}</td><td class="mono">${esc(x.operacion)}</td><td style="font-size:13px">${esc(x.detalle)}</td></tr>`).join('')}</tbody></table></div>`
+        : '<p class="vacio">Sin entregas ni retiros de ítems registrados.</p>'}
+      <h3>Historial de OT</h3>
+      ${f.historial.length ? `<div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>OT</th><th>Tipo</th><th>Detalle</th></tr></thead><tbody>${f.historial.map(h => `<tr style="${h.estado === 'ANULADA' ? 'text-decoration:line-through;color:#8a95a3' : ''}">
+        <td>${fechaTxt(h.fecha)}</td><td class="mono">${esc(h.nOt)}</td><td>${esc(h.tipo)}</td>
+        <td style="font-size:13px">${esc([h.serieRetirada ? 'Retira ' + h.serieRetirada : '', h.serieInstalada ? 'Instala ' + h.serieInstalada : '', h.falla ? 'Falla: ' + h.falla : '', h.sistema ? 'Sistema: ' + h.sistema : '', h.prefiltro ? 'Prefiltro: ' + h.prefiltro : '', h.items.join(', '), h.adicionales.join(', '), h.comentarios, h.pendiente ? 'Pendiente: ' + h.pendiente : '', h.tecnico ? 'Técnico: ' + h.tecnico : ''].filter(Boolean).join(' · '))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="vacio">Sin OT registradas.</p>'}`;
+    $('cli-ficha').style.display = 'block';
+    $('cli-ficha').scrollIntoView && $('cli-ficha').scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+function armarFormCliente() {
+  $('cf-tipo').innerHTML = opciones(S.ini.listas.tipoCliente, $('cf-tipo').value, '—');
+  $('cf-modalidad').innerHTML = opciones(S.ini.listas.modalidad, $('cf-modalidad').value, '—');
+  $('cf-plaza').innerHTML = opcionesVT(S.ini.plazas.map(p => ({ v: p.plaza, t: p.nombre + ' (' + p.region + ')' })), $('cf-plaza').value || S.plaza, '— Elegí —');
+  $('lista-razones').innerHTML = [...new Set(S.ini.clientes.map(c => c.razon).filter(Boolean))].sort().map(r => `<option value="${esc(r)}">`).join('');
+  zonasFormCliente();
+}
+function zonasFormCliente(previa) {
+  const p = $('cf-plaza').value;
+  const zonas = (S.ini.zonas || []).filter(z => z.plaza === p).map(z => ({ v: z.id, t: z.nombre }));
+  $('cf-zona').innerHTML = opcionesVT(zonas, previa !== undefined ? previa : $('cf-zona').value, '— Elegí —');
+}
+function abrirFormCliente(id) {
+  const c = cliente(id);
+  if (!c) return;
+  $('cli-form-titulo').textContent = 'Editar cliente ' + c.id;
+  $('cf-id').value = c.id; $('cf-id').readOnly = true;
+  S.cfEditando = c.id;
+  const set = (k, v) => { $(k).value = v == null ? '' : v; };
+  set('cf-nombre', c.nombre); set('cf-razon', c.razon); set('cf-sector', c.sector); set('cf-tipo', c.tipoCliente); set('cf-modalidad', c.modalidad);
+  set('cf-plaza', c.plaza); zonasFormCliente(c.zonaId);
+  set('cf-frecuencia', c.frecuenciaPropia); set('cf-coment', c.comentarios);
+  $('cli-form').style.display = 'block';
+  $('cli-form').scrollIntoView && $('cli-form').scrollIntoView({ behavior: 'smooth' });
+}
+async function guardarCliente() {
+  if (!S.cfEditando) return;
+  const d = { id: S.cfEditando, nombre: $('cf-nombre').value.trim(), razon: $('cf-razon').value.trim(), sector: $('cf-sector').value.trim(),
+    tipoCliente: $('cf-tipo').value, modalidad: $('cf-modalidad').value, zonaId: $('cf-zona').value,
+    frecuencia: $('cf-frecuencia').value === '' ? '' : Number($('cf-frecuencia').value), comentarios: $('cf-coment').value.trim() };
+  if (!d.zonaId) return aviso('Elegí la zona.', 'err');
+  ocupado('Guardando cliente…');
+  try {
+    await llamar('apiGuardarCliente', d);
+    $('cli-form').style.display = 'none';
+    aviso('Cliente ' + d.id + ' guardado.');
+    await recargar();
+    await verCliente(d.id);
+  } catch (e) { aviso(e.message, 'err'); libre(); }
+}
+
+/* ======================================================================
+ *  Máquinas
+ * ==================================================================== */
+function pintarMaquinas() {
+  const f = sinAcentos($('maq-buscar').value), est = $('maq-estado').value;
+  const lista = S.ini.maquinas.filter(m => enPlaza(m.plaza) && (!est || m.estado === est) && (!f || sinAcentos([m.serie, m.modelo, ubicacionTxt(m)].join(' ')).includes(f)));
+  $('maq-cant').textContent = lista.length;
+  const max = 300;
+  $('maq-tabla').innerHTML = lista.length ? '<thead><tr><th>Serie</th><th>Modelo</th><th>Estado</th><th>Ubicación</th><th>Plaza</th><th>Último movimiento</th></tr></thead><tbody>' +
+    lista.slice(0, max).map(m => `<tr class="clic" onclick="verMaquina('${esc(m.serie)}')"><td class="mono">${esc(m.serie)}</td><td>${esc(m.modelo)}</td>
+      <td>${esc(S.ini.estadosMaquina[m.estado])}${m.paraCaba ? ' · para CABA' : ''}</td><td>${esc(ubicacionTxt(m))}</td><td>${esc(nomPlaza(m.plaza))}</td><td>${fechaTxt(m.ultimaFecha)}</td></tr>`).join('') +
+    (lista.length > max ? `<tr><td colspan="6" class="vacio">Se muestran ${max} de ${lista.length}: afiná la búsqueda.</td></tr>` : '') + '</tbody>'
+    : '<tbody><tr><td class="vacio">Ninguna máquina coincide.</td></tr></tbody>';
+}
+async function verMaquina(serie) {
+  ocupado('Buscando…');
+  try {
+    const f = await llamar('apiFichaMaquina', serie);
+    $('maq-ficha').innerHTML = `<h2><span class="mono">${esc(f.serie)}</span> · ${esc(f.modelo)}</h2>
+      <div class="datos" style="margin-top:10px"><div><span>Estado</span>${esc(f.estado)}${f.paraCaba ? ' · para enviar a CABA' : ''}</div><div><span>Ubicación</span>${esc(f.ubicacion)}</div>
+        <div><span>Plaza</span>${esc(nomPlaza(f.plaza)) || '—'}</div><div><span>Revisión abierta</span>${esc(f.revision) || '—'}</div><div><span>Alta</span>${fechaTxt(f.fechaAlta)} · ${esc(f.depositoInicial)}</div></div>
+      <h3>Historial</h3><div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>Operación</th><th>Qué pasó</th></tr></thead><tbody>
+      ${f.eventos.map(e => `<tr style="${e.anulada ? 'text-decoration:line-through;color:#8a95a3' : ''}"><td>${fechaTxt(e.fecha)}</td><td class="mono">${esc(e.id)}${e.anulada ? ' (anulada)' : ''}</td><td>${esc(e.texto)}</td></tr>`).join('')}</tbody></table></div>`;
+    $('maq-ficha').style.display = 'block';
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+function armarAltaMaquinas() {
+  $('am-modelo').innerHTML = opciones(S.ini.modelos, $('am-modelo').value, '— Elegí —');
+  const prev = $('am-dep').value || depCentral(), deps = depositosOrigen();
+  $('am-dep').innerHTML = deps.map(d => `<option value="${esc(d.id)}">${esc(etiquetaDep(d))}</option>`).join('');
+  $('am-dep').value = deps.some(d => d.id === prev) ? prev : depCentral();
+}
+async function altaMaquinas() {
+  const series = $('am-series').value.split(/[\s,;]+/).map(norm).filter(Boolean);
+  const d = { series, modelo: $('am-modelo').value, deposito: $('am-dep').value, fecha: $('am-fecha').value, comentarios: $('am-coment').value.trim() };
+  if (!series.length) return aviso('Cargá al menos una serie.', 'err');
+  if (!d.modelo) return aviso('Elegí el modelo.', 'err');
+  ocupado('Dando de alta…');
+  try {
+    const r = await llamar('apiAltaMaquinas', d);
+    $('am-series').value = '';
+    aviso(r.series.length + ' máquina(s) dada(s) de alta.');
+    await recargar();
+  } catch (e) { aviso(e.message, 'err'); libre(); }
+}
+
+/* ======================================================================
+ *  Técnicos (v1.3)
+ * ==================================================================== */
+/* Técnicos de una región en la que la OT los pide de la lista (vacío = texto libre). */
+function tecnicosObligatorios(region) {
+  if (!region || !(S.ini.regionesTecnicoObligatorio || []).includes(region)) return [];
+  return (S.ini.tecnicos || []).filter(t => t.activo !== false && t.region === region).map(t => t.id);
+}
+async function cargarTecnicos() {
+  const desde = $('tec-desde').value, hasta = $('tec-hasta').value;
+  if (!desde || !hasta || desde > hasta) return aviso('Elegí un período válido.', 'err');
+  ocupado('Armando el informe…');
+  try { S.tec = await llamar('apiTecnicos', desde, hasta); S.tecSel = ''; pintarTecnicos(); } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+function datosTecnicos() {
+  const ots = S.tec.ots.filter(o => enPlaza(o.plaza));
+  const ret = {};
+  S.tec.retrabajos.forEach(r => { ret[r.ot] = r; });
+  const evalua = ['INSTALACION', 'MANTENIMIENTO', 'REPARACION', 'REPARACION_BACKUP', 'CAMBIO_MODELO'];
+  const por = {};
+  ots.forEach(o => [o.t1, o.t2].filter(Boolean).forEach(t => {
+    const x = por[t] = por[t] || { t, total: 0, solo: 0, dos: 0, tipos: {}, dias: new Set(), evaluables: 0, retr: 0, ots: [] };
+    x.total++; if (o.t1 && o.t2) x.dos++; else x.solo++;
+    x.tipos[o.tipo] = (x.tipos[o.tipo] || 0) + 1; x.dias.add(o.fecha); x.ots.push(o);
+    if (evalua.includes(o.tipo)) { x.evaluables++; if (ret[o.id]) x.retr++; }
+  }));
+  return { ots, ret, por, sinTecnico: ots.filter(o => !o.t1).length };
+}
+function pintarTecnicos() {
+  $('tec-dias').textContent = S.ini.diasRetrabajo || 30;
+  if (!$('tec-desde').value) { $('tec-desde').value = S.ini.hoy.slice(0, 8) + '01'; $('tec-hasta').value = S.ini.hoy; }
+  if (!S.tec) { $('tec-tabla').innerHTML = '<tbody><tr><td class="vacio">Elegí el período y tocá "Ver informe".</td></tr></tbody>'; $('tec-detalle').innerHTML = ''; return; }
+  const { por, sinTecnico } = datosTecnicos();
+  const lista = Object.values(por).sort((a, b) => b.total - a.total || a.t.localeCompare(b.t));
+  const tipos = TIPOS_ORDEN.filter(t => t !== 'ALTA_INICIAL' && lista.some(x => x.tipos[t]));
+  const pct = x => x.evaluables ? Math.round(100 * x.retr / x.evaluables) + '%' : '—';
+  $('tec-tabla').innerHTML = lista.length ? `<thead><tr><th>Técnico</th><th class="num">Trabajos</th><th class="num">Solo</th><th class="num">De a dos</th>${tipos.map(t => `<th class="num">${esc(S.ini.tipos[t])}</th>`).join('')}
+      <th class="num">Días trabajados</th><th class="num">Por día</th><th class="num">Retrabajos</th><th class="num">% retrabajo</th></tr></thead><tbody>` +
+    lista.map(x => `<tr class="clic" onclick="verTecnico('${esc(x.t)}')"><td><strong>${esc(x.t)}</strong></td><td class="num">${x.total}</td><td class="num">${x.solo}</td><td class="num">${x.dos}</td>
+      ${tipos.map(t => `<td class="num">${x.tipos[t] || ''}</td>`).join('')}<td class="num">${x.dias.size}</td><td class="num">${(x.total / Math.max(x.dias.size, 1)).toFixed(1)}</td>
+      <td class="num ${x.retr ? 'sem-Vencido' : ''}">${x.retr}</td><td class="num">${pct(x)}</td></tr>`).join('') + '</tbody>' +
+    (sinTecnico ? `<tfoot><tr><td colspan="${8 + tipos.length}" class="ayuda">${sinTecnico} OT del período sin técnico cargado.</td></tr></tfoot>` : '')
+    : '<tbody><tr><td class="vacio">No hay trabajos en el período (con este filtro).</td></tr></tbody>';
+  if (S.tecSel && por[S.tecSel]) verTecnico(S.tecSel); else $('tec-detalle').innerHTML = '';
+}
+function verTecnico(t) {
+  S.tecSel = t;
+  const { por, ret } = datosTecnicos(), x = por[t];
+  if (!x) { $('tec-detalle').innerHTML = ''; return; }
+  $('tec-detalle').innerHTML = `<h3>${esc(t)} · ${x.total} trabajos</h3><div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>OT</th><th>Tipo</th><th>Cliente</th><th>Con</th><th>Retrabajo</th></tr></thead><tbody>` +
+    x.ots.map(o => { const r = ret[o.id], otro = o.t1 === t ? o.t2 : o.t1;
+      return `<tr><td>${fechaTxt(o.fecha)}</td><td class="mono">${esc(o.id)}</td><td>${esc(S.ini.tipos[o.tipo] || o.tipo)}</td><td>${esc(o.cliente)} <span class="mono ayuda">${esc(o.idCliente)}</span></td>
+        <td>${esc(otro || '')}</td><td>${r ? `<span class="sem-Vencido">Reparación ${esc(r.reparacion)} a los ${r.dias} días</span>` : ''}</td></tr>`; }).join('') + '</tbody></table></div>';
+}
+
+/* ======================================================================
+ *  Administración
+ * ==================================================================== */
+async function cargarAdmin() {
+  try {
+    const [inc, rec] = await Promise.all([llamar('apiInconsistencias'), llamar('apiRecientes')]);
+    $('adm-inc').innerHTML = inc.length ? inc.map(i => `<div class="lote-item"><div class="cab"><strong class="mono">${esc(i.id)} · ${esc(i.codigo)}</strong>
+      <button class="chico" onclick="resolverInc('${esc(i.id)}')">Marcar resuelta</button></div><div class="ayuda" style="margin:4px 0 0">${esc(i.detalle)}</div></div>`).join('')
+      : '<p class="vacio">No hay inconsistencias abiertas.</p>';
+    const vis = rec.filter(o => !o.plaza || enPlaza(o.plaza));
+    $('adm-recientes').innerHTML = '<thead><tr><th>Operación</th><th>Fecha</th><th>Detalle</th><th>Plaza</th><th>Estado</th><th>Cargó</th><th></th></tr></thead><tbody>' +
+      (vis.map(o => `<tr><td class="mono">${esc(o.id)}</td><td>${fechaTxt(o.fecha)}</td><td style="font-size:13px">${esc(o.detalle)}${o.anulacion ? '<div class="ayuda" style="margin:0">' + esc(o.anulacion) + '</div>' : ''}</td>
+        <td>${esc(nomPlaza(o.plaza))}</td><td>${esc(o.estado)}</td><td style="font-size:12.5px">${esc(o.por)}</td>
+        <td>${o.estado === 'VIGENTE' ? `<button class="chico" onclick="anular('${esc(o.id)}')">Anular</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="vacio">Sin operaciones.</td></tr>') + '</tbody>';
+  } catch (e) { aviso(e.message, 'err'); }
+}
+async function resolverInc(id) {
+  const txt = prompt('¿Cómo se resolvió ' + id + '?');
+  if (!txt) return;
+  ocupado('Guardando…');
+  try { await llamar('apiResolverInconsistencia', id, txt); aviso('Marcada como resuelta.'); await cargarAdmin(); } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+async function anular(id) {
+  const motivo = prompt('Vas a anular ' + id + '. Deja de contar y todo se recalcula sin ella.\n\nEscribí el motivo:');
+  if (!motivo) return;
+  ocupado('Anulando…');
+  try {
+    const r = await llamar('apiAnular', id, motivo);
+    if (!r.ok) aviso(r.errores.map(e => e.mensaje).join(' '), 'err');
+    else { aviso(r.mensaje); if (r.ini) aplicarIni(r.ini); else await recargar(); await cargarAdmin(); }
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+async function auditar() {
+  ocupado('Recalculando y auditando…');
+  try {
+    const r = await llamar('apiAuditar');
+    aviso('Listo: ' + r.nuevas + ' hallazgo(s) nuevo(s)' + (r.corregidas.length ? ', se corrigieron ' + r.corregidas.length + ' tabla(s) de estado.' : '. Las tablas de estado coinciden con el registro.'), r.corregidas.length ? 'adv' : 'ok');
+    aplicarIni(r.ini); await cargarAdmin();
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+async function actualizarMaestros() {
+  ocupado('Leyendo los maestros…');
+  try { aplicarIni(await llamar('apiActualizarMaestros')); aviso('Maestros actualizados.'); } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+
+pintarLote();
+exigirSesion().then(() => { recargar(); botonExcel(() => document.querySelector('section.panel.activo'), () => 'FADEFIL ' + ((document.querySelector('nav button.activo') || {}).textContent || '')); })
+  .catch(e => { if (e.message !== 'SIN_SESION') errorGlobal(e); });
+</script>
+</body>
+</html>

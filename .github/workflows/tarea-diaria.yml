@@ -2,6 +2,7 @@
 #  1. Mantiene activa la base (el plan gratuito de Supabase la pausa tras una semana sin uso).
 #  2. Copia de seguridad: estructura y datos, guardados 30 días como artefacto de esta ejecución
 #     (Actions → Tarea diaria → la ejecución del día → Artifacts).
+#  3. Auditoría: rearma equipos, stock y CO₂ desde el registro, corrige y anota hallazgos.
 name: Tarea diaria
 
 on:
@@ -35,6 +36,17 @@ jobs:
           supabase db dump --linked --password "$SUPABASE_DB_PASSWORD" -f copia/estructura.sql
           supabase db dump --linked --password "$SUPABASE_DB_PASSWORD" --data-only --use-copy -f copia/datos.sql
           ls -la copia
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Auditoría (equipos, stock y CO₂)
+        run: |
+          URL=$(curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/config/database/pooler" \
+            | jq -r '[.[] | select(.pool_mode == "session" or .database_type == "PRIMARY")][0].connection_string')
+          [ -n "$URL" ] && [ "$URL" != "null" ] || { echo "No se pudo leer la conexión a la base"; exit 1; }
+          export DATABASE_URL=$(echo "$URL" | sed "s|\[YOUR-PASSWORD\]|$(node -e 'process.stdout.write(encodeURIComponent(process.env.SUPABASE_DB_PASSWORD))')|")
+          node scripts/auditar.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: copia-${{ github.run_number }}

@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Datos · Sistema FADEFIL</title>
+<script src="lib/supabase.js"></script>
+<script src="config.js"></script>
+<script src="comun.js"></script>
+<style>
+  :root { --tinta: #16212e; --suave: #5a6878; --linea: #d9e0e8; --fondo: #f4f6f9; --marca: #1f3a5f; --marca-2: #2f5d8f; --ok: #1e7a4c; --ok-f: #e6f4ec;
+    --adv: #8a5a00; --adv-f: #fff4dc; --err: #a3261f; --err-f: #fde9e7; --radio: 10px; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--tinta); background: var(--fondo); }
+  header { background: var(--marca); color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; } header a { color: #cfdbe8; font-weight: 600; text-decoration: none; }
+  header .usuario { margin-left: auto; font-size: 13px; opacity: .9; }
+  header button { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.5); }
+  nav { display: flex; gap: 4px; padding: 8px 12px 0; background: var(--marca); overflow-x: auto; }
+  nav button { background: transparent; color: #cfdbe8; border: 0; border-radius: 8px 8px 0 0; padding: 10px 12px; font-weight: 600; white-space: nowrap; }
+  nav button.activo { background: var(--fondo); color: var(--marca); }
+  main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  .tarjeta { background: #fff; border: 1px solid var(--linea); border-radius: var(--radio); padding: 16px; margin-bottom: 14px; }
+  .tarjeta h2 { font-size: 16px; margin: 0 0 4px; } .ayuda { color: var(--suave); font-size: 13px; margin: 0 0 12px; }
+  button { font: inherit; font-weight: 600; padding: 8px 13px; border-radius: 8px; border: 1px solid var(--linea); background: #fff; color: var(--tinta); cursor: pointer; }
+  button.primario { background: var(--marca); border-color: var(--marca); color: #fff; } button.exito { background: var(--ok); border-color: var(--ok); color: #fff; }
+  button.chico { padding: 3px 8px; font-size: 13px; } button:disabled { opacity: .45; cursor: not-allowed; }
+  .acciones { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
+  input, select { font: inherit; padding: 6px 8px; border: 1px solid var(--linea); border-radius: 7px; background: #fff; width: 100%; min-width: 80px; }
+  input[type=checkbox] { width: auto; min-width: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .3px; color: var(--suave); border-bottom: 1px solid var(--linea); padding: 6px; white-space: nowrap; }
+  td { border-bottom: 1px solid var(--linea); padding: 5px 6px; vertical-align: middle; }
+  tr.editando td { background: #f0f4f9; } tr.mal td { background: var(--err-f); } tr.adv td { background: var(--adv-f); }
+  .tabla-scroll { overflow-x: auto; } .num { text-align: right; } .gris { color: var(--suave); } .mono { font-family: ui-monospace, Menlo, monospace; }
+  .nota { border-radius: 8px; padding: 10px 12px; margin: 10px 0; font-size: 14px; white-space: pre-line; }
+  .nota.err { background: var(--err-f); color: var(--err); } .nota.adv { background: var(--adv-f); color: var(--adv); } .nota.ok { background: var(--ok-f); color: var(--ok); }
+  .nota.info { background: #e8eef5; color: var(--marca); }
+  .metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 10px 0; }
+  .metrica { background: #fff; border: 1px solid var(--linea); border-radius: var(--radio); padding: 10px; } .metrica .n { font-size: 22px; font-weight: 700; } .metrica .t { font-size: 12.5px; color: var(--suave); }
+  #ocupado { position: fixed; inset: 0; background: rgba(22,33,46,.35); display: none; align-items: center; justify-content: center; z-index: 10; }
+  #ocupado div { background: #fff; padding: 18px 22px; border-radius: var(--radio); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <a href="index.html">← Volver a la app</a>
+  <h1>Datos</h1>
+  <span class="usuario" id="usuario">Cargando…</span>
+  <button class="chico" onclick="salir()">Salir</button>
+</header>
+<nav id="pestanas"></nav>
+<main>
+  <div id="error-global"></div>
+  <div id="contenido"></div>
+</main>
+<div id="ocupado"><div id="ocupado-texto">Procesando…</div></div>
+<script>
+/* =============================================================================
+ *  Datos: maestros (se editan directo en la base; los permisos los controla la base: solo ADMIN),
+ *  descargas a Excel y carga masiva (se valida y se guarda con el motor de reglas, en el servidor).
+ * ============================================================================= */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ocupado = (t) => { $('ocupado-texto').textContent = t || 'Procesando…'; $('ocupado').style.display = 'flex'; };
+const libre = () => { $('ocupado').style.display = 'none'; };
+const hoy = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
+const CATEGORIAS = ['INSUMO', 'ADICIONAL', 'REPUESTO', 'FILTRO', 'RECAMBIO_FILTRO'];
+const D = {}; // datos leídos, por tabla
+const opc = (t, col) => () => (D[t] || []).map((r) => r[col]).sort();
+/* Columnas: c = columna, t = tipo (texto, bool, numero, fecha, lista), o = opciones (lista), req = obligatoria. */
+const MAESTROS = [
+  { t: 'usuarios', titulo: 'Usuarios', clave: ['email'], orden: 'email', ayuda: 'Quién entra a la app y con qué rol. ADMIN: todo (también Datos). CARGA: carga OT, envíos, remitos y edita clientes y cobranzas. CONSULTA: solo mira. Siempre tiene que quedar al menos un ADMIN activo.',
+    cols: [{ c: 'email', req: true, ph: 'nombre@empresa.com' }, { c: 'nombre' }, { c: 'rol', t: 'lista', o: () => ['ADMIN', 'CARGA', 'CONSULTA'], req: true }, { c: 'activo', t: 'bool', def: true }] },
+  { t: 'regiones', titulo: 'Regiones', clave: ['region_id'], orden: 'region_id', ayuda: 'AMBA e INTERIOR. Renombrar una región actualiza todo lo que la usa.', cols: [{ c: 'region_id', titulo: 'región', req: true }] },
+  { t: 'depositos', titulo: 'Depósitos', clave: ['deposito_id'], orden: 'deposito_id', ayuda: 'El nombre identifica al depósito: renombrarlo actualiza plazas, stock, máquinas, cilindros y el historial. "Controla stock" en NO: no avisa faltantes (el depósito central).',
+    cols: [{ c: 'deposito_id', titulo: 'depósito', req: true }, { c: 'direccion', titulo: 'dirección' }, { c: 'controla_stock', t: 'bool', def: true }, { c: 'activo', t: 'bool', def: true }] },
+  { t: 'co2_depositos', titulo: 'Depósitos CO₂', clave: ['deposito_id'], orden: 'deposito_id', ayuda: 'Cómo reconoce "Leer PDF" a cada depósito: el CODIGO de LINDE que figura en el remito (si son varios, separados por ";"). También permite desactivar un depósito solo para CO₂.',
+    cols: [{ c: 'deposito_id', titulo: 'depósito', t: 'lista', o: opc('depositos', 'deposito_id'), req: true }, { c: 'plaza_linde', titulo: 'código LINDE' }, { c: 'activo', t: 'bool', def: true }] },
+  { t: 'plazas', titulo: 'Plazas', clave: ['plaza_id'], orden: 'plaza_id', ayuda: 'Cada plaza pertenece a una región y trabaja con un depósito.',
+    cols: [{ c: 'plaza_id', titulo: 'plaza', req: true }, { c: 'region_id', titulo: 'región', t: 'lista', o: opc('regiones', 'region_id'), req: true }, { c: 'deposito_id', titulo: 'depósito', t: 'lista', o: opc('depositos', 'deposito_id'), req: true },
+      { c: 'provincia' }, { c: 'responsable' }, { c: 'activa', t: 'bool', def: true }] },
+  { t: 'zonas', titulo: 'Zonas', clave: ['zona_id'], orden: 'zona_id', ayuda: 'La zona de un cliente define su plaza, su región y su depósito.',
+    cols: [{ c: 'zona_id', titulo: 'zona', req: true }, { c: 'plaza_id', titulo: 'plaza', t: 'lista', o: opc('plazas', 'plaza_id'), req: true }, { c: 'activa', t: 'bool', def: true }] },
+  { t: 'tecnicos', titulo: 'Técnicos', clave: ['tecnico_id'], orden: 'tecnico_id', ayuda: 'En las regiones con técnico obligatorio (Configuración, por defecto AMBA) el técnico de la OT se elige de esta lista.',
+    cols: [{ c: 'tecnico_id', titulo: 'técnico', req: true }, { c: 'plaza_id', titulo: 'plaza', t: 'lista', o: opc('plazas', 'plaza_id'), req: true }, { c: 'activo', t: 'bool', def: true }] },
+  { t: 'modelos', titulo: 'Modelos', clave: ['modelo'], orden: 'modelo', cols: [{ c: 'modelo', req: true }, { c: 'linea', titulo: 'línea' }, { c: 'comentarios' }] },
+  { t: 'catalogo', titulo: 'Catálogo', clave: ['codigo'], orden: 'codigo', ayuda: 'Insumos, adicionales, repuestos, filtros y recambios. El código identifica al ítem: renombrarlo actualiza stock y movimientos.', filtro: (r) => r.categoria !== 'CO2',
+    cols: [{ c: 'codigo', titulo: 'código', req: true, mayus: true }, { c: 'descripcion', titulo: 'descripción', req: true }, { c: 'categoria', titulo: 'categoría', t: 'lista', o: () => CATEGORIAS, req: true }, { c: 'unidad', def: 'u' }, { c: 'activo', t: 'bool', def: true }] },
+  { t: 'sistemas_purificacion', titulo: 'Sistemas de purificación', clave: ['id'], auto: 'id', orden: 'id', ayuda: 'Una fila por componente de cada sistema o prefiltro. Un sistema se puede instalar solo si todos sus códigos están en el catálogo.',
+    cols: [{ c: 'sistema', req: true }, { c: 'tipo', t: 'lista', o: () => ['SISTEMA', 'PREFILTRO'], req: true }, { c: 'codigo_filtro', titulo: 'código filtro', t: 'lista', o: opc('catalogo', 'codigo') },
+      { c: 'codigo_componente', titulo: 'código componente', t: 'lista', o: opc('catalogo', 'codigo') }, { c: 'componente', req: true }, { c: 'rol', t: 'lista', o: () => ['RECAMBIO', 'INSTALACION', 'CONSUMO'], req: true },
+      { c: 'unidades', t: 'numero', def: 1 }, { c: 'meses', t: 'numero' }, { c: 'si_falla', titulo: 'si falla', t: 'lista', o: () => ['', 'REVISION', 'DESCARTE'] }, { c: 'activo', t: 'bool', def: true }] },
+  { t: 'reglas_trabajo', titulo: 'Reglas por tipo de OT', clave: ['tipo_ot'], orden: 'tipo_ot', soloEditar: true, ayuda: 'Qué categorías de ítems se pueden cargar en cada tipo de trabajo.',
+    cols: [{ c: 'tipo_ot', titulo: 'tipo de OT', fija: true }, { c: 'insumo', t: 'bool' }, { c: 'adicional', t: 'bool' }, { c: 'repuesto', t: 'bool' }, { c: 'filtro', t: 'bool' }, { c: 'recambio_filtro', titulo: 'recambio', t: 'bool' }] },
+  { t: 'listas', titulo: 'Listas', clave: ['tipo', 'valor'], orden: 'tipo', ayuda: 'Opciones de las listas desplegables: TIPO_CLIENTE, MODALIDAD, TIPO_FALLA, TRANSPORTE, PREFILTRO.',
+    cols: [{ c: 'tipo', t: 'lista', o: () => ['TIPO_CLIENTE', 'MODALIDAD', 'TIPO_FALLA', 'TRANSPORTE', 'PREFILTRO'], req: true }, { c: 'valor', req: true }, { c: 'orden', t: 'numero', def: 0 }] },
+  { t: 'maquinas', titulo: 'Máquinas', clave: ['serie'], orden: 'serie', noBorrar: true, ayuda: 'Las máquinas nuevas se dan de alta acá (o en la carga masiva) y quedan Nuevas en su depósito inicial. La serie no se cambia. Para las altas de varias series a la vez, usá Máquinas en la app.',
+    cols: [{ c: 'serie', req: true, mayus: true, fijaAlEditar: true }, { c: 'modelo', t: 'lista', o: opc('modelos', 'modelo'), req: true }, { c: 'fecha_alta', titulo: 'fecha de alta', t: 'fecha', req: true, def: hoy },
+      { c: 'deposito_inicial_id', titulo: 'depósito inicial', t: 'lista', o: opc('depositos', 'deposito_id'), req: true }, { c: 'comentarios' }] },
+  { t: 'clientes', titulo: 'Clientes', clave: ['cliente_id'], orden: 'nombre_fantasia', soloLeer: true, ayuda: 'Los clientes se dan de alta con su OT de instalación (o la carga masiva) y se editan desde su ficha en la app. Acá se pueden ver y descargar.',
+    cols: [{ c: 'cliente_id', titulo: 'ID' }, { c: 'nombre_fantasia', titulo: 'nombre' }, { c: 'razon_social_cuit', titulo: 'razón social / CUIT' }, { c: 'sector' }, { c: 'tipo_cliente', titulo: 'tipo' }, { c: 'modalidad' },
+      { c: 'zona_id', titulo: 'zona' }, { c: 'frecuencia_mant_dias', titulo: 'frecuencia', t: 'numero' }, { c: 'comentarios' }] },
+  { t: 'config', titulo: 'Configuración', clave: ['clave'], orden: 'clave', soloEditar: true, cols: [{ c: 'clave', fija: true }, { c: 'valor' }, { c: 'descripcion', titulo: 'descripción', fija: true }] },
+  { t: 'co2_config', titulo: 'Configuración CO₂', clave: ['clave'], orden: 'clave', soloEditar: true, cols: [{ c: 'clave', fija: true }, { c: 'valor' }, { c: 'descripcion', titulo: 'descripción', fija: true }] }
+];
+const S = { pestana: 'usuarios', editando: null, nuevo: null, imp: null };
+
+async function leer(t) {
+  const m = MAESTROS.find((x) => x.t === t);
+  let todos = [], desde = 0;
+  for (;;) { // de a 1000 filas (límite de la base)
+    const { data, error } = await sb.from(t).select('*').order(m.orden, { ascending: true }).range(desde, desde + 999);
+    if (error) throw new Error('No se pudo leer ' + t + ': ' + error.message);
+    todos = todos.concat(data); if (data.length < 1000) break; desde += 1000;
+  }
+  D[t] = m && m.filtro ? todos.filter(m.filtro) : todos;
+  return D[t];
+}
+async function leerTodo() { for (const m of MAESTROS) await leer(m.t); }
+
+function pestanas() {
+  $('pestanas').innerHTML = MAESTROS.map((m) => `<button class="${S.pestana === m.t ? 'activo' : ''}" onclick="ir('${m.t}')">${esc(m.titulo)}</button>`).join('') +
+    `<button class="${S.pestana === 'carga' ? 'activo' : ''}" onclick="ir('carga')">Carga masiva</button>`;
+}
+function ir(t) { S.pestana = t; S.editando = null; S.nuevo = null; pintar(); }
+
+function celda(col, v) {
+  if (col.t === 'bool') return v ? 'Sí' : '<span class="gris">No</span>';
+  if (v == null || v === '') return '<span class="gris">—</span>';
+  return esc(v);
+}
+function control(col, v, id, editandoExistente) {
+  const fija = col.fija || (editandoExistente && col.fijaAlEditar);
+  if (fija) return esc(v);
+  if (col.t === 'bool') return `<input type="checkbox" id="${id}" ${v ? 'checked' : ''}>`;
+  if (col.t === 'lista') { const o = col.o(); return `<select id="${id}">${(o.indexOf(v == null ? '' : v) < 0 ? [v == null ? '' : v] : []).concat(o).map((x) => `<option value="${esc(x)}"${x === v ? ' selected' : ''}>${esc(x || '—')}</option>`).join('')}</select>`; }
+  return `<input id="${id}" type="${col.t === 'numero' ? 'number' : col.t === 'fecha' ? 'date' : 'text'}" value="${esc(v == null ? '' : v)}" placeholder="${esc(col.ph || '')}">`;
+}
+function valor(col, id) {
+  const e = $(id);
+  if (!e) return undefined;
+  if (col.t === 'bool') return e.checked;
+  let v = e.value.trim();
+  if (col.mayus) v = v.toUpperCase();
+  if (col.t === 'numero') return v === '' ? null : Number(v);
+  if (col.t === 'fecha') return v || null;
+  return col.t === 'lista' && v === '' && col.c !== 'si_falla' ? null : v;
+}
+
+function pintar() {
+  pestanas();
+  if (S.pestana === 'carga') return pintarCarga();
+  const m = MAESTROS.find((x) => x.t === S.pestana), filas = D[m.t] || [];
+  const clave = (r) => m.clave.map((k) => r[k]).join('|');
+  const editar = !m.soloLeer;
+  let html = `<div class="tarjeta"><h2>${esc(m.titulo)} <span class="gris">(${filas.length})</span></h2>${m.ayuda ? `<p class="ayuda">${esc(m.ayuda)}</p>` : ''}
+    <div class="acciones">${editar && !m.soloEditar ? '<button class="primario" onclick="nuevo()">Agregar</button>' : ''}
+      <button onclick="excelTabla('${m.t}')">⬇ Descargar Excel</button>
+      ${editar && !m.soloEditar ? `<label class="gris" style="font-size:13px">Cargar desde Excel: <input type="file" accept=".xlsx,.xls,.csv" onchange="cargarExcelTabla('${m.t}', this)" style="width:auto"></label>` : ''}
+      ${m.t === 'maquinas' || m.t === 'catalogo' || m.t === 'sistemas_purificacion' ? '' : ''}
+      <input placeholder="Buscar…" oninput="S.buscar=this.value;pintarFilas()" value="${esc(S.buscar || '')}" style="max-width:220px;margin-left:auto"></div>
+    <div id="msg"></div>
+    <div class="tabla-scroll"><table><thead><tr>${m.cols.map((c) => `<th>${esc(c.titulo || c.c.replace(/_/g, ' '))}</th>`).join('')}${editar ? '<th></th>' : ''}</tr></thead><tbody id="filas"></tbody></table></div></div>`;
+  $('contenido').innerHTML = html;
+  pintarFilas();
+}
+function pintarFilas() {
+  const m = MAESTROS.find((x) => x.t === S.pestana);
+  if (!m) return;
+  const q = String(S.buscar || '').toLowerCase();
+  const filas = (D[m.t] || []).filter((r) => !q || m.cols.some((c) => String(r[c.c] == null ? '' : r[c.c]).toLowerCase().includes(q)));
+  const clave = (r) => m.clave.map((k) => r[k]).join('|');
+  const editar = !m.soloLeer;
+  let html = '';
+  if (S.nuevo) {
+    html += `<tr class="editando">${m.cols.map((c, j) => `<td>${c.fija ? '' : control(c, S.nuevo[c.c], 'n-' + j, false)}</td>`).join('')}
+      <td style="white-space:nowrap"><button class="chico exito" onclick="guardar(null)">Guardar</button> <button class="chico" onclick="S.nuevo=null;pintarFilas()">Cancelar</button></td></tr>`;
+  }
+  filas.slice(0, 1500).forEach((r) => {
+    const k = clave(r);
+    if (S.editando === k) {
+      html += `<tr class="editando">${m.cols.map((c, j) => `<td>${control(c, r[c.c], 'e-' + j, true)}</td>`).join('')}
+        <td style="white-space:nowrap"><button class="chico exito" onclick="guardar('${esc(k)}')">Guardar</button> <button class="chico" onclick="S.editando=null;pintarFilas()">Cancelar</button></td></tr>`;
+    } else {
+      html += `<tr>${m.cols.map((c) => `<td>${celda(c, r[c.c])}</td>`).join('')}${editar ? `<td style="white-space:nowrap"><button class="chico" onclick="S.editando='${esc(k)}';S.nuevo=null;pintarFilas()">Editar</button>
+        ${m.soloEditar || m.noBorrar ? '' : ` <button class="chico" onclick="borrar('${esc(k)}')">Borrar</button>`}</td>` : ''}</tr>`;
+    }
+  });
+  if (filas.length > 1500) html += `<tr><td colspan="${m.cols.length + 1}" class="gris">Se muestran 1500 de ${filas.length}: usá el buscador o descargá el Excel.</td></tr>`;
+  $('filas').innerHTML = html || `<tr><td colspan="${m.cols.length + 1}" class="gris">No hay filas.</td></tr>`;
+}
+function nuevo() {
+  const m = MAESTROS.find((x) => x.t === S.pestana);
+  S.nuevo = {}; S.editando = null;
+  m.cols.forEach((c) => { S.nuevo[c.c] = typeof c.def === 'function' ? c.def() : c.def; });
+  pintarFilas();
+}
+function msg(t, clase) { $('msg').innerHTML = t ? `<div class="nota ${clase || 'ok'}">${esc(t)}</div>` : ''; }
+/** Mensajes de la base en palabras. */
+function errorBase(e) {
+  const t = String(e && e.message || e);
+  if (/duplicate key|already exists/i.test(t)) return 'Ya existe una fila con ese nombre o código.';
+  if (/violates foreign key/i.test(t)) return /delete/i.test(t) || /still referenced/i.test(t) ? 'No se puede borrar: se usa en otros datos (clientes, máquinas, stock, OT…). Desactivalo en vez de borrarlo.' : 'Hay un dato que no existe en su maestro (revisá las listas).';
+  if (/row-level security|permission denied/i.test(t)) return 'Tu usuario no tiene permiso para cambiar estos datos (hace falta ser ADMIN).';
+  if (/Tiene que quedar/.test(t)) return t;
+  if (/check constraint/i.test(t)) return 'Algún valor no es válido (' + t + ').';
+  return t;
+}
+async function guardar(k) {
+  const m = MAESTROS.find((x) => x.t === S.pestana);
+  const fila = {}, previo = k == null ? null : D[m.t].find((r) => m.clave.map((c) => r[c]).join('|') === k);
+  m.cols.forEach((c, j) => { if (c.fija || (previo && c.fijaAlEditar)) return; const v = valor(c, (k == null ? 'n-' : 'e-') + j); if (v !== undefined) fila[c.c] = v; });
+  const falta = m.cols.filter((c) => c.req && !c.fija && !(previo && c.fijaAlEditar) && (fila[c.c] == null || fila[c.c] === ''));
+  if (falta.length) return msg('Completá: ' + falta.map((c) => c.titulo || c.c).join(', ') + '.', 'err');
+  if (m.t === 'usuarios') fila.email = String(fila.email || '').toLowerCase();
+  const renombra = previo && m.clave.length === 1 && !m.auto && fila[m.clave[0]] !== undefined && fila[m.clave[0]] !== previo[m.clave[0]];
+  if (renombra && !confirm('Vas a renombrar "' + previo[m.clave[0]] + '" como "' + fila[m.clave[0]] + '". Se actualiza en todo el sistema, también en el historial. ¿Seguís?')) return;
+  ocupado('Guardando…');
+  try {
+    let q = previo ? sb.from(m.t).update(fila) : sb.from(m.t).insert(fila);
+    if (previo) m.clave.forEach((c) => { q = q.eq(c, previo[c]); });
+    const { error } = await q;
+    if (error) throw error;
+    await leer(m.t);
+    if (['depositos', 'plazas', 'zonas', 'regiones', 'modelos', 'catalogo'].includes(m.t)) await leerTodo(); // los renombres se propagan
+    S.nuevo = null; S.editando = null; pintar(); msg(previo ? 'Cambios guardados.' : 'Agregado.');
+  } catch (e) { msg(errorBase(e), 'err'); }
+  libre();
+}
+async function borrar(k) {
+  const m = MAESTROS.find((x) => x.t === S.pestana), r = D[m.t].find((x) => m.clave.map((c) => x[c]).join('|') === k);
+  if (!confirm('¿Borrar ' + k + '? Si ya se usa en otros datos, la base no lo va a dejar: en ese caso desactivalo.')) return;
+  ocupado('Borrando…');
+  try {
+    let q = sb.from(m.t).delete();
+    m.clave.forEach((c) => { q = q.eq(c, r[c]); });
+    const { error } = await q;
+    if (error) throw error;
+    await leer(m.t); pintar(); msg('Borrado.');
+  } catch (e) { msg(errorBase(e), 'err'); }
+  libre();
+}
+async function excelTabla(t) {
+  const m = MAESTROS.find((x) => x.t === t);
+  await descargarExcel('FADEFIL ' + m.titulo + ' ' + hoy(), [{ nombre: m.titulo, columnas: m.cols.map((c) => c.c), filas: (D[t] || []).map((r) => { const o = {}; m.cols.forEach((c) => { o[c.c] = c.t === 'bool' ? (r[c.c] ? 'SI' : 'NO') : r[c.c]; }); return o; }) }]);
+}
+/** Carga (o actualiza) filas de un maestro desde un Excel con las mismas columnas que la descarga. */
+async function cargarExcelTabla(t, input) {
+  const m = MAESTROS.find((x) => x.t === t), f = input.files[0];
+  input.value = '';
+  if (!f) return;
+  ocupado('Leyendo el Excel…');
+  try {
+    const hojas = await leerExcel(f), filas = Object.values(hojas)[0] || [];
+    const aBool = (v) => (typeof v === 'boolean' ? v : /^(si|sí|s|true|verdadero|1|x)$/i.test(String(v).trim()));
+    const datos = filas.map((r) => {
+      const o = {};
+      m.cols.forEach((c) => {
+        if (!(c.c in r) || (m.auto && c.c === m.auto)) return;
+        let v = r[c.c];
+        if (c.t === 'bool') v = v === '' ? (c.def !== undefined ? c.def : false) : aBool(v);
+        else if (c.t === 'numero') v = v === '' ? null : Number(v);
+        else if (c.t === 'fecha') v = v === '' ? null : String(v).slice(0, 10);
+        else { v = String(v == null ? '' : v).trim(); if (c.mayus) v = v.toUpperCase(); if (c.t === 'lista' && v === '' && c.c !== 'si_falla') v = null; }
+        o[c.c] = v;
+      });
+      if (t === 'usuarios' && o.email) o.email = o.email.toLowerCase();
+      return o;
+    }).filter((o) => Object.values(o).some((v) => v !== '' && v != null && v !== false));
+    if (!datos.length) throw new Error('No se encontraron filas con las columnas de ' + m.titulo + ' (' + m.cols.map((c) => c.c).join(', ') + ').');
+    const faltan = datos.filter((o) => m.cols.some((c) => c.req && (o[c.c] == null || o[c.c] === '')));
+    if (faltan.length) throw new Error(faltan.length + ' fila(s) sin datos obligatorios (' + m.cols.filter((c) => c.req).map((c) => c.c).join(', ') + '). No se cargó nada.');
+    if (!confirm('Se van a cargar ' + datos.length + ' fila(s) en ' + m.titulo + '. Las que ya existen (mismo ' + m.clave.join(' + ') + ') se actualizan. ¿Seguís?')) { libre(); return; }
+    const { error } = m.auto ? await sb.from(t).insert(datos) : await sb.from(t).upsert(datos, { onConflict: m.clave.join(',') });
+    if (error) throw error;
+    await leerTodo(); pintar(); msg('Se cargaron ' + datos.length + ' fila(s).');
+  } catch (e) { msg(errorBase(e), 'err'); }
+  libre();
+}
+
+/* ---------------------------------------------------------------------------
+ *  Carga masiva (clientes con su alta inicial, máquinas, cilindros y stock)
+ * ------------------------------------------------------------------------ */
+const HOJAS = {
+  maquinas: ['serie', 'modelo', 'fecha_ingreso'],
+  clientes: ['cliente_id', 'nombre_fantasia', 'razon_social_cuit', 'sector', 'tipo_cliente', 'modalidad', 'plaza', 'zona', 'frecuencia_mant_dias', 'comentarios',
+    'estado', 'serie', 'modelo', 'fecha_instalacion', 'ultimo_mantenimiento', 'ultima_visita', 'fecha_desinstalacion', 'sistema', 'prefiltro'],
+  comodato: ['cliente_id', 'codigo', 'cantidad'],
+  componentes: ['cliente_id', 'codigo', 'ultimo_cambio'],
+  cilindros: ['cliente_id', 'serie', 'peso_kg'],
+  stock: ['deposito', 'codigo', 'cantidad']
+};
+const LEEME = [
+  'CARGA MASIVA (una plaza por vez)',
+  '1. Antes: cargá en Datos el depósito, la plaza, las zonas, los modelos y el catálogo.',
+  '2. Completá las hojas desde la fila 2 (la fila 1 son los títulos: no los cambies). Las hojas que no uses, dejalas vacías.',
+  '3. En Datos → Carga masiva elegí el archivo y tocá Validar: no guarda nada y muestra el resultado de cada fila.',
+  '4. Corregí las filas con ERROR en el Excel y validá de nuevo. Cuando esté bien, tocá Importar.',
+  '5. Si se corta, volvé a validar e importar: lo que ya se cargó (máquinas y clientes) se saltea solo. Ojo con la hoja stock: cada importación suma.',
+  '',
+  'maquinas: serie, modelo (de Datos → Modelos) y fecha_ingreso (vacía = 01/01/2015). Todas entran al depósito central. Toda serie de un cliente tiene que estar acá (o ya cargada).',
+  'clientes: cliente_id (ID de Persat), nombre_fantasia y zona obligatorios. estado: Activo, Desinstalado momentáneo o Ex cliente (vacío = Activo si tiene serie).',
+  '  Fechas: AAAA-MM-DD o DD/MM/AAAA. ultimo_mantenimiento es la base del próximo (vacía = la de instalación). sistema y prefiltro: como figuran en Datos → Sistemas de purificación.',
+  '  Si la máquina está en otro depósito que el de la plaza, se registran solos el envío y la recepción.',
+  'comodato: lo que el cliente tiene en comodato (cliente_id, codigo, cantidad). Entra al depósito con un ajuste "Alta inicial" y sale como entrega.',
+  'componentes: fecha del último cambio de cada componente del sistema o prefiltro del cliente (si no se carga, se toma ultimo_mantenimiento).',
+  'cilindros: cilindros de CO₂ que hoy están en el cliente (cliente_id, serie, peso_kg 5 o 10).',
+  'stock: stock inicial de cada depósito (deposito, codigo, cantidad).'
+];
+async function plantilla() {
+  const ExcelJS = await cargarExcelJS(), wb = new ExcelJS.Workbook(), usados = new Set();
+  agregarHoja(wb, 'LEEME', null, LEEME.map((t) => [t]), usados).getColumn(1).width = 150;
+  Object.keys(HOJAS).forEach((h) => agregarHoja(wb, h, HOJAS[h], [], usados));
+  const z = D.zonas || [], s = [...new Set((D.sistemas_purificacion || []).map((r) => r.sistema))], mo = D.modelos || [], ca = D.catalogo || [];
+  const filas = [];
+  for (let i = 0; i < Math.max(z.length, s.length, mo.length, ca.length); i++) filas.push([z[i] ? z[i].zona_id : '', z[i] ? z[i].plaza_id : '', s[i] || '', mo[i] ? mo[i].modelo : '', ca[i] ? ca[i].codigo : '', ca[i] ? ca[i].descripcion : '']);
+  agregarHoja(wb, 'listas', ['zona', 'plaza de la zona', 'sistema / prefiltro', 'modelo', 'código', 'descripción'], filas, usados);
+  await bajarLibro(wb, 'FADEFIL Carga masiva (plantilla)');
+}
+function pintarCarga() {
+  $('contenido').innerHTML = `<div class="tarjeta"><h2>Carga masiva</h2>
+    <p class="ayuda">Clientes con su alta inicial (estado, máquina, sistema, comodato y fecha del último cambio de cada componente), máquinas, cilindros de CO₂ en clientes y stock inicial. Se valida con las mismas reglas que una OT y se guarda en tandas.</p>
+    <div class="acciones"><button onclick="plantilla()">⬇ Descargar plantilla</button>
+      <input type="file" id="imp-archivo" accept=".xlsx,.xls" style="max-width:330px">
+      <button class="primario" onclick="validarImportacion()">Validar</button>
+      <button class="exito" id="btn-importar" onclick="importar()" disabled>Importar</button>
+      <button id="btn-imp-excel" onclick="excelResultado()" disabled>⬇ Resultado en Excel</button></div>
+    <div id="imp-msg"></div><div id="imp-res"></div></div>`;
+  if (S.imp) pintarResultado();
+}
+async function validarImportacion() {
+  const f = $('imp-archivo').files[0];
+  if (!f) return ($('imp-msg').innerHTML = '<div class="nota err">Elegí el archivo de la carga masiva.</div>');
+  ocupado('Validando (puede tardar si son muchos clientes)…');
+  try {
+    const leidas = await leerExcel(f), hojas = {};
+    Object.keys(HOJAS).forEach((h) => { hojas[h] = leidas[h] || []; });
+    if (!Object.values(hojas).some((l) => l.length)) throw new Error('El archivo no tiene datos en las hojas ' + Object.keys(HOJAS).join(', ') + '. Usá la plantilla.');
+    S.hojas = hojas;
+    S.imp = await servidor('importar_validar', { hojas });
+    pintarResultado();
+  } catch (e) { $('imp-msg').innerHTML = `<div class="nota err">${esc(e.message)}</div>`; }
+  libre();
+}
+function pintarResultado() {
+  const v = S.imp, r = v.resumen;
+  const nombres = { maquinas: 'Máquinas', clientes: 'Clientes', cilindros: 'Cilindros', stock: 'Stock' };
+  $('imp-msg').innerHTML = `<div class="metricas">${Object.keys(r).filter((h) => r[h].total).map((h) => `<div class="metrica"><div class="n">${r[h].ok}</div><div class="t">${nombres[h]} para importar${r[h].error ? ` · <b style="color:var(--err)">${r[h].error} con error</b>` : ''}${r[h].omitidas ? ` · ${r[h].omitidas} se saltean` : ''}</div></div>`).join('')}</div>` +
+    (v.errores ? `<div class="nota err">Hay ${v.errores} fila(s) con ERROR: corregilas en el Excel y validá de nuevo. Podés importar igual las que están bien.</div>` : '<div class="nota ok">Todo validado. Tocá Importar.</div>');
+  $('imp-res').innerHTML = `<div class="tabla-scroll"><table><thead><tr><th>Hoja</th><th>Fila</th><th>Resultado</th><th>Detalle</th></tr></thead><tbody>${v.filas.map((x) =>
+    `<tr class="${x.resultado === 'ERROR' ? 'mal' : /avisos/.test(x.resultado) ? 'adv' : ''}"><td>${esc(x.hoja)}</td><td class="num">${x.fila}</td><td>${esc(x.resultado)}</td><td>${esc(x.detalle)}</td></tr>`).join('')}</tbody></table></div>`;
+  $('btn-importar').disabled = !v.filas.some((x) => x.op);
+  $('btn-imp-excel').disabled = false;
+}
+async function excelResultado() {
+  const res = {};
+  (S.imp.filas || []).forEach((x) => { res[x.hoja + '|' + x.fila] = x; });
+  await descargarExcel('FADEFIL Carga masiva (resultado) ' + hoy(), Object.keys(HOJAS).map((h) => ({ nombre: h, columnas: HOJAS[h].concat(['resultado', 'detalle']),
+    filas: (S.hojas[h] || []).map((r) => { const o = {}; HOJAS[h].forEach((c) => { o[c] = r[c]; }); const x = res[h + '|' + r._fila]; o.resultado = x ? x.resultado : ''; o.detalle = x ? x.detalle : ''; return o; }) })));
+}
+async function importar() {
+  const v = S.imp, hechos = { maquinas: 0, clientes: 0, cilindros: 0, stock: 0 }, problemas = [];
+  if (!confirm('Se van a importar las filas OK. Las que tienen ERROR quedan afuera. ¿Seguís?')) return;
+  const tandas = async (lista, n, fn) => { for (let i = 0; i < lista.length; i += n) await fn(lista.slice(i, i + n), i); };
+  try {
+    const maq = v.filas.filter((x) => x.hoja === 'maquinas' && x.op);
+    if (maq.length) { ocupado('Cargando ' + maq.length + ' máquinas…'); hechos.maquinas = (await servidor('importar_maquinas', { maquinas: maq })).cargadas; }
+    const cli = v.filas.filter((x) => x.hoja === 'clientes' && x.op);
+    await tandas(cli, 20, async (t, i) => {
+      ocupado('Clientes: ' + (i + t.length) + ' de ' + cli.length + '…');
+      const r = await servidor('guardar', { ops: t.map((x) => x.op), aceptarAdvertencias: true });
+      if (r.ok) hechos.clientes += t.length;
+      else r.resultados.forEach((x, k) => { if (x.errores.length) problemas.push('clientes fila ' + t[k].fila + ': ' + x.errores.map((e) => e.mensaje).join(' | ')); });
+    });
+    const cil = v.filas.filter((x) => x.hoja === 'cilindros' && x.op);
+    await tandas(cil, 50, async (t, i) => {
+      ocupado('Cilindros: ' + (i + t.length) + ' de ' + cil.length + '…');
+      const r = await servidor('co2_guardar', { ops: t.map((x) => x.op) });
+      if (r.ok) hechos.cilindros += t.length;
+      else r.resultados.forEach((x, k) => { if (x.errores.length) problemas.push('cilindros fila ' + t[k].fila + ': ' + x.errores.map((e) => e.mensaje).join(' | ')); });
+    });
+    const st = v.filas.filter((x) => x.hoja === 'stock' && x.op);
+    await tandas(st, 50, async (t, i) => {
+      ocupado('Stock: ' + (i + t.length) + ' de ' + st.length + '…');
+      const r = await servidor('guardar', { ops: t.map((x) => x.op), aceptarAdvertencias: true });
+      if (r.ok) hechos.stock += t.length;
+      else r.resultados.forEach((x, k) => { if (x.errores.length) problemas.push('stock fila ' + t[k].fila + ': ' + x.errores.map((e) => e.mensaje).join(' | ')); });
+    });
+  } catch (e) { problemas.push(e.message); }
+  libre();
+  $('imp-msg').innerHTML = `<div class="nota ${problemas.length ? 'adv' : 'ok'}">Importados: ${hechos.maquinas} máquinas, ${hechos.clientes} clientes, ${hechos.cilindros} cilindros y ${hechos.stock} ítems de stock.` +
+    (problemas.length ? '\n\nNo se guardaron (una tanda se guarda entera o nada):\n' + problemas.map(esc).join('\n') + '\n\nCorregí, validá e importá de nuevo: lo ya cargado se saltea.' : '\nEn la app: Administración → Auditar ahora, y revisá algunas fichas al azar.') + '</div>';
+  $('imp-res').innerHTML = ''; S.imp = null; $('btn-importar').disabled = true;
+}
+
+(async () => {
+  try {
+    await exigirSesion();
+    const u = await servidor('yo');
+    $('usuario').textContent = u.nombre + ' · ' + u.rol;
+    if (u.rol !== 'ADMIN') { $('contenido').innerHTML = '<div class="nota err">Datos es solo para administradores.</div>'; return; }
+    ocupado('Leyendo los datos…');
+    await leerTodo();
+    libre();
+    pintar();
+  } catch (e) { libre(); if (e.message !== 'SIN_SESION') $('error-global').innerHTML = `<div class="nota err">${esc(e.message)}</div>`; }
+})();
+</script>
+</body>
+</html>

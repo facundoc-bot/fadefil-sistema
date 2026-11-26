@@ -8,3 +8,4 @@
 - Nunca poner claves, contraseñas ni tokens en el código: van como secretos de GitHub.
 - Motor de reglas: `supabase/functions/_compartido/motor.js`, `carga.js` y `co2_motor.js` son los motores de Sheets pasados tal cual. Una regla nueva o cambiada va ahí, con su prueba en `tests/motor/Pruebas.gs` / `co2_Pruebas.gs` (motores) o `tests/motor/pruebas_base.mjs` (guardado en la base). `estado.js` y `co2_estado.js` son el puente con la base; `base.js`, lo común.
 - Para correr todas las pruebas hace falta `npm install` (y Node 22); sin eso `probar.sh` solo prueba la base.
+- App (`app/`): `index.html` y `co2.html` son las pantallas de Sheets con el transporte cambiado (`llamar` → función del servidor); `datos.html` es nueva (maestros con permisos de la base, carga masiva). Las librerías del navegador salen de npm a `app/lib/` (`node scripts/copiar_librerias.mjs`), no de otros sitios. Antes de subir cambios de la app: `bash tests/app/probar_app.sh`.
