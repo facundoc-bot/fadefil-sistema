@@ -1,0 +1,12 @@
+{
+  "name": "fadefil-sistema",
+  "private": true,
+  "type": "module",
+  "description": "Sistema FADEFIL: pruebas del motor de reglas y de la función del servidor.",
+  "scripts": {
+    "test": "bash tests/db/probar.sh"
+  },
+  "devDependencies": {
+    "postgres": "3.4.7"
+  }
+}

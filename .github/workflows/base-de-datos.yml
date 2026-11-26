@@ -1,11 +1,13 @@
-# Aplica las migraciones de supabase/migrations a la base de Supabase.
-# Primero las prueba en un PostgreSQL descartable (tests/db/probar.sh); si fallan, no toca la base.
-name: Base de datos
+# Publica la base y la función del servidor.
+# 1. Prueba todo en un PostgreSQL descartable: migraciones, permisos, el motor de reglas (61 pruebas
+#    originales) y el guardado de punta a punta (tests/db/probar.sh). Si algo falla, no se toca nada.
+# 2. Aplica las migraciones pendientes a Supabase y publica la función "guardar".
+name: Base de datos y servidor
 
 on:
   push:
     branches: [main]
-    paths: ['supabase/migrations/**', 'tests/db/**', '.github/workflows/base-de-datos.yml']
+    paths: ['supabase/**', 'tests/**', 'package.json', 'package-lock.json', '.github/workflows/base-de-datos.yml']
   workflow_dispatch:
 
 concurrency:
@@ -17,7 +19,14 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Probar las migraciones en un PostgreSQL local
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: npm ci
+      - name: Probar migraciones, permisos, motor y guardado
         run: bash tests/db/probar.sh
 
   aplicar:
@@ -36,3 +45,13 @@ jobs:
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
       - name: Aplicar migraciones pendientes
         run: supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
+      - name: Publicar la función del servidor
+        run: supabase functions deploy guardar --project-ref "$SUPABASE_PROJECT_REF" --use-api --no-verify-jwt
+      - name: Comprobar que la función responde (sin login tiene que pedir iniciar sesión)
+        run: |
+          for i in 1 2 3 4 5 6; do
+            R=$(curl -s -X POST "https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/guardar" -H 'Content-Type: application/json' -d '{}' || true)
+            echo "$R" | grep -q 'iniciar sesión' && { echo "La función responde: $R"; exit 0; }
+            sleep 10
+          done
+          echo "La función no respondió como se esperaba: $R"; exit 1
