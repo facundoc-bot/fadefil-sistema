@@ -14,7 +14,9 @@ do $$ begin
   if (select controla_stock from depositos where deposito_id = 'Depósito CABA') then raise exception 'FALLA: el central no controla stock'; end if;
   if (select insumo and adicional and not filtro from reglas_trabajo where tipo_ot = 'ALTA_INICIAL') is not true then raise exception 'FALLA: reglas del alta inicial'; end if;
   if (select valor from co2_config where clave = 'CARGAS_KG') <> '5;10' then raise exception 'FALLA: cargas de CO₂'; end if;
-  raise notice 'OK: datos iniciales (10 tipos de OT, 28 códigos, 14 sistemas, plazas CABA y GBA, configuración)';
+  if not exists (select 1 from usuarios where email = 'facundoc@aqa.com.ar' and rol = 'ADMIN' and activo) then raise exception 'FALLA: Facu tiene que ser ADMIN'; end if;
+  if (select public or not ('application/pdf' = any (allowed_mime_types)) from storage.buckets where id = 'co2-linde') is not false then raise exception 'FALLA: el espacio co2-linde tiene que ser privado y solo PDF'; end if;
+  raise notice 'OK: datos iniciales (10 tipos de OT, 28 códigos, 14 sistemas, plazas CABA y GBA, configuración, Facu ADMIN, espacio de archivos co2-linde)';
 end $$;
 
 -- ---------------------------------------------------------------- identificadores
@@ -191,6 +193,7 @@ begin;
 set local role authenticated;
 set local request.jwt.claims = '{"email":"facu@empresa.com"}';
 do $$ begin
+  update usuarios set activo = false where email = 'facundoc@aqa.com.ar';
   begin update usuarios set rol = 'CARGA' where email = 'facu@empresa.com'; raise exception 'FALLA: se quedó sin administradores';
   exception when raise_exception then
     if sqlerrm not like 'Tiene que quedar%' then raise; end if;
@@ -200,5 +203,39 @@ do $$ begin
   raise notice 'OK: tiene que quedar al menos un administrador activo (con otro, sí se puede cambiar)';
 end $$;
 rollback;
+
+-- ---------------------------------------------------------------- archivos de LINDE (Storage)
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"email":"carga@empresa.com"}';
+insert into storage.objects (bucket_id, name) values ('co2-linde', 'remitos/2026/REM-000001.pdf');
+do $$ begin
+  begin insert into storage.objects (bucket_id, name) values ('co2-linde', 'otra/cosa.pdf'); raise exception 'FALLA: se subió fuera de remitos/ y facturas/';
+  exception when insufficient_privilege then null; end;
+  delete from storage.objects where bucket_id = 'co2-linde';  -- CARGA no borra: la seguridad lo filtra
+end $$;
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"email":"consulta@empresa.com"}';
+do $$ begin
+  if (select count(*) from storage.objects where bucket_id = 'co2-linde') <> 1 then raise exception 'FALLA: CONSULTA no ve el archivo, o CARGA lo pudo borrar'; end if;
+  begin insert into storage.objects (bucket_id, name) values ('co2-linde', 'facturas/F1.pdf'); raise exception 'FALLA: CONSULTA subió un archivo';
+  exception when insufficient_privilege then null; end;
+end $$;
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"email":"nadie@otro.com"}';
+do $$ begin
+  if exists (select 1 from storage.objects) then raise exception 'FALLA: un desconocido ve archivos'; end if;
+end $$;
+set local request.jwt.claims = '{"email":"facu@empresa.com"}';
+delete from storage.objects where name = 'remitos/2026/REM-000001.pdf';
+do $$ begin
+  if exists (select 1 from storage.objects) then raise exception 'FALLA: el ADMIN no pudo borrar'; end if;
+  raise notice 'OK: archivos de LINDE: leen los usuarios habilitados, suben ADMIN y CARGA (solo en remitos/ y facturas/), borra solo ADMIN';
+end $$;
+commit;
 
 \echo 'Todas las pruebas de la base pasaron.'
