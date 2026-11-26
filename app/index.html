@@ -126,6 +126,15 @@ document.addEventListener('mousedown', (e) => { const c = document.getElementByI
       <button class="acceso" onclick="ir('p-stock')"><svg class="icono"><use href="lib/iconos.svg#boxes"/></svg><span>Stock<small>Por depósito</small></span></button>
     </div>
     <div class="metricas" id="ini-metricas"></div>
+    <div class="bloque-admin">
+      <h3>Administración</h3>
+      <div class="accesos admin">
+        <a class="acceso" href="datos.html#usuarios"><svg class="icono"><use href="lib/iconos.svg#user-plus"/></svg><span>Usuarios<small>Quién entra y con qué rol</small></span></a>
+        <a class="acceso" href="datos.html#tecnicos"><svg class="icono"><use href="lib/iconos.svg#hard-hat"/></svg><span>Técnicos<small>Alta y baja por plaza</small></span></a>
+        <a class="acceso" href="datos.html#depositos"><svg class="icono"><use href="lib/iconos.svg#map-pin"/></svg><span>Depósitos y plazas<small>Regiones, plazas, zonas</small></span></a>
+        <a class="acceso" href="datos.html#carga"><svg class="icono"><use href="lib/iconos.svg#upload"/></svg><span>Carga masiva<small>Clientes, máquinas y stock desde Excel</small></span></a>
+      </div>
+    </div>
     <div class="tarjeta">
       <h2>Mantenimientos vencidos y próximos</h2>
       <p class="ayuda">Ordenados por fecha. "Trabajos a realizar" es lo que hay que indicarle al técnico (pendientes de la última visita; los filtros se suman más adelante).</p>

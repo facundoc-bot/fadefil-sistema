@@ -209,7 +209,8 @@ tr.mal td { background: var(--err-f); } tr.neg td.n { color: var(--err); font-we
 .paso { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--negro); color: var(--lima); font-size: 12px; font-weight: 700; margin-right: 2px; }
 
 /* ---------------------------------------------------------------- pestañas secundarias (Datos) y pantalla de ingreso */
-.subpestanas { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 14px; scrollbar-width: none; }
+.subpestanas { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 14px; }
+@media (max-width: 900px) { .subpestanas { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } }
 .subpestanas button { white-space: nowrap; padding: 8px 14px; font-weight: 500; font-size: 14px; }
 .subpestanas button.activo { background: var(--negro); border-color: var(--negro); color: #fff; }
 .boton-flotante-excel { position: fixed; right: 20px; bottom: 20px; z-index: 19; display: inline-flex; align-items: center; gap: 8px; }
@@ -218,7 +219,7 @@ tr.mal td { background: var(--err-f); } tr.neg td.n { color: var(--err); font-we
 .lateral nav .solo-admin, .lateral nav .solo-carga, .inferior .solo-carga { display: none !important; }
 body.rol-ADMIN .lateral nav .solo-admin, body.rol-ADMIN .lateral nav .solo-carga, body.rol-CARGA .lateral nav .solo-carga { display: flex !important; }
 body.rol-ADMIN .inferior .solo-carga, body.rol-CARGA .inferior .solo-carga { display: flex !important; }
-.lateral .grupo-menu.solo-admin { display: none !important; } body.rol-ADMIN .lateral .grupo-menu.solo-admin { display: block !important; }
+.lateral .grupo-menu.solo-admin, .lateral .menu-fijo.solo-admin { display: none !important; } body.rol-ADMIN .lateral .grupo-menu.solo-admin, body.rol-ADMIN .lateral .menu-fijo.solo-admin { display: block !important; }
 body.rol-ADMIN .acceso.solo-carga, body.rol-CARGA .acceso.solo-carga { display: flex !important; }
 body.rol-ADMIN .tipos-ot .solo-admin { display: flex !important; }
 /* Buscador de una sola caja (campo + lista desplegable de coincidencias) */
@@ -258,3 +259,14 @@ th::first-letter { text-transform: uppercase; }
 .boton-archivo { display: inline-flex; align-items: center; gap: 8px; font: 600 14.5px var(--fuente); border: 1px solid var(--linea-2); background: #fff; border-radius: 999px; padding: 9px 16px; cursor: pointer; margin: 0; color: var(--tinta); }
 .boton-archivo:hover { border-color: var(--negro); }
 .acciones .buscar-tabla { margin-left: auto; }
+/* Administración fija al pie del menú lateral */
+.lateral nav.menu-fijo { flex: none; overflow: visible; padding: 8px 12px 10px; border-top: 1px solid var(--carbon-2); }
+.lateral nav.menu-fijo .grupo-menu { margin-top: 2px; }
+.lateral nav#pestanas { scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; }
+@media (max-height: 820px) { .lateral nav button, .lateral nav a { padding: 7px 12px; } }
+/* Bloque de administración en el inicio */
+.bloque-admin { display: none; } body.rol-ADMIN .bloque-admin { display: block; }
+.bloque-admin h3 { font-size: 13px; font-weight: 600; color: var(--suave); text-transform: uppercase; letter-spacing: .06em; margin: 6px 0 10px; }
+.accesos.admin { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 18px; }
+.accesos.admin .acceso { background: #fafaf7; }
+@media (max-width: 1200px) { .accesos.admin { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

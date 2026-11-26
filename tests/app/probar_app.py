@@ -51,8 +51,16 @@ with sync_playwright() as p:
     if not any(wb[n].max_row > 1 for n in wb.sheetnames): fallas.append('El Excel de Stock salió vacío')
 
     # Datos: agregar una zona, renombrar un depósito, descargar y carga masiva
-    pag.goto(BASE + '/datos.html')
+    # Administración a la vista: fija al pie del menú (sin desplazar) y accesos en el inicio que llevan a Datos
+    pag.click('nav button[data-panel="p-inicio"]'); pag.wait_for_timeout(500)
+    caja = pag.locator('.menu-fijo >> text=Carga masiva').bounding_box()
+    if not caja or caja['y'] + caja['height'] > pag.viewport_size['height']: fallas.append('Administración no queda a la vista en el menú: ' + json.dumps(caja))
+    pag.click('.bloque-admin >> text=Usuarios')
     pag.wait_for_selector('#filas tr', timeout=30000)
+    llegada = pag.evaluate("() => [location.hash, S.pestana, document.getElementById('titulo-seccion').textContent, !!document.querySelector('.menu-fijo a.activo[data-datos=usuarios]')]")
+    print('Inicio → Usuarios:', llegada)
+    if llegada != ['#usuarios', 'usuarios', 'Datos · Usuarios', True]: fallas.append('Inicio → Usuarios: ' + json.dumps(llegada))
+    pag.screenshot(path='/tmp/app_datos_usuarios.png')
     pag.click('#subpestanas >> text=Zonas'); pag.click('text=Agregar')
     pag.fill('#n-0', 'Godoy Cruz'); pag.select_option('#n-1', 'Mendoza'); pag.click('#filas >> text=Guardar')
     pag.wait_for_selector('#msg .nota', timeout=15000)

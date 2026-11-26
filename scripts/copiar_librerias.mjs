@@ -17,7 +17,7 @@ for (const peso of [400, 500, 600, 700]) {
   copyFileSync(new URL(`../node_modules/@fontsource/inter-tight/files/inter-tight-latin-${peso}-normal.woff2`, import.meta.url), new URL(`fuentes/inter-tight-${peso}.woff2`, destino));
 }
 const ICONOS = ['house', 'clipboard-plus', 'truck', 'scan-search', 'wrench', 'users', 'refrigerator', 'boxes', 'hard-hat', 'file-text', 'receipt', 'cylinder',
-  'repeat', 'list-checks', 'package-plus', 'shield-check', 'database', 'log-out', 'refresh-cw', 'map-pin', 'menu', 'x', 'plug-zap', 'package', 'arrow-left-right',
+  'repeat', 'list-checks', 'package-plus', 'shield-check', 'database', 'log-out', 'refresh-cw', 'map-pin', 'user-plus', 'menu', 'x', 'plug-zap', 'package', 'arrow-left-right',
   'circle-pause', 'circle-help', 'search', 'chevron-down', 'droplets', 'calendar-clock', 'triangle-alert', 'hammer', 'download', 'upload', 'ellipsis', 'plus',
   'circle-check', 'history', 'circle-user', 'archive-restore', 'unplug', 'clipboard-check', 'chevron-right', 'layout-grid', 'filter', 'info'];
 const simbolos = ICONOS.map((n) => {

@@ -59,10 +59,18 @@ jobs:
           [ -n "$SUB" ] && [ "$SUB" != "null" ] || { echo "No se pudo leer la dirección de la app en Cloudflare"; exit 1; }
           URL="https://$SUB"
           jq -n --arg url "$URL" --arg id "$GOOGLE_CLIENT_ID" --arg sec "$GOOGLE_CLIENT_SECRET" \
-            '{site_url: $url, uri_allow_list: ($url + "/**"), external_google_enabled: true, external_google_client_id: $id, external_google_secret: $sec, disable_signup: false}' > auth.json
-          curl -sf -X PATCH -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
-            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/config/auth" -d @auth.json -o /dev/null -w "Login configurado: %{http_code}\n"
+            '{site_url: $url, uri_allow_list: ($url + "/**"), external_google_enabled: true, external_google_client_id: $id, external_google_secret: $sec, disable_signup: false,
+              external_email_enabled: false, external_phone_enabled: false,
+              hook_before_user_created_enabled: true, hook_before_user_created_uri: "pg-functions://postgres/public/hook_antes_de_crear_usuario"}' > auth.json
+          # Solo Google; y antes de crear una cuenta, Supabase pregunta a la base si el mail está en Usuarios.
+          CODIGO=$(curl -s -X PATCH -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
+            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/config/auth" -d @auth.json -o resp.json -w "%{http_code}")
           rm -f auth.json
+          if [ "$CODIGO" != "200" ]; then echo "Supabase no aceptó la configuración del login ($CODIGO):"; jq -r '.message // .msg // "sin detalle"' resp.json; rm -f resp.json; exit 1; fi
+          rm -f resp.json
+          curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/config/auth" \
+            | jq -e '{google: .external_google_enabled, mail_y_clave: .external_email_enabled, solo_usuarios_habilitados: .hook_before_user_created_enabled, funcion: .hook_before_user_created_uri}
+                     | ., (if .google and (.mail_y_clave | not) and .solo_usuarios_habilitados then true else error("La configuración del login no quedó como se esperaba") end)'
           echo "### La app está en $URL" >> $GITHUB_STEP_SUMMARY
           echo "La app está en $URL"
       - name: Comprobar la app y el login

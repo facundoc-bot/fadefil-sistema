@@ -26,6 +26,14 @@ async function exigirSesion() {
         <p style="color:#6e6e6e;font-size:12px;margin-top:18px">Premium Eco Water · AQA®</p>
       </div>
     </div>`;
+  // Si Supabase rechazó el ingreso (por ejemplo, un mail que no está en Usuarios), vuelve con el motivo en la dirección.
+  const q = new URLSearchParams(location.search + '&' + location.hash.slice(1));
+  const motivo = q.get('error_description') || q.get('error');
+  if (motivo) {
+    document.getElementById('login-error').textContent = /habilitad|403|not allowed|signup/i.test(motivo) && !/FADEFIL/.test(motivo)
+      ? 'Esta cuenta no está habilitada. Pedile a un administrador que agregue tu mail en Usuarios.' : motivo.replace(/\+/g, ' ');
+    history.replaceState(null, '', location.pathname);
+  }
   document.getElementById('btn-google').onclick = async () => {
     const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.href.split('#')[0], queryParams: { prompt: 'select_account' } } });
     if (error) document.getElementById('login-error').textContent = error.message;
@@ -225,9 +233,11 @@ const MENU = [
     { pag: 'co2', panel: 'p-recambios', t: 'Recambios', i: 'repeat' },
     { pag: 'co2', panel: 'p-revision', t: 'Alertas de CO₂', i: 'list-checks' },
     { pag: 'co2', panel: 'p-alta', t: 'Inventario inicial', i: 'package-plus', rol: 'admin' }] },
-  { grupo: 'Administración', rol: 'admin', items: [
-    { pag: 'index', panel: 'p-admin', t: 'Auditoría', i: 'shield-check', rol: 'admin' },
-    { pag: 'datos', panel: '', t: 'Datos y carga masiva', i: 'database', rol: 'admin' }] }
+  // Administración queda fija al pie del menú (siempre a la vista para el ADMIN; los demás no la ven).
+  { grupo: 'Administración', rol: 'admin', fijo: true, items: [
+    { pag: 'datos', panel: 'usuarios', t: 'Usuarios y datos', i: 'database', rol: 'admin' },
+    { pag: 'datos', panel: 'carga', t: 'Carga masiva', i: 'upload', rol: 'admin' },
+    { pag: 'index', panel: 'p-admin', t: 'Auditoría', i: 'shield-check', rol: 'admin' }] }
 ];
 const INFERIOR = [
   { pag: 'index', panel: 'p-inicio', t: 'Inicio', i: 'house' },
@@ -238,9 +248,17 @@ const INFERIOR = [
 let PAGINA = '';
 function itemMenu(x, pagina) {
   const cl = (x.rol ? 'solo-' + x.rol : '') + (x.pag === pagina && !x.panel ? ' activo' : '');
+  if (x.pag === 'datos') return `<a href="datos.html#${x.panel}" data-datos="${x.panel}" class="${cl}">${icono(x.i)}<span>${x.t}</span></a>`;
   if (x.pag === pagina && x.panel) return `<button data-panel="${x.panel}" class="${cl}">${icono(x.i)}<span>${x.t}</span></button>`;
   const url = x.pag + '.html' + (x.panel ? '#' + x.panel : '');
   return `<a href="${url}" class="${cl}">${icono(x.i)}<span>${x.t}</span></a>`;
+}
+function grupoMenu(g, pagina) {
+  return (g.grupo ? `<div class="grupo-menu${g.rol === 'admin' ? ' solo-admin' : ''}">${g.grupo}</div>` : '') + g.items.map((x) => itemMenu(x, pagina)).join('');
+}
+/** En Datos: marca en el menú la parte abierta (Usuarios y datos / Carga masiva). */
+function marcarMenuDatos(pestana) {
+  document.querySelectorAll('a[data-datos]').forEach((a) => a.classList.toggle('activo', (pestana === 'carga') === (a.dataset.datos === 'carga')));
 }
 /** Arma el marco de la página. pagina: index | co2 | datos. contexto: HTML del selector de región/plaza/zona (solo la app principal). */
 function armarMarco(pagina, opciones) {
@@ -250,7 +268,8 @@ function armarMarco(pagina, opciones) {
   const lateral = document.createElement('aside');
   lateral.className = 'lateral';
   lateral.innerHTML = `<div class="marca"><img src="marca/logo-aqa-blanco.png" alt="AQA"><span>Sistema<br>FADEFIL</span></div>
-    <nav id="pestanas">${MENU.map((g) => (g.grupo ? `<div class="grupo-menu${g.rol === 'admin' ? ' solo-admin' : ''}">${g.grupo}</div>` : '') + g.items.map((x) => itemMenu(x, pagina)).join('')).join('')}</nav>
+    <nav id="pestanas">${MENU.filter((g) => !g.fijo).map((g) => grupoMenu(g, pagina)).join('')}</nav>
+    <nav class="menu-fijo solo-admin">${MENU.filter((g) => g.fijo).map((g) => grupoMenu(g, pagina)).join('')}</nav>
     <div class="pie"><div class="avatar" id="avatar">·</div><div class="quien"><b id="quien-nombre">Cargando…</b><small id="quien-rol"></small></div>
       <button onclick="salir()" title="Cerrar la sesión">${icono('log-out')}</button></div>`;
   const tope = document.createElement('header');
@@ -283,7 +302,7 @@ function armarMarco(pagina, opciones) {
 }
 function ponerTitulo(panel) {
   const todos = MENU.flatMap((g) => g.items);
-  const x = todos.find((i) => i.pag === PAGINA && i.panel === panel) || todos.find((i) => i.pag === PAGINA && !i.panel);
+  const x = todos.find((i) => i.pag === PAGINA && i.panel === panel) || todos.find((i) => i.pag === PAGINA && !i.panel) || (PAGINA === 'datos' && { t: 'Usuarios y datos' });
   const t = x ? x.t : 'Sistema FADEFIL';
   const h = document.getElementById('titulo-seccion');
   if (h) h.textContent = t;

@@ -95,7 +95,17 @@ function pestanas() {
   $('subpestanas').innerHTML = MAESTROS.map((m) => `<button class="${S.pestana === m.t ? 'activo' : ''}" onclick="ir('${m.t}')">${esc(m.titulo)}</button>`).join('') +
     `<button class="${S.pestana === 'carga' ? 'activo' : ''}" onclick="ir('carga')">Carga masiva</button>`;
 }
-function ir(t) { S.pestana = t; S.editando = null; S.nuevo = null; pintar(); }
+function ir(t) {
+  S.pestana = t; S.editando = null; S.nuevo = null; S.buscar = '';
+  history.replaceState(null, '', '#' + t);
+  marcarMenuDatos(t);
+  const m = MAESTROS.find((x) => x.t === t);
+  $('titulo-seccion').textContent = t === 'carga' ? 'Carga masiva' : 'Datos · ' + (m ? m.titulo : '');
+  pintar();
+}
+/* La sección viene en la dirección (datos.html#usuarios, #carga…): así se llega desde el menú y el inicio. */
+function pestanaDeLaDireccion() { const h = decodeURIComponent(location.hash.slice(1)); return h === 'carga' || MAESTROS.some((m) => m.t === h) ? h : 'usuarios'; }
+window.addEventListener('hashchange', () => { const t = pestanaDeLaDireccion(); if (t !== S.pestana) ir(t); });
 
 function celda(col, v) {
   if (col.t === 'bool') return v ? 'Sí' : '<span class="gris">No</span>';
@@ -374,7 +384,7 @@ async function importar() {
     ocupado('Leyendo los datos…');
     await leerTodo();
     libre();
-    pintar();
+    ir(pestanaDeLaDireccion());
   } catch (e) { libre(); if (e.message !== 'SIN_SESION') $('error-global').innerHTML = `<div class="nota err">${esc(e.message)}</div>`; }
 })();
 </script>
