@@ -9,12 +9,21 @@
 //    { accion: 'guardar',  ops: [...], aceptarAdvertencias: true|false }
 //    { accion: 'anular',   id: 'OT-000123', motivo: '...' }        (ADMIN)
 //    { accion: 'auditar' }                                         (ADMIN)
+//  CO₂ (remitos de LINDE, inventario inicial, aprobación de series dudosas, facturas):
+//    { accion: 'co2_validar' | 'co2_guardar', ops: [{ clase: 'REMITO' | 'ALTA', datos }] }
+//    { accion: 'co2_enviar_aprobacion', remito }   { accion: 'co2_rechazar_pendiente', id }   (rechazar: ADMIN)
+//    { accion: 'co2_validar_factura' | 'co2_guardar_factura', factura }   { accion: 'co2_anular_factura', id, motivo } (ADMIN)
+//    { accion: 'co2_anular', id, motivo } (ADMIN)   { accion: 'co2_auditar' } (ADMIN)
 //  Respuesta: { exito: true, datos } o { exito: false, error }.
 // =============================================================================
 import postgres from 'npm:postgres@3.4.7';
 import {
   OPCIONES_POSTGRES, ErrorDeUsuario, usuarioPorEmail, validarLote, guardarLote, anularOperacion, auditar
 } from '../_compartido/estado.js';
+import {
+  co2Validar, co2Guardar, co2EnviarAprobacion, co2RechazarPendiente, co2ValidarFactura, co2GuardarFactura, co2AnularFactura, co2Anular, co2Auditar
+} from '../_compartido/co2_estado.js';
+import { exigirRol } from '../_compartido/base.js';
 
 const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { ...OPCIONES_POSTGRES, max: 3, prepare: false, idle_timeout: 20 });
 
@@ -50,6 +59,15 @@ Deno.serve(async (req) => {
       case 'guardar': datos = await guardarLote(sql, usuario, p.ops, !!p.aceptarAdvertencias); break;
       case 'anular': datos = await anularOperacion(sql, usuario, p.id, p.motivo); break;
       case 'auditar': datos = await auditar(sql, usuario); break;
+      case 'co2_validar': datos = await co2Validar(sql, usuario, p.ops); break;
+      case 'co2_guardar': datos = await co2Guardar(sql, usuario, p.ops); break;
+      case 'co2_enviar_aprobacion': datos = await co2EnviarAprobacion(sql, usuario, p.remito); break;
+      case 'co2_rechazar_pendiente': datos = await co2RechazarPendiente(sql, usuario, p.id); break;
+      case 'co2_validar_factura': exigirRol(usuario, ['ADMIN', 'CARGA']); datos = await co2ValidarFactura(sql, p.factura); break;
+      case 'co2_guardar_factura': datos = await co2GuardarFactura(sql, usuario, p.factura); break;
+      case 'co2_anular_factura': datos = await co2AnularFactura(sql, usuario, p.id, p.motivo); break;
+      case 'co2_anular': datos = await co2Anular(sql, usuario, p.id, p.motivo); break;
+      case 'co2_auditar': datos = await co2Auditar(sql, usuario); break;
       default: throw new ErrorDeUsuario('Acción desconocida: ' + p.accion);
     }
     return responder({ exito: true, datos });

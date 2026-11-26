@@ -31,7 +31,7 @@ import {
 } from './motor.js';
 
 /**
- * Mientras no esté el motor de CO₂ en el servidor (etapa 2), una OT con cilindros no se guarda:
+ * Si quien llama no cargó el estado de los cilindros (ctx.simularCilindros), una OT con cilindros no se guarda:
  * se avisa con un error en vez de guardar la OT sin sus cilindros.
  */
 function sinCilindros_(ops, sim) {
@@ -39,7 +39,7 @@ function sinCilindros_(ops, sim) {
     if (op.clase !== 'OT' || op._auto) return;
     var cil = cilindrosDeOT_(op.datos);
     if (!cil.entregadas.length && !cil.retiradas.length) return;
-    sim.resultados[k].errores.push({ codigo: 'CO2_NO_DISPONIBLE', mensaje: 'Los cilindros de CO₂ todavía no se cargan en la app nueva: guardá la OT sin cilindros o esperá a la etapa de CO₂.' });
+    sim.resultados[k].errores.push({ codigo: 'CO2_NO_DISPONIBLE', mensaje: 'No se pudo validar los cilindros de CO₂ de esta OT. Volvé a intentar.' });
     sim.ok = false;
   });
   return null;
@@ -227,7 +227,7 @@ function simularLotePreparado_(ops, ctx, numerar) {
     if (prep.avisos[i]) sim.resultados[k].advertencias = prep.avisos[i].concat(sim.resultados[k].advertencias);
   });
   // v1.1: los cilindros de CO₂ de las OT se validan con el motor de CO₂, en el mismo lote.
-  var co2 = (ctx.simularCilindros || sinCilindros_)(ops2, sim, ctx); // el motor de CO₂ se suma en la etapa 2
+  var co2 = (ctx.simularCilindros || sinCilindros_)(ops2, sim, ctx); // lo arma el servidor con el estado de los cilindros
   if (co2) {
     co2.idx.forEach(function (k, j) {
       var r = co2.sim.resultados[j];

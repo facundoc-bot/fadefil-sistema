@@ -18,6 +18,7 @@ $PSQL -f tests/db/pruebas.sql
 # Motor de reglas y guardado (necesita Node y `npm install`): en una base aparte, recién migrada.
 if command -v node >/dev/null && [ -d node_modules/postgres ]; then
   node tests/motor/pruebas_motor.mjs
+  node tests/motor/pruebas_co2_motor.mjs
   $PSQL -c "create database motor"
   PSQLM="psql -h $DIR -p $PORT -U postgres -d motor -v ON_ERROR_STOP=1 -q"
   $PSQLM -f tests/db/supabase_simulado.sql

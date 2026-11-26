@@ -10,33 +10,17 @@
 import {
   estadoInicial, simularLote, reconstruir, validarAnulacion, construirSistemas_, detectarAlertas,
   fijarDepositoCentral, depositoCentral, normalizarSerie, normalizarCodigo, defSistema_, cilindrosDeOT_,
-  SLOTS_SIS, EST_CLI, SALDO, TIPOS_AJUSTE, RES_ITEM, DIAS_ANTICIPO_FILTROS_DEFECTO
+  SLOTS_SIS, EST_CLI, SALDO, TIPOS_AJUSTE, RES_ITEM, DIAS_ANTICIPO_FILTROS_DEFECTO, co2VaACobranza_
 } from './motor.js';
 import { PREFIJO_OP, detalleOperacion_, textoPlanSistema_, simularLotePreparado_, lineasDeOT_ } from './carga.js';
 
-/** Opciones de conexión: fechas como texto 'AAAA-MM-DD' y números como números (igual que en el motor). */
-export const OPCIONES_POSTGRES = {
-  types: {
-    fecha: { to: 1082, from: [1082], serialize: (x) => x, parse: (x) => x },
-    numero: { to: 1700, from: [1700], serialize: (x) => String(x), parse: (x) => Number(x) }
-  }
-};
+import {
+  OPCIONES_POSTGRES, BLOQUEO, hoyArgentina, fechaHora, iso, nulo, num, ErrorDeUsuario, exigirRol, insertar, contadores, anotar
+} from './base.js';
+import { co2Contexto, loteTocaCo2, simularCilindrosOT, co2Escribir, co2PrepararAnulacion, co2AplicarAnulacion } from './co2_estado.js';
 
-const ZONA = 'America/Argentina/Buenos_Aires';
-const BLOQUEO = 4207001; // un solo guardado a la vez (como el bloqueo de Apps Script)
+export { OPCIONES_POSTGRES, ErrorDeUsuario, hoyArgentina };
 const MAX_OPS = 50;
-
-/** Fecha de hoy en Argentina. */
-export function hoyArgentina(d = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: ZONA, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
-}
-function fechaHora(d = new Date()) {
-  return new Intl.DateTimeFormat('es-AR', { timeZone: ZONA, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
-}
-
-const iso = (v) => (v == null ? '' : v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10));
-const nulo = (v) => (v === '' || v == null ? null : v);
-const num = (v) => Number(v) || 0;
 
 /* ---------------------------------------------------------------------------
  *  Maestros → contexto
@@ -239,9 +223,6 @@ function codigosDelLote(ops, ctx) {
 /* ---------------------------------------------------------------------------
  *  Escritura
  * ------------------------------------------------------------------------ */
-async function insertar(sql, tabla, filas) {
-  for (let i = 0; i < filas.length; i += 500) await sql`insert into ${sql(tabla)} ${sql(filas.slice(i, i + 500))}`;
-}
 
 /** Movimientos de stock (kárdex) e ingresos/salidas nuevos, con identificador estable: operación + número. */
 function filasMovimientos(W) {
@@ -375,31 +356,8 @@ async function escribirEstadoCompleto(sql, ctx, W) {
 }
 
 /* ---------------------------------------------------------------------------
- *  Numeración (dentro del bloqueo: se leen los contadores y se guardan al final)
- * ------------------------------------------------------------------------ */
-async function contadores(sql) {
-  const filas = await sql`select prefijo, ultimo from contadores`;
-  const ultimo = {};
-  filas.forEach((r) => { ultimo[r.prefijo] = Number(r.ultimo); });
-  const tocados = new Set();
-  return {
-    siguiente(prefijo) { ultimo[prefijo] = (ultimo[prefijo] || 0) + 1; tocados.add(prefijo); return prefijo + '-' + String(ultimo[prefijo]).padStart(6, '0'); },
-    async guardar() {
-      const f = [...tocados].map((p) => ({ prefijo: p, ultimo: ultimo[p] }));
-      if (f.length) await sql`insert into contadores ${sql(f)} on conflict (prefijo) do update set ultimo = excluded.ultimo`;
-    }
-  };
-}
-
-/* ---------------------------------------------------------------------------
  *  Servicios
  * ------------------------------------------------------------------------ */
-function exigirRol(usuario, roles) {
-  if (!usuario || roles.indexOf(usuario.rol) < 0) throw new ErrorDeUsuario('Tu rol (' + ((usuario && usuario.rol) || 'sin rol') + ') no permite esta acción.');
-}
-
-/** Error que se le muestra tal cual al usuario. */
-export class ErrorDeUsuario extends Error {}
 
 /** Usuario habilitado a partir del email del login. */
 export async function usuarioPorEmail(sql, email) {
@@ -422,6 +380,11 @@ async function prepararContexto(sql, ops) {
   const idsCliente = ops.map((o) => (o.datos && (o.datos.idCliente || (o.datos.clienteNuevo && o.datos.clienteNuevo.id))) || '').map((x) => String(x).trim());
   const base = await cargarEstado(sql, ctx, { clientes: idsCliente, codigos: codigosDelLote(ops, ctx) });
   ctx.estado = base.W;
+  // Cilindros de CO₂ en las OT: se validan con el motor de CO₂ en el mismo lote.
+  if (loteTocaCo2(ops)) {
+    const cctx = await co2Contexto(sql);
+    ctx.simularCilindros = (o, s, c) => simularCilindrosOT(o, s, c, cctx);
+  }
   return { ctx, base };
 }
 
@@ -471,7 +434,15 @@ export async function guardarLote(sql, usuario, opsPedido, aceptarAdvertencias) 
           serie_retirada: ef.serieOut || '', serie_instalada: ef.serieIn || '', falla: d.falla || '',
           sistema: textoPlanSistema_(ef.plan, 'SISTEMA', d.sistema, ctx), prefiltro: textoPlanSistema_(ef.plan, 'PREFILTRO', d.prefiltro, ctx),
           comentarios: d.comentarios || '', pendiente: d.pendiente || '', ot_persat: d.nOtPersat || '', modalidad_co2: d.modalidadCo2 || '', estado: 'VIGENTE', created_by: usuario.email });
-        reg.ot_lineas.push(...lineasDeOT_(id, ef, d, ctx));
+        const lineas = lineasDeOT_(id, ef, d, ctx);
+        // Cilindros de CO₂: una línea por movimiento (código CO2); las series quedan en co2_trabajo_lineas (trabajo = esta OT).
+        const cil = cilindrosDeOT_(d), cob = co2VaACobranza_(ef.tipo, String(d.modalidadCo2 || '').toUpperCase());
+        [['ENTREGADO', cil.entregadas, cob], ['RETIRADO', cil.retiradas, false]].forEach((g) => {
+          if (!g[1].length) return;
+          lineas.push({ linea_id: id + '-' + (lineas.length + 1), ot_id: id, cliente_id: ef.idCliente, fecha: d.fecha, codigo: 'CO2', cantidad: g[1].length, movimiento: g[0],
+            codigo_retirado: '', saldo: '', cobranza: g[2], dto: '', facturado: '' });
+        });
+        reg.ot_lineas.push(...lineas);
       } else if (op.clase === 'REVISION_ITEMS') {
         let n = 0;
         ef.lineas.forEach((l) => {
@@ -497,13 +468,17 @@ export async function guardarLote(sql, usuario, opsPedido, aceptarAdvertencias) 
       // INGRESO, CIERRE, REPARACION_DEPOSITO y RECEPCION solo cambian estado (taller, máquinas, envíos).
     });
 
-    await C.guardar();
     // Altas en los maestros primero, después el registro de operaciones (fuente de verdad), los registros de detalle y el estado.
     await insertar(tx, 'clientes', clientesNuevos);
     await insertar(tx, 'maquinas', prep.prep.maquinasNuevas);
     await insertar(tx, 'operaciones', reg.operaciones);
     for (const t of ['ot', 'ot_lineas', 'envios', 'envio_lineas', 'ajustes_stock', 'revision_lineas']) await insertar(tx, t, reg[t]);
     await persistirCambios(tx, ctx, base, W);
+    // Los cilindros de las OT, con el número de la OT como trabajo de CO₂.
+    if (prep.co2 && prep.co2.ops.length) {
+      await co2Escribir(tx, prep.co2.ops, prep.co2.sim, prep.co2.ctx, usuario, { C, refIds: prep.co2.idx.map((k) => ops[k].id) });
+    }
+    await C.guardar();
     const ids = ops.map((o) => o.id);
     await tx`insert into log (usuario, accion, detalle, resultado) values (${usuario.email}, 'GUARDAR', ${ids.join(', ')}, 'OK')`;
     return { ok: true, resultados: res, ids, mensaje: 'Se guardó: ' + ids.join(', ') + '.' };
@@ -531,17 +506,25 @@ export async function anularOperacion(sql, usuario, idOp, motivo) {
       return { ok: false, errores: [{ codigo: 'OPERACION_AUTOMATICA', mensaje: id + ' se generó con ' + op.datos.generadaPor + ': se anula junto con ella (anulá ' + op.datos.generadaPor + ').' }] };
     }
     const ids = [id].concat(op.datos.operacionesAuto || []).filter((x) => ops.some((o) => o.id === x));
-    if (ops.some((o) => ids.indexOf(o.id) >= 0 && o.clase === 'OT' && (cilindrosDeOT_(o.datos).entregadas.length || cilindrosDeOT_(o.datos).retiradas.length))) {
-      return { ok: false, errores: [{ codigo: 'CO2_NO_DISPONIBLE', mensaje: 'La OT tiene cilindros de CO₂: se podrá anular cuando esté la etapa de CO₂.' }] };
-    }
     const v = validarAnulacion(ids, ops, ctx);
     if (!v.ok) return { ok: false, errores: v.errores };
+    // Si la OT tiene cilindros, su trabajo de CO₂ se anula junto con ella (solo si no hay movimientos posteriores de esas series).
+    const co2Anular = [];
+    for (const o of ops.filter((x) => ids.indexOf(x.id) >= 0 && x.clase === 'OT')) {
+      const cil = cilindrosDeOT_(o.datos);
+      if (!cil.entregadas.length && !cil.retiradas.length) continue;
+      const p = await co2PrepararAnulacion(tx, o.id);
+      if (p.propios.length) co2Anular.push({ id: o.id, prep: p });
+    }
+    const erroresCo2 = co2Anular.flatMap((x) => x.prep.v.errores.map((e) => ({ codigo: e.codigo, mensaje: 'CO₂: ' + e.mensaje })));
+    if (erroresCo2.length) return { ok: false, errores: erroresCo2 };
     const nota = 'Anulada por ' + usuario.email + ' el ' + fechaHora() + '. Motivo: ' + String(motivo).trim() + (ids.length > 1 ? ' (junto con ' + ids.join(', ') + ')' : '');
     await tx`update operaciones set estado = 'ANULADA', anulacion = ${nota} where op_id = any(${ids})`;
     await tx`update ot set estado = 'ANULADA' where ot_id = any(${ids})`;
     await tx`update envios set estado = 'ANULADO' where envio_id = any(${ids})`;
     await tx`update ajustes_stock set estado = 'ANULADA' where ajuste_id = any(${ids})`;
     await escribirEstadoCompleto(tx, ctx, v.estado);
+    for (const x of co2Anular) await co2AplicarAnulacion(tx, x.id, motivo, usuario, x.prep);
     await tx`insert into log (usuario, accion, detalle, resultado) values (${usuario.email}, 'ANULAR', ${ids.join(', ') + ' — ' + String(motivo).trim()}, 'OK')`;
     return { ok: true, ids, mensaje: 'Se anuló ' + ids.join(', ') + '.' };
   });

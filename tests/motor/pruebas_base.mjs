@@ -5,6 +5,9 @@ import {
   OPCIONES_POSTGRES, ErrorDeUsuario, usuarioPorEmail, validarLote, guardarLote, anularOperacion, auditar, hoyArgentina
 } from '../../supabase/functions/_compartido/estado.js';
 import { sumarDias } from '../../supabase/functions/_compartido/motor.js';
+import {
+  co2Validar, co2Guardar, co2EnviarAprobacion, co2RechazarPendiente, co2ValidarFactura, co2GuardarFactura, co2AnularFactura, co2Anular, co2Auditar
+} from '../../supabase/functions/_compartido/co2_estado.js';
 
 const sql = postgres({ ...OPCIONES_POSTGRES, max: 4, onnotice: () => {} });
 const hoy = hoyArgentina();
@@ -104,11 +107,6 @@ await prueba('Errores: una OT inválida frena todo el lote (lo válido tampoco s
   igual((await uno(sql`select count(*)::int n from operaciones`)).n, antes, 'no se guardó ninguna');
 });
 
-await prueba('CO₂ en una OT: todavía no se guarda (etapa 2) y lo avisa', async () => {
-  const r = await validarLote(sql, admin, [{ clase: 'OT', datos: { fecha: hace(5), idCliente: '10001', tipo: 'ENTREGA_CO2', modalidadCo2: 'TRADICIONAL', co2: { entregadas: ['K-1'] } } }]);
-  si(codigos(r).includes('CO2_NO_DISPONIBLE'), 'avisa CO₂: ' + codigos(r));
-});
-
 await prueba('Alta inicial con cliente nuevo y máquina nueva desde CABA: envío, recepción y ajustes automáticos', async () => {
   const r = await guardarLote(sql, admin, [{ clase: 'OT', datos: { fecha: hace(60), tipo: 'ALTA_INICIAL', serieInstalada: 'm-9001', traerMaquina: true, maquinaNueva: { modelo: 'AQA 200' },
     fechaInstalacion: hace(400), sistema: 'PWG HP PRO', items: [{ codigo: 'BOT', cantidad: 2 }],
@@ -199,6 +197,111 @@ await prueba('Anular un alta inicial anula también sus automáticas (envío, re
   igual((await uno(sql`select ubicacion_tipo, ubicacion_id from maquinas_estado where serie = 'M-9001'`)), { ubicacion_tipo: 'DEPOSITO', ubicacion_id: 'Depósito CABA' }, 'la máquina vuelve al central');
   igual((await sql`select 1 from clientes_estado where cliente_id = '10003'`).length, 0, 'el cliente queda sin datos');
   igual((await uno(sql`select estado from envios where envio_id = ${r.ids[1]}`)).estado, 'ANULADO', 'el envío automático queda anulado');
+});
+
+// ---------------------------------------------------------------- CO₂
+const remito = (nro, fecha, entregas, retiros = [], extra = {}) => ({ clase: 'REMITO', datos: { nroRemito: nro, fecha, idDeposito: 'Depósito Mendoza', origenCarga: 'PDF',
+  lineas: entregas.map((x) => (typeof x === 'string' ? { tipo: 'ENTREGA', serie: x, pesoKg: 10 } : { tipo: 'ENTREGA', pesoKg: 10, ...x })).concat(retiros.map((x) => ({ tipo: 'RETIRO', serie: x }))), ...extra } });
+const cil = async (serie) => uno(sql`select estado, ubicacion_tipo, ubicacion_id, peso_kg from co2_cilindros where serie = ${serie}`);
+
+await prueba('CO₂: remito de LINDE con 3 cilindros llenos; un número de remito no se repite', async () => {
+  const r = await co2Guardar(sql, carga, [remito('0001-00000101', hace(20), ['A1000001', 'A1000002', 'A1000003'])]);
+  igual(r.ok, true, 'se guarda: ' + JSON.stringify(r.resultados));
+  igual(await cil('A1000001'), { estado: 'LLENO_DISPONIBLE', ubicacion_tipo: 'DEPOSITO', ubicacion_id: 'Depósito Mendoza', peso_kg: 10 }, 'cilindro lleno en el depósito');
+  igual((await uno(sql`select count(*)::int n from co2_circuitos where estado = 'ABIERTO'`)).n, 3, 'tres circuitos abiertos');
+  igual((await uno(sql`select count(*)::int n from co2_remito_lineas where remito_id = ${r.ids[0]} and movimiento_id <> ''`)).n, 3, 'cada línea con su movimiento');
+  const r2 = await co2Validar(sql, carga, [remito('1-101', hace(19), ['A1000009'])]);
+  si(codigos(r2).includes('REMITO_DUPLICADO'), 'mismo número (escrito distinto) → duplicado: ' + codigos(r2));
+  let error = '';
+  try { await co2Guardar(sql, carga, [{ clase: 'ALTA', datos: {} }]); } catch (e) { error = e.message; }
+  si(/no permite/.test(error), 'el inventario inicial es solo de ADMIN');
+});
+
+await prueba('CO₂ en OT: entrega tradicional y recambio de emergencia con costo (va a cobranzas)', async () => {
+  let r = await guardarLote(sql, carga, [{ clase: 'OT', datos: { fecha: hace(25), idCliente: '10002', tipo: 'INSTALACION', serieInstalada: 'E-0002', sistema: '4 Etapas' } }], true);
+  igual(r.ok, true, 'instalación del cliente 10002: ' + JSON.stringify(r.resultados));
+  r = await guardarLote(sql, carga, [{ clase: 'OT', datos: { fecha: hace(15), idCliente: '10002', tipo: 'ENTREGA_CO2', modalidadCo2: 'TRADICIONAL', co2: { entregadas: ['a1000001'] } } }], true);
+  igual(r.ok, true, 'entrega: ' + JSON.stringify(r.resultados));
+  const ot1 = r.ids[0];
+  igual(await cil('A1000001'), { estado: 'EN_USO', ubicacion_tipo: 'CLIENTE', ubicacion_id: '10002', peso_kg: 10 }, 'el cilindro está en el cliente');
+  igual(await uno(sql`select tipo, cliente_id from co2_trabajos where trabajo_id = ${ot1}`), { tipo: 'ENTREGA', cliente_id: '10002' }, 'el trabajo de CO₂ lleva el número de la OT');
+  igual(await uno(sql`select codigo, cantidad, movimiento, cobranza from ot_lineas where ot_id = ${ot1}`), { codigo: 'CO2', cantidad: 1, movimiento: 'ENTREGADO', cobranza: false }, 'línea CO2 sin cobranza');
+  const v = await validarLote(sql, carga, [{ clase: 'OT', datos: { fecha: hace(12), idCliente: '10002', tipo: 'ENTREGA_CO2', modalidadCo2: 'TRADICIONAL', co2: { entregadas: ['A1000001'] } } }]);
+  si(codigos(v).some((c) => /^.*/.test(c)) && !v.ok, 'no se entrega un cilindro que ya está en el cliente: ' + codigos(v));
+  si(v.resultados[0].errores.every((e) => e.mensaje.startsWith('CO₂: ')), 'los errores del motor de CO₂ vienen marcados');
+  r = await guardarLote(sql, carga, [{ clase: 'OT', datos: { fecha: hace(10), idCliente: '10002', tipo: 'ENTREGA_CO2', modalidadCo2: 'EMERGENCIA_CON_COSTO', co2: { entregadas: ['A1000002'], retiradas: ['A1000001'] } } }], true);
+  igual(r.ok, true, 'recambio: ' + JSON.stringify(r.resultados));
+  igual(await cil('A1000001'), { estado: 'VACIO_DISPONIBLE', ubicacion_tipo: 'DEPOSITO', ubicacion_id: 'Depósito Mendoza', peso_kg: 10 }, 'el retirado vuelve vacío al depósito');
+  igual((await sql`select movimiento, cobranza from ot_lineas where ot_id = ${r.ids[0]} order by linea_id`), [{ movimiento: 'ENTREGADO', cobranza: true }, { movimiento: 'RETIRADO', cobranza: false }], 'la entrega de emergencia con costo va a cobranzas');
+  const d = await validarLote(sql, carga, [{ clase: 'OT', datos: { fecha: hace(9), idCliente: '10002', tipo: 'DESINSTALACION_MOMENTANEA', serieRetirada: 'E-0002' } }]);
+  si(codigos(d, 'advertencias').includes('CO2_PENDIENTE_EN_CLIENTE'), 'al desinstalar avisa que quedan cilindros en el cliente');
+});
+
+await prueba('CO₂: series dudosas → pendiente de aprobación; la aprueba un ADMIN', async () => {
+  const op = remito('0001-00000102', hace(8), [{ serie: 'A1000004', dudosa: true, sugerida: 'A1000004', serieLeidaIA: 'A1OOOO04' }]);
+  const r0 = await co2Guardar(sql, carga, [op]);
+  igual(r0.ok, false, 'CARGA no la guarda directo');
+  si(codigos(r0).includes('SERIE_DUDOSA'), 'por la serie dudosa');
+  const p = await co2EnviarAprobacion(sql, carga, op.datos);
+  igual(p.ok, true, 'queda pendiente: ' + JSON.stringify(p));
+  igual((await uno(sql`select estado from co2_remitos where remito_id = ${p.id}`)).estado, 'PENDIENTE_APROBACION', 'pendiente de aprobación');
+  igual((await uno(sql`select revision from co2_remito_lineas where remito_id = ${p.id}`)).revision, 'DUDOSA:A1000004', 'la línea queda marcada');
+  const aprob = JSON.parse(JSON.stringify(op));
+  aprob.datos.idPendiente = p.id;
+  aprob.datos.lineas[0].aprobada = true;
+  const r = await co2Guardar(sql, admin, [aprob]);
+  igual(r.ok, true, 'el ADMIN la aprueba: ' + JSON.stringify(r.resultados));
+  igual((await sql`select 1 from co2_remitos where remito_id = ${p.id}`).length, 0, 'el pendiente se reemplaza por el confirmado');
+  si(/^APROBADA: se leyó A1OOOO04/.test((await uno(sql`select revision from co2_remito_lineas where remito_id = ${r.ids[0]}`)).revision), 'queda registrado quién y qué aprobó');
+  const p2 = await co2EnviarAprobacion(sql, carga, remito('0001-00000199', hace(8), [{ serie: 'A1000008', dudosa: true }]).datos);
+  const x = await co2RechazarPendiente(sql, admin, p2.id);
+  igual(x.pendientes, 0, 'rechazado, no queda ninguno pendiente');
+});
+
+await prueba('CO₂: factura de LINDE por kg (30 kg = 3 × 10 kg); diferencias y remito ya facturado', async () => {
+  const f = { nroFactura: '0380-00012345', fecha: hace(3), lineas: [{ nroRemito: '1-101', kg: 30 }, { nroRemito: '0001-00000102', kg: 20 }, { nroRemito: '9-999', kg: 5 }] };
+  const v = await co2ValidarFactura(sql, f);
+  igual(v.lineas.map((x) => x.resultado), ['VALIDADO', 'DIFERENCIA_KG', 'NO_ENCONTRADO'], 'resultado por remito');
+  igual(v.lineas[0].composicion, '3 × 10 kg', 'composición');
+  const g = await co2GuardarFactura(sql, carga, f);
+  igual(g.estado, 'CON_DIFERENCIAS', 'queda con diferencias para reclamar');
+  const v2 = await co2ValidarFactura(sql, { nroFactura: '0380-00012346', fecha: hace(2), lineas: [{ nroRemito: '0001-00000101', kg: 30 }] });
+  igual(v2.lineas[0].resultado, 'YA_FACTURADO', 'un remito no se factura dos veces');
+  const v3 = await co2ValidarFactura(sql, f);
+  si(v3.errores.some((e) => /ya está cargada/.test(e)), 'la misma factura no se carga dos veces');
+  await co2AnularFactura(sql, admin, g.id, 'Prueba de anulación');
+  igual((await co2ValidarFactura(sql, { nroFactura: 'X-1', fecha: hace(2), lineas: [{ nroRemito: '0001-00000101', kg: 30 }] })).lineas[0].resultado, 'VALIDADO', 'anulada la factura, el remito queda libre');
+});
+
+await prueba('CO₂: LINDE retira el vacío (cierra el circuito); anulaciones respetan el orden', async () => {
+  const r = await co2Guardar(sql, carga, [remito('0001-00000103', hace(5), [], ['A1000001'])]);
+  igual(r.ok, true, 'retiro: ' + JSON.stringify(r.resultados));
+  igual((await cil('A1000001')).estado, 'ENTREGADO_LINDE', 'entregado a LINDE');
+  igual((await uno(sql`select estado, ref_salida from co2_circuitos where serie = 'A1000001'`)), { estado: 'CERRADO', ref_salida: r.ids[0] }, 'circuito cerrado');
+  const otRecambio = (await uno(sql`select ot_id from ot where modalidad_co2 = 'EMERGENCIA_CON_COSTO'`)).ot_id;
+  let a = await anularOperacion(sql, admin, otRecambio, 'Recambio cargado por error');
+  igual(a.ok, false, 'la OT no se anula: LINDE ya retiró ese cilindro');
+  si(a.errores[0].mensaje.startsWith('CO₂: '), 'el motivo es de CO₂: ' + JSON.stringify(a.errores));
+  a = await co2Anular(sql, admin, r.ids[0], 'Retiro cargado por error');
+  igual(a.ok, true, 'se anula el retiro de LINDE');
+  a = await anularOperacion(sql, admin, otRecambio, 'Recambio cargado por error');
+  igual(a.ok, true, 'ahora sí se anula la OT con sus cilindros: ' + JSON.stringify(a));
+  igual(await cil('A1000001'), { estado: 'EN_USO', ubicacion_tipo: 'CLIENTE', ubicacion_id: '10002', peso_kg: 10 }, 'el cilindro vuelve al cliente');
+  igual((await cil('A1000002')).estado, 'LLENO_DISPONIBLE', 'el entregado vuelve lleno al depósito');
+  igual((await uno(sql`select estado from co2_trabajos where trabajo_id = ${otRecambio}`)).estado, 'ANULADO', 'el trabajo de CO₂ queda anulado');
+  let error = '';
+  try { await co2Anular(sql, admin, otRecambio, 'Prueba de anulación'); } catch (e) { error = e.message; }
+  si(/junto con la OT/.test(error), 'los cilindros de una OT no se anulan sueltos');
+});
+
+await prueba('Auditorías: equipos y CO₂ coinciden con el historial; si se toca un cilindro a mano, se corrige', async () => {
+  igual((await auditar(sql, admin)).corregidas, [], 'equipos y stock sin diferencias');
+  let r = await co2Auditar(sql, admin);
+  igual(r.corregidas, 0, 'CO₂ sin diferencias');
+  await sql`update co2_cilindros set estado = 'VACIO_DISPONIBLE' where serie = 'A1000003'`;
+  r = await co2Auditar(sql, admin);
+  igual(r.corregidas, 1, 'corrige el cilindro tocado');
+  igual((await cil('A1000003')).estado, 'LLENO_DISPONIBLE', 'vuelve a lleno');
 });
 
 await sql.end();

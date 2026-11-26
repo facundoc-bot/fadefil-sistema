@@ -6,7 +6,7 @@ set client_min_messages = notice;
 -- ---------------------------------------------------------------- datos iniciales
 do $$ begin
   if (select count(*) from reglas_trabajo) <> 10 then raise exception 'FALLA: reglas_trabajo debería tener 10 tipos de OT'; end if;
-  if (select count(*) from catalogo) <> 28 then raise exception 'FALLA: el catálogo inicial debería tener 28 códigos'; end if;
+  if (select count(*) from catalogo where categoria <> 'CO2') <> 28 or not exists (select 1 from catalogo where codigo = 'CO2' and not activo) then raise exception 'FALLA: el catálogo inicial debería tener 28 códigos y CO2 (inactivo)'; end if;
   if (select count(distinct sistema) from sistemas_purificacion) <> 14 then raise exception 'FALLA: deberían ser 14 sistemas y prefiltros'; end if;
   if exists (select 1 from sistemas_purificacion where codigo_componente is null and componente <> sistema and rol <> 'INSTALACION' and rol <> 'CONSUMO')
     then raise exception 'FALLA: hay componentes sin código'; end if;
@@ -150,7 +150,7 @@ begin;
 set local role authenticated;
 set local request.jwt.claims = '{"email":"consulta@empresa.com"}';
 do $$ declare n int; begin
-  if (select count(*) from catalogo) <> 28 then raise exception 'FALLA: CONSULTA lee el catálogo'; end if;
+  if (select count(*) from catalogo) <> 29 then raise exception 'FALLA: CONSULTA lee el catálogo'; end if;
   begin insert into catalogo (codigo, descripcion, categoria) values ('X1', 'x', 'INSUMO'); raise exception 'FALLA: CONSULTA agregó al catálogo';
   exception when insufficient_privilege then null; end;
   update zonas set activa = false where zona_id = 'Nueva Córdoba'; get diagnostics n = row_count;
