@@ -27,8 +27,7 @@ jobs:
         run: |
           CLAVE=$(curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/api-keys?reveal=true" \
             | jq -r '([.[] | select(.name == "anon")] + [.[] | select(.type == "publishable")])[0].api_key')
-          curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/api-keys?reveal=true" | jq -r '.[] | "clave: \(.name) \(.type // "-") \(.api_key | length)"'
-          curl -s -o /dev/null -w 'API: %{http_code}\n' -H "apikey: $CLAVE" -H "Authorization: Bearer $CLAVE" "https://$SUPABASE_PROJECT_REF.supabase.co/rest/v1/config?select=clave&limit=1"
+          curl -s -o /dev/null -w 'API: %{http_code} (sin login la base responde 401: es lo esperado; lo importante es que la consulta llegó)\n' -H "apikey: $CLAVE" -H "Authorization: Bearer $CLAVE" "https://$SUPABASE_PROJECT_REF.supabase.co/rest/v1/config?select=clave&limit=1"
       - name: Vincular el proyecto
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
       - name: Copia de seguridad
