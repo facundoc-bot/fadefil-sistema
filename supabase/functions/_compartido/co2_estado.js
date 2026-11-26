@@ -18,6 +18,19 @@ import { BLOQUEO, iso, nulo, ErrorDeUsuario, exigirRol, insertar, contadores, an
 const CODIGOS_A_REVISION = ['RETIRO_LINDE_LLENO', 'ARCHIVO_YA_CARGADO'];
 const MAX_OPS = 50;
 
+/**
+ * Ruta del archivo en el espacio co2-linde. La app la manda como archivoRuta o, en las pantallas que vienen
+ * de Sheets, como archivoUrl ("archivo.html?r=<ruta>", el enlace que abre el archivo).
+ */
+export function rutaArchivo(d) {
+  const v = String((d && (d.archivoRuta || d.archivoUrl)) || '');
+  const m = /[?&]r=([^&]+)/.exec(v);
+  return m ? decodeURIComponent(m[1]) : v;
+}
+/** Enlace para abrir un archivo guardado (la página archivo.html pide un enlace temporal con el login del usuario). */
+export const urlArchivo = (ruta) => (ruta ? 'archivo.html?r=' + encodeURIComponent(ruta) : '');
+export const cilindroParaApp = (c) => ({ serie: c.serie, estado: c.estado, ubicTipo: c.ubicTipo, ubicId: c.ubicId, depOrigen: c.depOrigen, ultimaFecha: c.ultimaFecha, pesoKg: c.pesoKg });
+
 /* ---------------------------------------------------------------------------
  *  Filas ↔ motor
  * ------------------------------------------------------------------------ */
@@ -51,6 +64,8 @@ async function upsertCilindros(sql, filas) {
 /* ---------------------------------------------------------------------------
  *  Contexto
  * ------------------------------------------------------------------------ */
+export { estadoDeFila, movDeFila };
+
 export async function co2Contexto(sql) {
   const [config, deps, co2deps, plazas, zonas, regiones, clientes, cil, rem] = await Promise.all([
     sql`select clave, valor from co2_config`,
@@ -176,7 +191,7 @@ export async function co2Escribir(sql, ops, sim, ctx, usuario, opts = {}) {
     });
     if (op.clase === 'REMITO') {
       filas.co2_remitos.push({ remito_id: refId, nro_remito: String(d.nroRemito), nro_normalizado: co2_normalizarNroRemito(d.nroRemito), fecha: d.fecha, deposito_id: d.idDeposito,
-        tipo_copia: d.tipoCopia || '', plaza_texto: d.plazaTexto || '', origen_carga: d.origenCarga || 'MANUAL', archivo_ruta: d.archivoRuta || '', archivo_hash: d.archivoHash || '',
+        tipo_copia: d.tipoCopia || '', plaza_texto: d.plazaTexto || '', origen_carga: d.origenCarga || 'MANUAL', archivo_ruta: rutaArchivo(d), archivo_hash: d.archivoHash || '',
         observaciones: d.observaciones || '', estado: 'CONFIRMADO', errores: '', created_by: usuario.email, confirmado_at: new Date() });
       (d.lineas || []).forEach((l) => {
         const tipo = String(l.tipo).toUpperCase(), serie = co2_normalizarSerie(l.serie);
@@ -216,7 +231,7 @@ export async function co2Escribir(sql, ops, sim, ctx, usuario, opts = {}) {
   await insertar(sql, 'co2_circuitos', Object.values(circuitosNuevos));
   for (const [id, c] of Object.entries(cierres)) await sql`update co2_circuitos set fecha_cierre = ${c.fecha_cierre}, ref_salida = ${c.ref_salida}, estado = 'CERRADO' where circuito_id = ${id}`;
   await upsertCilindros(sql, cilindros);
-  return { confirmadas, ids: confirmadas.map((c) => c.id), movimientos: filas.co2_movimientos.length };
+  return { confirmadas, ids: confirmadas.map((c) => c.id), movimientos: filas.co2_movimientos.length, cilindros: cilindros.map((f) => cilindroParaApp(estadoDeFila(f))) };
 }
 
 /* ---------------------------------------------------------------------------
@@ -235,7 +250,7 @@ export async function co2Validar(sql, usuario, opsPedido) {
   const cctx = await co2Contexto(sql);
   cctx.rolUsuario = usuario.rol; // las series dudosas las aprueba un administrador
   const sim = co2_simularLote(ops, cctx);
-  return { ok: sim.ok, resultados: sim.resultados.map((r) => ({ clase: r.clase, errores: r.errores, advertencias: r.advertencias, movimientos: r.movimientos.length })) };
+  return { ok: sim.ok, resultados: sim.resultados };
 }
 
 /** Guarda remitos y altas. Un remito que esperaba aprobación (idPendiente) queda reemplazado por el confirmado. */
@@ -254,7 +269,7 @@ export async function co2Guardar(sql, usuario, opsPedido) {
     const r = await co2Escribir(tx, ops, sim, cctx, usuario, { C });
     await C.guardar();
     await anotar(tx, usuario.email, 'CO2_GUARDAR', r.ids.join(', '), 'OK (' + r.movimientos + ' movimientos)');
-    return { ok: true, resultados, ids: r.ids, confirmadas: r.confirmadas, mensaje: 'Se guardaron ' + r.ids.length + ' operaciones y ' + r.movimientos + ' movimientos.' };
+    return { ok: true, resultados, ids: r.ids, confirmadas: r.confirmadas, cilindros: r.cilindros, mensaje: 'Se guardaron ' + r.ids.length + ' operaciones y ' + r.movimientos + ' movimientos.' };
   });
 }
 
@@ -284,7 +299,7 @@ export async function co2EnviarAprobacion(sql, usuario, d) {
     const C = await contadores(tx);
     if (!id) id = C.siguiente('REM');
     await insertar(tx, 'co2_remitos', [{ remito_id: id, nro_remito: String(d.nroRemito), nro_normalizado: co2_normalizarNroRemito(d.nroRemito), fecha: d.fecha, deposito_id: d.idDeposito,
-      tipo_copia: d.tipoCopia || '', plaza_texto: d.plazaTexto || '', origen_carga: d.origenCarga || 'MANUAL', archivo_ruta: d.archivoRuta || '', archivo_hash: d.archivoHash || '',
+      tipo_copia: d.tipoCopia || '', plaza_texto: d.plazaTexto || '', origen_carga: d.origenCarga || 'MANUAL', archivo_ruta: rutaArchivo(d), archivo_hash: d.archivoHash || '',
       observaciones: d.observaciones || '', estado: 'PENDIENTE_APROBACION', errores: dudosas.length + ' serie(s) dudosa(s)',
       created_by: creado ? creado.created_by : usuario.email, created_at: creado ? creado.created_at : new Date() }]);
     await insertar(tx, 'co2_remito_lineas', d.lineas.map((l) => ({ linea_id: C.siguiente('DET', 7), remito_id: id, tipo: String(l.tipo).toUpperCase(), serie: co2_normalizarSerie(l.serie),
@@ -403,7 +418,7 @@ export async function co2GuardarFactura(sql, usuario, d) {
     const id = C.siguiente('FAC');
     const r = v.resumen, estado = v.todoValidado ? 'VALIDADA' : 'CON_DIFERENCIAS';
     await insertar(tx, 'co2_facturas', [{ factura_id: id, nro_factura: String(d.nroFactura).trim(), nro_normalizado: co2_normalizarNroRemito(d.nroFactura), fecha: d.fecha,
-      total_kg: r.kgFactura, archivo_ruta: d.archivoRuta || '', archivo_hash: d.archivoHash || '', observaciones: d.observaciones || '', estado,
+      total_kg: r.kgFactura, archivo_ruta: rutaArchivo(d), archivo_hash: d.archivoHash || '', observaciones: d.observaciones || '', estado,
       resumen: r.validados + ' de ' + v.lineas.length + ' remitos validados (' + r.kgValidados + ' de ' + r.kgFactura + ' kg)', created_by: usuario.email }]);
     await insertar(tx, 'co2_factura_lineas', v.lineas.map((x) => ({ linea_id: C.siguiente('FDT', 7), factura_id: id, nro_remito: x.nroRemito, nro_normalizado: co2_normalizarNroRemito(x.nroRemito),
       fecha_remito: nulo(x.fechaRemito), kg_factura: x.kg === '' ? null : x.kg, remito_id: x.remitoId || null, kg_sistema: x.kgSistema == null ? null : x.kgSistema,

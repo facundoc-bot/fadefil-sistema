@@ -8,6 +8,10 @@ import { sumarDias } from '../../supabase/functions/_compartido/motor.js';
 import {
   co2Validar, co2Guardar, co2EnviarAprobacion, co2RechazarPendiente, co2ValidarFactura, co2GuardarFactura, co2AnularFactura, co2Anular, co2Auditar
 } from '../../supabase/functions/_compartido/co2_estado.js';
+import { api } from '../../supabase/functions/_compartido/api.js';
+import { co2Api } from '../../supabase/functions/_compartido/co2_api.js';
+import { importarValidar, importarMaquinas } from '../../supabase/functions/_compartido/importar.js';
+import { readFileSync } from 'node:fs';
 
 const sql = postgres({ ...OPCIONES_POSTGRES, max: 4, onnotice: () => {} });
 const hoy = hoyArgentina();
@@ -302,6 +306,98 @@ await prueba('Auditorías: equipos y CO₂ coinciden con el historial; si se toc
   r = await co2Auditar(sql, admin);
   igual(r.corregidas, 1, 'corrige el cilindro tocado');
   igual((await cil('A1000003')).estado, 'LLENO_DISPONIBLE', 'vuelve a lleno');
+});
+
+// ---------------------------------------------------------------- pantallas (mismas respuestas que en Sheets)
+await prueba('Pantalla principal: datos de arranque, fichas, recientes, técnicos y movimientos', async () => {
+  const ini = await api(sql, consulta, 'apiInicio', []);
+  si(ini.clientes.length >= 3 && ini.maquinas.length >= 3 && ini.catalogo.every((c) => c.codigo !== 'CO2'), 'clientes, máquinas y catálogo (sin el código CO2)');
+  si(ini.depositos.some((d) => d.id === 'Depósito Mendoza' && d.region === 'INTERIOR'), 'depósitos con su región');
+  si(ini.stock.some((x) => x.deposito === 'Depósito Mendoza' && x.codigo === 'BOT'), 'stock por depósito');
+  si(ini.co2 && ini.co2.enCliente['10002'] && ini.co2.enCliente['10002'].length === 1, 'cilindros en el cliente para la OT');
+  igual(ini.urlApp, 'co2.html', 'enlace a la pantalla de CO₂');
+  const f = await api(sql, consulta, 'apiFichaCliente', ['10002']);
+  si(f.historial.length >= 2 && f.historial.some((h) => h.items.some((t) => /^CO₂ entregado: A1000001/.test(t))), 'ficha con historial y series de CO₂: ' + JSON.stringify(f.historial.map((h) => h.items)));
+  const m = await api(sql, consulta, 'apiFichaMaquina', ['E-0001']);
+  si(m.eventos.length >= 4, 'ficha de la máquina con su historia: ' + m.eventos.length);
+  si((await api(sql, consulta, 'apiRecientes', [])).length >= 10, 'recientes');
+  const t = await api(sql, consulta, 'apiTecnicos', [hace(200), hoy]);
+  si(t.ots.length >= 3, 'informe de técnicos');
+  si((await api(sql, consulta, 'apiIngresosSalidas', [hace(365), hoy])).length > 0, 'ingresos y salidas');
+  si((await api(sql, consulta, 'apiMovimientosItem', ['BOT', '', ''])).filas.length > 0, 'kárdex de un ítem');
+  let error = '';
+  try { await api(sql, consulta, 'apiConfirmar', [[{ clase: 'ENVIO', datos: {} }], true]); } catch (e) { error = e.message; }
+  si(/no permite/.test(error), 'CONSULTA no guarda desde la pantalla');
+  const v = await api(sql, carga, 'apiValidar', [[{ clase: 'OT', datos: { fecha: hoy, idCliente: '10002', tipo: 'MANTENIMIENTO' } }]]);
+  igual(v.ok, true, 'validar desde la pantalla');
+});
+
+await prueba('Pantalla de CO₂: arranque, ficha de serie, recientes, resumen de remitos, saldo con LINDE, recambios y alertas', async () => {
+  const ini = await co2Api(sql, consulta, 'apiInicio', []);
+  si(ini.cilindros.length >= 3 && ini.depositos.length >= 2 && ini.cargas.join() === '5,10', 'arranque');
+  const f = await co2Api(sql, consulta, 'apiFichaSerie', ['a1000001']);
+  si(f.existe && f.movimientos.length >= 3, 'ficha de la serie');
+  si((await co2Api(sql, consulta, 'apiRecientes', [])).some((x) => x.clase === 'Remito LINDE'), 'recientes');
+  const rr = await co2Api(sql, consulta, 'apiResumenRemitos', [{}]);
+  igual(rr.totales.kg, 40, '40 kg entregados por LINDE (3 + 1 cilindros de 10 kg)');
+  const sl = await co2Api(sql, consulta, 'apiSaldoLinde', [{}]);
+  si(sl.series.length >= 4, 'saldo con LINDE');
+  si(Array.isArray((await co2Api(sql, consulta, 'apiRecambios', [6])).clientes || []), 'recambios');
+  si(Array.isArray((await co2Api(sql, consulta, 'apiAlertas', [])).alertas), 'alertas');
+  igual((await co2Api(sql, consulta, 'apiPendientesAprobacion', [])).length, 0, 'sin pendientes');
+});
+
+await prueba('Leer PDF: el texto que extrae el navegador (pdf.js) se interpreta igual que antes', async () => {
+  await sql`insert into depositos (deposito_id) values ('Depósito Córdoba')`;
+  await sql`insert into co2_depositos (deposito_id, plaza_linde) values ('Depósito Córdoba', '23081740')`;
+  const texto = readFileSync(new URL('./fixtures/remito_511-6544.txt', import.meta.url), 'utf8');
+  const r = await co2Api(sql, carga, 'apiLeerRemitoPDF', [{ texto, archivo: { url: 'archivo.html?r=remitos%2F2025%2Fx.pdf', hash: 'abc', nombre: 'x.pdf' } }]);
+  igual([r.remito.nroRemito, r.remito.fecha, r.remito.idDeposito], ['00511-00006544', '2025-10-24', 'Depósito Córdoba'], 'número, fecha y depósito (por el código de LINDE)');
+  igual(r.remito.lineas.filter((l) => l.tipo === 'ENTREGA' && l.pesoKg === 10).length, 48, '48 cilindros de 10 kg');
+  si(/^Coincide/.test(r.remito.control), 'coincide con los totales: ' + r.remito.control);
+  const tf = readFileSync(new URL('./fixtures/factura_525-3080.txt', import.meta.url), 'utf8');
+  const fa = await co2Api(sql, carga, 'apiLeerFacturaPDF', [{ texto: tf, archivo: {} }]);
+  igual([fa.factura.nroFactura, fa.factura.lineas[0].nroRemito, fa.factura.lineas[0].kg], ['00525-00003080', '00290-00005053', 90], 'factura: número, remito y kg');
+});
+
+await prueba('Carga masiva: valida máquinas, clientes, comodato, componentes, cilindros y stock; después se guarda en tandas', async () => {
+  const hojas = {
+    maquinas: [{ serie: 'IMP-1', modelo: 'AQA 200', fecha_ingreso: '01/03/2024' }, { serie: 'IMP-2', modelo: 'NO EXISTE', fecha_ingreso: '2024-03-01' }],
+    clientes: [
+      { cliente_id: '70001', nombre_fantasia: 'Importado Uno', plaza: 'Mendoza', zona: 'Mendoza Centro', estado: 'Activo', serie: 'imp-1', fecha_instalacion: '2024-05-10', sistema: '4 Etapas' },
+      { cliente_id: '70002', nombre_fantasia: 'Importado Dos', zona: 'Zona Inexistente', estado: 'Ex cliente' },
+      { cliente_id: '10002', nombre_fantasia: 'Ya está', zona: 'Mendoza Centro', estado: 'Ex cliente' }
+    ],
+    comodato: [{ cliente_id: '70001', codigo: 'BOT', cantidad: 4 }],
+    componentes: [{ cliente_id: '70001', codigo: 'SED1', ultimo_cambio: '2024-09-01' }],
+    cilindros: [{ cliente_id: '70001', serie: 'A7000001', peso_kg: 10 }],
+    stock: [{ deposito: 'Depósito Mendoza', codigo: 'FRENTE', cantidad: 5 }]
+  };
+  const v = await importarValidar(sql, admin, hojas);
+  const fila = (h, n) => v.filas.find((x) => x.hoja === h && x.fila === n);
+  igual(fila('maquinas', 2).resultado, 'OK', 'máquina OK');
+  igual(fila('maquinas', 3).resultado, 'ERROR', 'modelo inexistente');
+  si(fila('clientes', 2).op && fila('clientes', 2).op.datos.traerMaquina, 'cliente OK; la máquina viene del central: ' + fila('clientes', 2).detalle);
+  igual(fila('clientes', 3).resultado, 'ERROR', 'zona inexistente');
+  igual(fila('clientes', 4).resultado, 'YA CARGADO', 'un cliente que ya está se saltea');
+  igual(fila('cilindros', 2).resultado, 'OK', 'cilindro OK');
+  igual(fila('stock', 2).resultado, 'OK', 'stock OK');
+  let error = '';
+  try { await importarValidar(sql, carga, hojas); } catch (e) { error = e.message; }
+  si(/no permite/.test(error), 'la carga masiva es de ADMIN');
+  igual((await importarMaquinas(sql, admin, v.filas.filter((x) => x.hoja === 'maquinas' && x.op))).cargadas, 1, 'se carga la máquina');
+  const ots = v.filas.filter((x) => x.hoja === 'clientes' && x.op).map((x) => x.op);
+  const g = await guardarLote(sql, admin, ots, true);
+  igual(g.ok, true, 'se guardan los clientes: ' + JSON.stringify(g.resultados));
+  igual((await uno(sql`select estado, serie_instalada from clientes_estado where cliente_id = '70001'`)), { estado: 'ACTIVO', serie_instalada: 'IMP-1' }, 'cliente activo con su máquina');
+  igual((await uno(sql`select ultimo_cambio from clientes_componentes where cliente_id = '70001' and codigo = 'SED1' and tipo = 'ULTIMO_CAMBIO'`)).ultimo_cambio, '2024-09-01', 'fecha del último cambio del componente');
+  const c = await co2Guardar(sql, admin, v.filas.filter((x) => x.hoja === 'cilindros' && x.op).map((x) => x.op));
+  igual(c.ok, true, 'cilindro en el cliente: ' + JSON.stringify(c.resultados));
+  const st = await guardarLote(sql, admin, v.filas.filter((x) => x.hoja === 'stock' && x.op).map((x) => x.op), true);
+  igual(st.ok, true, 'stock inicial');
+  const v2 = await importarValidar(sql, admin, hojas);
+  igual(v2.filas.find((x) => x.hoja === 'clientes' && x.fila === 2).resultado, 'YA CARGADO', 'al validar de nuevo, lo importado se saltea');
+  igual((await auditar(sql, admin)).corregidas, [], 'todo coincide con el historial');
 });
 
 await sql.end();

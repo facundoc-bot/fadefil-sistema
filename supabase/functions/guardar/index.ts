@@ -14,6 +14,11 @@
 //    { accion: 'co2_enviar_aprobacion', remito }   { accion: 'co2_rechazar_pendiente', id }   (rechazar: ADMIN)
 //    { accion: 'co2_validar_factura' | 'co2_guardar_factura', factura }   { accion: 'co2_anular_factura', id, motivo } (ADMIN)
 //    { accion: 'co2_anular', id, motivo } (ADMIN)   { accion: 'co2_auditar' } (ADMIN)
+//  Pantallas (mismas funciones que la versión en Sheets):
+//    { accion: 'api', fn: 'apiInicio', args: [...] }        app principal
+//    { accion: 'co2_api', fn: 'apiInicio', args: [...] }    pantalla de CO₂
+//  Carga masiva (ADMIN): { accion: 'importar_validar', hojas }  { accion: 'importar_maquinas', maquinas }
+//  { accion: 'yo' }: quién es el usuario (nombre y rol).
 //  Respuesta: { exito: true, datos } o { exito: false, error }.
 // =============================================================================
 import postgres from 'npm:postgres@3.4.7';
@@ -24,6 +29,9 @@ import {
   co2Validar, co2Guardar, co2EnviarAprobacion, co2RechazarPendiente, co2ValidarFactura, co2GuardarFactura, co2AnularFactura, co2Anular, co2Auditar
 } from '../_compartido/co2_estado.js';
 import { exigirRol } from '../_compartido/base.js';
+import { api } from '../_compartido/api.js';
+import { co2Api } from '../_compartido/co2_api.js';
+import { importarValidar, importarMaquinas } from '../_compartido/importar.js';
 
 const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { ...OPCIONES_POSTGRES, max: 3, prepare: false, idle_timeout: 20 });
 
@@ -55,6 +63,11 @@ Deno.serve(async (req) => {
     const p = await req.json().catch(() => ({}));
     let datos;
     switch (p.accion) {
+      case 'yo': datos = usuario; break;
+      case 'api': datos = await api(sql, usuario, String(p.fn || ''), p.args); break;
+      case 'co2_api': datos = await co2Api(sql, usuario, String(p.fn || ''), p.args); break;
+      case 'importar_validar': datos = await importarValidar(sql, usuario, p.hojas); break;
+      case 'importar_maquinas': datos = await importarMaquinas(sql, usuario, p.maquinas); break;
       case 'validar': datos = await validarLote(sql, usuario, p.ops); break;
       case 'guardar': datos = await guardarLote(sql, usuario, p.ops, !!p.aceptarAdvertencias); break;
       case 'anular': datos = await anularOperacion(sql, usuario, p.id, p.motivo); break;

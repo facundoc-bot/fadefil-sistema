@@ -42,6 +42,7 @@ export async function contexto(sql) {
     sql`select * from tecnicos`,
     sql`select * from sistemas_purificacion order by id`
   ]);
+  const listas = await sql`select tipo, valor, orden from listas order by orden, valor`;
   const cfg = {};
   config.forEach((r) => { cfg[r.clave] = r.valor; });
   const conf = (k, def) => (cfg[k] === '' || cfg[k] == null ? def : String(cfg[k]));
@@ -81,7 +82,7 @@ export async function contexto(sql) {
     diasMantenimiento: Number(conf('DIAS_MANTENIMIENTO', '90')) || 90,
     diasAviso: Number(conf('DIAS_AVISO_MANTENIMIENTO', '15')) || 15,
     diasAnticipoFiltros: anticipo !== '' && Number(anticipo) >= 0 ? Number(anticipo) : DIAS_ANTICIPO_FILTROS_DEFECTO,
-    depositoCentral: depositoCentral(), config: cfg
+    depositoCentral: depositoCentral(), config: cfg, listas
   };
 }
 
@@ -155,7 +156,7 @@ function clientesDesdeFilas(W, f) {
  * Lee las tablas de estado y arma W, más una foto de cada entidad para saber después qué cambió.
  * clientes: lista de IDs a leer, o null para todos. talleres: 'ABIERTOS' o 'TODOS'.
  */
-async function cargarEstado(sql, ctx, { clientes = null, talleres = 'ABIERTOS', codigos = [] } = {}) {
+export async function cargarEstado(sql, ctx, { clientes = null, talleres = 'ABIERTOS', codigos = [] } = {}) {
   const W = estadoInicial(ctx);
   W.kardex = []; W.lineaDisp = {}; W.movStock = [];
   const ids = clientes == null ? null : [...new Set(clientes.filter(Boolean))];
