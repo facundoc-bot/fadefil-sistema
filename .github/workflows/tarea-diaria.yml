@@ -25,8 +25,8 @@ jobs:
       - name: Mantener activa la base (consulta a la API)
         continue-on-error: true
         run: |
-          CLAVE=$(curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/api-keys" \
-            | jq -r '[.[] | select(.name == "anon" or .type == "publishable")][0].api_key')
+          CLAVE=$(curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/api-keys?reveal=true" \
+            | jq -r '([.[] | select(.name == "anon")] + [.[] | select(.type == "publishable")])[0].api_key')
           curl -sf -o /dev/null -w 'API: %{http_code}\n' -H "apikey: $CLAVE" "https://$SUPABASE_PROJECT_REF.supabase.co/rest/v1/config?select=clave&limit=1"
       - name: Vincular el proyecto
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
