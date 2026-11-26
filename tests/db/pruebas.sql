@@ -239,3 +239,32 @@ end $$;
 commit;
 
 \echo 'Todas las pruebas de la base pasaron.'
+
+-- ---------------------------------------------------------------- seguridad general
+-- Toda tabla de la base tiene seguridad por filas (una tabla nueva sin permisos quedaría abierta),
+-- las vistas respetan los permisos de quien consulta, y sin sesión no se puede leer nada.
+do $$ declare sin text; begin
+  select string_agg(c.relname, ', ') into sin from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind in ('r', 'p') and not c.relrowsecurity;
+  if sin is not null then raise exception 'FALLA: tablas sin seguridad por filas: %', sin; end if;
+  select string_agg(c.relname, ', ') into sin from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind = 'v' and not coalesce('security_invoker=true' = any (c.reloptions) or 'security_invoker=on' = any (c.reloptions), false);
+  if sin is not null then raise exception 'FALLA: vistas que no respetan los permisos de quien consulta: %', sin; end if;
+  select string_agg(c.relname, ', ') into sin from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm') and has_table_privilege('anon', c.oid, 'select');
+  if sin is not null then raise exception 'FALLA: sin sesión se puede leer: %', sin; end if;
+  if (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r', 'p')) < 20 then
+    raise exception 'FALLA: la prueba no encontró las tablas'; end if;
+  raise notice 'OK: todas las tablas con seguridad por filas, vistas con permisos de quien consulta, nada visible sin sesión';
+end $$;
+
+-- ---------------------------------------------------------------- ingreso solo para mails habilitados
+do $$ begin
+  if hook_antes_de_crear_usuario('{"user": {"email": "Carga@Empresa.com"}}') <> '{}'::jsonb then raise exception 'FALLA: un mail habilitado no pudo crear su cuenta'; end if;
+  if hook_antes_de_crear_usuario('{"user": {"email": "intruso@gmail.com"}}') -> 'error' ->> 'http_code' <> '403' then raise exception 'FALLA: se creó la cuenta de un mail que no está en Usuarios'; end if;
+  if hook_antes_de_crear_usuario('{"user": {"email": "baja@empresa.com"}}') -> 'error' is null then raise exception 'FALLA: un usuario dado de baja pudo crear su cuenta'; end if;
+  if hook_antes_de_crear_usuario('{"user": {}}') -> 'error' is null then raise exception 'FALLA: se creó una cuenta sin mail'; end if;
+  if has_function_privilege('anon', 'hook_antes_de_crear_usuario(jsonb)', 'execute') or has_function_privilege('authenticated', 'hook_antes_de_crear_usuario(jsonb)', 'execute')
+    or not has_function_privilege('supabase_auth_admin', 'hook_antes_de_crear_usuario(jsonb)', 'execute') then raise exception 'FALLA: permisos de la función de ingreso'; end if;
+  raise notice 'OK: solo se crean cuentas de mails activos en Usuarios (los demás, rechazados con 403)';
+end $$;
