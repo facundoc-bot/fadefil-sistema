@@ -1,0 +1,204 @@
+-- Pruebas de las migraciones: datos iniciales, identificadores y permisos por rol.
+-- Cada bloque termina con NOTICE "OK: …" o corta todo con "FALLA: …".
+\set QUIET on
+set client_min_messages = notice;
+
+-- ---------------------------------------------------------------- datos iniciales
+do $$ begin
+  if (select count(*) from reglas_trabajo) <> 10 then raise exception 'FALLA: reglas_trabajo debería tener 10 tipos de OT'; end if;
+  if (select count(*) from catalogo) <> 28 then raise exception 'FALLA: el catálogo inicial debería tener 28 códigos'; end if;
+  if (select count(distinct sistema) from sistemas_purificacion) <> 14 then raise exception 'FALLA: deberían ser 14 sistemas y prefiltros'; end if;
+  if exists (select 1 from sistemas_purificacion where codigo_componente is null and componente <> sistema and rol <> 'INSTALACION' and rol <> 'CONSUMO')
+    then raise exception 'FALLA: hay componentes sin código'; end if;
+  if (select deposito_id from plazas where plaza_id = 'GBA') <> 'Depósito CABA' then raise exception 'FALLA: GBA usa el Depósito CABA'; end if;
+  if (select controla_stock from depositos where deposito_id = 'Depósito CABA') then raise exception 'FALLA: el central no controla stock'; end if;
+  if (select insumo and adicional and not filtro from reglas_trabajo where tipo_ot = 'ALTA_INICIAL') is not true then raise exception 'FALLA: reglas del alta inicial'; end if;
+  if (select valor from co2_config where clave = 'CARGAS_KG') <> '5;10' then raise exception 'FALLA: cargas de CO₂'; end if;
+  raise notice 'OK: datos iniciales (10 tipos de OT, 28 códigos, 14 sistemas, plazas CABA y GBA, configuración)';
+end $$;
+
+-- ---------------------------------------------------------------- identificadores
+do $$ begin
+  if siguiente_id('OT') <> 'OT-000001' or siguiente_id('OT') <> 'OT-000002' or siguiente_id('REM') <> 'REM-000001' then
+    raise exception 'FALLA: siguiente_id'; end if;
+  raise notice 'OK: identificadores correlativos por prefijo (OT-000001, OT-000002, REM-000001)';
+end $$;
+
+-- ---------------------------------------------------------------- usuarios de prueba
+insert into usuarios (email, nombre, rol) values ('  Facu@Empresa.com ', 'Facu', 'ADMIN'), ('carga@empresa.com', 'Carga', 'CARGA'),
+  ('consulta@empresa.com', 'Consulta', 'CONSULTA'), ('baja@empresa.com', 'Baja', 'CARGA');
+update usuarios set activo = false where email = 'baja@empresa.com';
+do $$ begin
+  if not exists (select 1 from usuarios where email = 'facu@empresa.com') then raise exception 'FALLA: el email se guarda en minúscula y sin espacios'; end if;
+  raise notice 'OK: emails en minúscula';
+end $$;
+
+-- ---------------------------------------------------------------- sin sesión
+begin;
+set local role anon;
+do $$ begin
+  begin perform count(*) from clientes; raise exception 'FALLA: sin sesión se pudo leer clientes';
+  exception when insufficient_privilege then raise notice 'OK: sin sesión no se lee nada'; end;
+end $$;
+rollback;
+
+-- ---------------------------------------------------------------- con sesión pero sin usuario habilitado
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"email":"intruso@gmail.com"}';
+do $$ begin
+  if (select count(*) from catalogo) <> 0 or (select count(*) from usuarios) <> 0 then raise exception 'FALLA: un usuario no habilitado ve datos'; end if;
+  raise notice 'OK: con una cuenta que no está en usuarios no se ve nada';
+end $$;
+rollback;
+
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"email":"baja@empresa.com"}';
+do $$ begin
+  if (select count(*) from catalogo) <> 0 then raise exception 'FALLA: un usuario inactivo ve datos'; end if;
+  raise notice 'OK: un usuario inactivo no ve nada';
+end $$;
+rollback;
+
+-- ---------------------------------------------------------------- ADMIN: maestros desde la app
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"email":"FACU@empresa.com"}';
+do $$ begin
+  if mi_rol() <> 'ADMIN' then raise exception 'FALLA: mi_rol del admin (email en mayúsculas)'; end if;
+  insert into depositos (deposito_id, direccion) values ('Depósito Córdoba', 'Nicanor Carranza 3450');
+  insert into regiones values ('INTERIOR SUR') ;
+  insert into plazas (plaza_id, region_id, deposito_id, provincia) values ('Córdoba', 'INTERIOR', 'Depósito Córdoba', 'Córdoba');
+  insert into zonas (zona_id, plaza_id) values ('Nueva Córdoba', 'Córdoba');
+  insert into tecnicos (tecnico_id, plaza_id) values ('Juan Pérez', 'Córdoba');
+  insert into modelos (modelo) values ('Ion 3000');
+  insert into maquinas (serie, modelo, fecha_alta, deposito_inicial_id) values ('AQ1001', 'Ion 3000', '2026-01-10', 'Depósito Córdoba');
+  insert into co2_depositos (deposito_id, plaza_linde) values ('Depósito Córdoba', '23081740');
+  update config set valor = '120' where clave = 'DIAS_MANTENIMIENTO';
+  raise notice 'OK: el ADMIN carga depósitos, regiones, plazas, zonas, técnicos, modelos, máquinas y configuración';
+end $$;
+commit;
+
+do $$ begin
+  if not exists (select 1 from maquinas_estado where serie = 'AQ1001' and estado = 'NUEVA' and ubicacion_tipo = 'DEPOSITO'
+                 and ubicacion_id = 'Depósito Córdoba' and fecha_ultimo_mov = '2026-01-10') then
+    raise exception 'FALLA: una máquina nueva arranca Nueva en su depósito inicial'; end if;
+  raise notice 'OK: máquina nueva → estado Nueva en su depósito inicial';
+end $$;
+
+-- Datos operativos de prueba (los escribe el servidor, que usa la clave de servicio).
+begin;
+set local role service_role;
+insert into clientes (cliente_id, nombre_fantasia, zona_id) values ('50001', 'Bar Córdoba', 'Nueva Córdoba');
+insert into ot (ot_id, fecha, cliente_id, zona_id, tipo, created_by) values ('OT-000001', '2026-02-01', '50001', 'Nueva Córdoba', 'INSTALACION', 'facu@empresa.com');
+insert into ot_lineas (linea_id, ot_id, cliente_id, fecha, codigo, cantidad, movimiento, cobranza) values ('OT-000001-1', 'OT-000001', '50001', '2026-02-01', 'SED1', 1, 'ENTREGADO', true);
+insert into stock (deposito_id, codigo, disponible) values ('Depósito Córdoba', 'SED1', 10);
+insert into operaciones (op_id, clase, fecha, region_id, datos, created_by) values
+  ('ENV-000001', 'ENVIO', '2026-01-15', 'INTERIOR', '{"origen":"Depósito CABA","destino":"Depósito Córdoba","items":[{"codigo":"SED1","cantidad":10}]}', 'facu@empresa.com'),
+  ('OT-000001', 'OT', '2026-02-01', 'INTERIOR', '{"tipo":"INSTALACION","tecnico":"Juan Pérez","clienteNuevo":{"zonaId":"Nueva Córdoba"}}', 'facu@empresa.com');
+insert into co2_cilindros (serie, peso_kg, estado, ubicacion_tipo, ubicacion_id, deposito_origen_id) values ('A1754410', 10, 'LLENO_DISPONIBLE', 'DEPOSITO', 'Depósito Córdoba', 'Depósito Córdoba');
+update ot set tecnico = 'Juan Pérez' where ot_id = 'OT-000001';
+commit;
+
+-- Renombrar desde la app actualiza todo lo que lo usa (también el registro de operaciones).
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"email":"facu@empresa.com"}';
+update depositos set deposito_id = 'Depósito Córdoba Capital' where deposito_id = 'Depósito Córdoba';
+update zonas set zona_id = 'Nva. Córdoba' where zona_id = 'Nueva Córdoba';
+update tecnicos set tecnico_id = 'Juan P. Pérez' where tecnico_id = 'Juan Pérez';
+update regiones set region_id = 'AMBA (Bs. As.)' where region_id = 'AMBA';
+update catalogo set codigo = 'SED1M' where codigo = 'SED1';
+commit;
+do $$ begin
+  if (select ubicacion_id from maquinas_estado where serie = 'AQ1001') <> 'Depósito Córdoba Capital'
+     or (select ubicacion_id || '|' || deposito_origen_id from co2_cilindros where serie = 'A1754410') <> 'Depósito Córdoba Capital|Depósito Córdoba Capital'
+     or (select datos ->> 'destino' from operaciones where op_id = 'ENV-000001') <> 'Depósito Córdoba Capital'
+     or (select datos -> 'items' -> 0 ->> 'codigo' from operaciones where op_id = 'ENV-000001') <> 'SED1M'
+     or (select datos -> 'clienteNuevo' ->> 'zonaId' from operaciones where op_id = 'OT-000001') <> 'Nva. Córdoba'
+     or (select tecnico || '|' || zona_id from ot where ot_id = 'OT-000001') <> 'Juan P. Pérez|Nva. Córdoba'
+     or (select zona_id from clientes where cliente_id = '50001') <> 'Nva. Córdoba'
+     or (select codigo from ot_lineas where linea_id = 'OT-000001-1') <> 'SED1M'
+     or (select valor from config where clave = 'REGIONES_TECNICO_OBLIGATORIO') <> 'AMBA (Bs. As.)'
+     or (select region_id from plazas where plaza_id = 'CABA') <> 'AMBA (Bs. As.)'
+     or (select count(*) from log where accion = 'RENOMBRAR') <> 5 then
+    raise exception 'FALLA: renombrar no actualizó todas las referencias'; end if;
+  raise notice 'OK: renombrar depósito, zona, técnico, región y código actualiza tablas, ubicaciones, CO₂, configuración y el registro de operaciones';
+end $$;
+update regiones set region_id = 'AMBA' where region_id = 'AMBA (Bs. As.)';
+update catalogo set codigo = 'SED1' where codigo = 'SED1M';
+update zonas set zona_id = 'Nueva Córdoba' where zona_id = 'Nva. Córdoba';
+do $$ begin
+  begin update maquinas set serie = 'AQ9999' where serie = 'AQ1001'; raise exception 'FALLA: se cambió la serie de una máquina';
+  exception when raise_exception then if sqlerrm not like 'La serie de una máquina no se cambia%' then raise; end if; end;
+  raise notice 'OK: la serie de una máquina no se cambia';
+end $$;
+do $$ begin
+  if (select deposito_id from plazas where plaza_id = 'Córdoba') <> 'Depósito Córdoba Capital'
+     or (select deposito_inicial_id from maquinas where serie = 'AQ1001') <> 'Depósito Córdoba Capital'
+     or not exists (select 1 from stock where deposito_id = 'Depósito Córdoba Capital')
+     or not exists (select 1 from co2_depositos where deposito_id = 'Depósito Córdoba Capital') then
+    raise exception 'FALLA: renombrar un depósito no actualizó las referencias'; end if;
+  raise notice 'OK: renombrar un depósito actualiza plazas, máquinas, stock y CO₂';
+end $$;
+
+-- ---------------------------------------------------------------- CONSULTA: solo lee
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"email":"consulta@empresa.com"}';
+do $$ declare n int; begin
+  if (select count(*) from catalogo) <> 28 then raise exception 'FALLA: CONSULTA lee el catálogo'; end if;
+  begin insert into catalogo (codigo, descripcion, categoria) values ('X1', 'x', 'INSUMO'); raise exception 'FALLA: CONSULTA agregó al catálogo';
+  exception when insufficient_privilege then null; end;
+  update zonas set activa = false where zona_id = 'Nueva Córdoba'; get diagnostics n = row_count;
+  if n <> 0 then raise exception 'FALLA: CONSULTA editó una zona'; end if;
+  update clientes set sector = 'x' where cliente_id = '50001'; get diagnostics n = row_count;
+  if n <> 0 then raise exception 'FALLA: CONSULTA editó un cliente'; end if;
+  raise notice 'OK: CONSULTA lee pero no edita';
+end $$;
+rollback;
+
+-- ---------------------------------------------------------------- CARGA
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"email":"carga@empresa.com"}';
+do $$ declare n int; begin
+  update clientes set sector = 'Gastronomía', frecuencia_mant_dias = 60 where cliente_id = '50001'; get diagnostics n = row_count;
+  if n <> 1 then raise exception 'FALLA: CARGA edita los datos de un cliente'; end if;
+  begin update clientes set cliente_id = '99' where cliente_id = '50001'; raise exception 'FALLA: CARGA cambió el ID de un cliente';
+  exception when insufficient_privilege then null; end;
+  update ot_lineas set dto = '10%', facturado = 'F-0001' where linea_id = 'OT-000001-1'; get diagnostics n = row_count;
+  if n <> 1 then raise exception 'FALLA: CARGA edita cobranzas'; end if;
+  begin update ot_lineas set cantidad = 5 where linea_id = 'OT-000001-1'; raise exception 'FALLA: CARGA cambió la cantidad de una línea de OT';
+  exception when insufficient_privilege then null; end;
+  begin insert into ot (ot_id, fecha, cliente_id, zona_id, tipo, created_by) values ('OT-X', '2026-02-02', '50001', 'Nueva Córdoba', 'MANTENIMIENTO', 'x');
+    raise exception 'FALLA: CARGA guardó una OT sin pasar por el servidor';
+  exception when insufficient_privilege then null; end;
+  begin update stock set disponible = 999; raise exception 'FALLA: CARGA tocó el stock';
+  exception when insufficient_privilege then null; end;
+  begin insert into depositos (deposito_id) values ('Depósito X'); raise exception 'FALLA: CARGA agregó un depósito';
+  exception when insufficient_privilege then null; end;
+  begin perform siguiente_id('OT'); raise exception 'FALLA: la app pidió un identificador directo';
+  exception when insufficient_privilege then null; end;
+  if exists (select 1 from contadores) then raise exception 'FALLA: la app ve los contadores'; end if;
+  raise notice 'OK: CARGA edita clientes y cobranzas; no guarda operaciones ni toca stock, maestros ni contadores';
+end $$;
+commit;
+
+-- ---------------------------------------------------------------- siempre queda un administrador
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"email":"facu@empresa.com"}';
+do $$ begin
+  begin update usuarios set rol = 'CARGA' where email = 'facu@empresa.com'; raise exception 'FALLA: se quedó sin administradores';
+  exception when raise_exception then
+    if sqlerrm not like 'Tiene que quedar%' then raise; end if;
+  end;
+  insert into usuarios (email, nombre, rol) values ('otro.admin@empresa.com', 'Otro', 'ADMIN');
+  update usuarios set rol = 'CARGA' where email = 'facu@empresa.com';
+  raise notice 'OK: tiene que quedar al menos un administrador activo (con otro, sí se puede cambiar)';
+end $$;
+rollback;
+
+\echo 'Todas las pruebas de la base pasaron.'

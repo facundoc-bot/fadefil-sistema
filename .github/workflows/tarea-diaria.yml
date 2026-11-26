@@ -1,0 +1,42 @@
+# Tarea diaria (06:17 hora de Argentina):
+#  1. Mantiene activa la base (el plan gratuito de Supabase la pausa tras una semana sin uso).
+#  2. Copia de seguridad: estructura y datos, guardados 30 días como artefacto de esta ejecución
+#     (Actions → Tarea diaria → la ejecución del día → Artifacts).
+name: Tarea diaria
+
+on:
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  diaria:
+    runs-on: ubuntu-24.04
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Mantener activa la base (consulta a la API)
+        continue-on-error: true
+        run: |
+          CLAVE=$(curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/api-keys" \
+            | jq -r '[.[] | select(.name == "anon" or .type == "publishable")][0].api_key')
+          curl -sf -o /dev/null -w 'API: %{http_code}\n' -H "apikey: $CLAVE" "https://$SUPABASE_PROJECT_REF.supabase.co/rest/v1/config?select=clave&limit=1"
+      - name: Vincular el proyecto
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+      - name: Copia de seguridad
+        run: |
+          mkdir -p copia
+          supabase db dump --linked --password "$SUPABASE_DB_PASSWORD" -f copia/estructura.sql
+          supabase db dump --linked --password "$SUPABASE_DB_PASSWORD" --data-only --use-copy -f copia/datos.sql
+          ls -la copia
+      - uses: actions/upload-artifact@v4
+        with:
+          name: copia-${{ github.run_number }}
+          path: copia/
+          retention-days: 30
