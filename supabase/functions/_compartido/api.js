@@ -13,9 +13,9 @@ import {
 import { co2_ESTADO, co2_UBIC } from './co2_motor.js';
 import { contexto, cargarEstado, validarLote, guardarLote, anularOperacion, auditar } from './estado.js';
 import { co2Contexto } from './co2_estado.js';
-import { ErrorDeUsuario, exigirRol, iso, insertar, anotar, BLOQUEO, hoyArgentina } from './base.js';
+import { ErrorDeUsuario, exigirRol, iso, insertar, anotar, BLOQUEO, hoyArgentina, fechaHora } from './base.js';
 
-export const VERSION_SISTEMA = '2.3';
+export const VERSION_SISTEMA = '2.4';
 
 const CLAVES_LISTAS = { TIPO_CLIENTE: 'tipoCliente', MODALIDAD: 'modalidad', PREFILTRO: 'prefiltro', TIPO_FALLA: 'falla', TRANSPORTE: 'transporte',
   MOTIVO_REBOTE: 'motivoRebote', MOTIVO_DEMORA: 'motivoDemora', MOTIVO_EXCLUSION: 'motivoExclusion' };
@@ -156,6 +156,7 @@ async function fichaCliente(sql, idCliente) {
   const v = vistaClientes(W, ctxUno)[0];
   const cuenta = otros.map((k) => { const c = W.clientes[k] || {}; return { id: k, nombre: ctx.clientes[k].nombre, sector: ctx.clientes[k].sector, estado: EST_CLI_TEXTO[c.estado || 'SIN_DATOS'], serie: c.serie || '' }; });
   const ots = await sql`select * from ot where cliente_id = ${id}`;
+  const feriados = new Set(await leerFeriados(sql));
   const lineas = await sql`select * from ot_lineas where cliente_id = ${id} order by linea_id`;
   const conCo2 = [...new Set(lineas.filter((l) => l.codigo === 'CO2').map((l) => l.ot_id))];
   const seriesCo2 = {};
@@ -179,7 +180,11 @@ async function fichaCliente(sql, idCliente) {
   const historial = ots.map((r) => ({ nOt: r.ot_id, fecha: iso(r.fecha), tipo: (TIPO_OT_TEXTO[r.tipo] || r.tipo) + (MODALIDAD_CO2[r.modalidad_co2] ? ' (' + MODALIDAD_CO2[r.modalidad_co2].toLowerCase() + ')' : ''),
     tecnico: [r.tecnico, r.tecnico_2].filter(String).join(' y '), serieRetirada: r.serie_retirada, serieInstalada: r.serie_instalada, falla: r.falla,
     sistema: r.sistema || '', prefiltro: r.prefiltro || '', comentarios: r.comentarios, pendiente: r.pendiente, estado: r.estado, otPersat: r.ot_persat || '',
-    items: porOT[r.ot_id] || [], adicionales: [], seguimiento: resumenSeguimiento(r) }))
+    items: porOT[r.ot_id] || [], adicionales: [], seguimiento: resumenSeguimiento(r, feriados) }))
+    .concat((await sql`select * from rebotes where cliente_id = ${id}`).map((b) => ({ nOt: b.rebote_id, fecha: iso(b.fecha), rebote: true,
+      tipo: 'Rebote (iba a: ' + (TIPO_OT_TEXTO[b.tipo_trabajo] || b.tipo_trabajo).toLowerCase() + ')', tecnico: [b.tecnico, b.tecnico_2].filter(String).join(' y '),
+      serieRetirada: '', serieInstalada: '', falla: '', sistema: '', prefiltro: '', comentarios: [b.motivo, b.comentarios].filter(String).join(' · '), pendiente: '',
+      estado: b.estado === 'ANULADO' ? 'ANULADA' : 'VIGENTE', otPersat: b.ot_persat || '', items: [], adicionales: [], seguimiento: null })))
     .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || String(b.nOt).localeCompare(String(a.nOt)));
   const mant = vistaMantenimiento(W, ctxUno, { hoy: ctx.hoy, diasAviso: ctx.diasAviso })[0] || null;
   const datos = {};
@@ -347,28 +352,44 @@ async function tecnicos(sql, desde, hasta) {
     const rep = (porCliente[o.idCliente] || []).find((x) => (x.tipo === 'REPARACION' || x.tipo === 'REPARACION_BACKUP') && x.fecha > o.fecha && x.fecha <= lim);
     if (rep) retrabajos.push({ ot: o.id, reparacion: rep.id, fechaReparacion: rep.fecha, dias: diasEntre(o.fecha, rep.fecha) });
   });
-  return { desde, hasta, diasRetrabajo: dias, ots: ots.filter((o) => o.fecha <= hasta), retrabajos };
+  const rebotes = (await sql`select * from rebotes where estado = 'VIGENTE' and fecha between ${desde} and ${hasta}`).map((r) => filaRebote(r, ctx));
+  return { desde, hasta, diasRetrabajo: dias, ots: ots.filter((o) => o.fecha <= hasta), retrabajos, rebotes };
 }
 
-// ---------------------------------------------------------------- v2.3: seguimiento de las OT
-// Lo completa una persona distinta de la que carga las OT: fecha de solicitud (tiempo de respuesta, con opción de
-// excluirla de la métrica), emergencia, rebotes (visitas reprogramadas) y demora en el cliente. No cambia el estado.
+// ---------------------------------------------------------------- v2.3/2.4: seguimiento de las OT y rebotes
+// Lo completa una persona distinta de la que carga las OT: fecha de solicitud (tiempo de respuesta en días hábiles,
+// con opción de excluirla de la métrica), emergencia y demora en el cliente. Los rebotes (ir al cliente y no hacer el
+// trabajo) son un registro aparte (tabla rebotes), sin OT. Nada de esto cambia el estado.
 export const TIPOS_EMERGENCIA = ['MANTENIMIENTO', 'REPARACION', 'REPARACION_BACKUP', 'ENTREGA_ADICIONALES', 'ENTREGA_CO2'];
 const esEmergenciaCo2 = (r) => r.tipo === 'ENTREGA_CO2' && /^EMERGENCIA/.test(String(r.modalidad_co2 || '').toUpperCase());
 const dma = (f) => String(f || '').split('-').reverse().join('/');
 const textoCorto = (x) => String(x == null ? '' : x).replace(/\s+/g, ' ').trim().slice(0, 200);
+/** Días hábiles desde la solicitud hasta la OT: lunes a viernes, sin feriados; no cuenta el día de la solicitud (mismo día = 0). */
+export function diasHabiles(desde, hasta, feriados) {
+  if (!desde || !hasta || desde > hasta) return null;
+  const f = feriados instanceof Set ? feriados : new Set(feriados || []);
+  let n = 0, d = new Date(desde + 'T12:00:00Z');
+  const fin = new Date(hasta + 'T12:00:00Z');
+  for (;;) {
+    d = new Date(d.getTime() + 864e5);
+    if (d > fin) break;
+    const dia = d.getUTCDay(), k = d.toISOString().slice(0, 10);
+    if (dia !== 0 && dia !== 6 && !f.has(k)) n++;
+  }
+  return n;
+}
+const leerFeriados = async (sql) => (await sql`select fecha from feriados order by fecha`).map((r) => iso(r.fecha));
 function entero(x) {
   if (x === '' || x == null) return 0;
   const n = Number(x);
   return Number.isInteger(n) ? n : null;
 }
 /** Lo que se muestra en el historial del cliente (solo lo que tiene datos). */
-function resumenSeguimiento(r) {
+function resumenSeguimiento(r, feriados) {
   const s = {};
   if (r.emergencia) s.emergencia = true;
-  if (r.rebotes > 0) { s.rebotes = r.rebotes; s.reboteMotivo = r.rebote_motivo || ''; }
   if (r.demora_min > 0) { s.demora = r.demora_min; s.demoraMotivo = r.demora_motivo || ''; }
-  if (r.fecha_solicitud) { s.solicitud = iso(r.fecha_solicitud); s.respuesta = diasEntre(iso(r.fecha_solicitud), iso(r.fecha)); if (r.excluir_respuesta) s.excluida = r.excluir_motivo || true; }
+  if (r.fecha_solicitud) { s.solicitud = iso(r.fecha_solicitud); s.respuesta = diasHabiles(iso(r.fecha_solicitud), iso(r.fecha), feriados); if (r.excluir_respuesta) s.excluida = r.excluir_motivo || true; }
   return Object.keys(s).length ? s : null;
 }
 function filaSeguimiento(r, ctx) {
@@ -378,13 +399,13 @@ function filaSeguimiento(r, ctx) {
     persat: r.ot_persat || '', falla: r.falla || '', modalidadCo2: r.modalidad_co2 || '',
     solicitud: r.fecha_solicitud ? iso(r.fecha_solicitud) : '', excluir: !!r.excluir_respuesta, excluirMotivo: r.excluir_motivo || '',
     emergencia: !!r.emergencia, emergenciaFija: esEmergenciaCo2(r), puedeEmergencia: TIPOS_EMERGENCIA.indexOf(r.tipo) >= 0,
-    rebotes: Number(r.rebotes) || 0, reboteMotivo: r.rebote_motivo || '', demora: Number(r.demora_min) || 0, demoraMotivo: r.demora_motivo || '',
+    demora: Number(r.demora_min) || 0, demoraMotivo: r.demora_motivo || '',
     revisadaPor: r.revisada_por || '', revisada: r.revisada_at ? new Date(r.revisada_at).toISOString() : '' };
 }
 const COLUMNAS_SEGUIMIENTO = ['ot_id', 'fecha', 'cliente_id', 'tipo', 'tipo_mantenimiento', 'tecnico', 'tecnico_2', 'ot_persat', 'falla', 'modalidad_co2',
-  'fecha_solicitud', 'excluir_respuesta', 'excluir_motivo', 'emergencia', 'rebotes', 'rebote_motivo', 'demora_min', 'demora_motivo', 'revisada_por', 'revisada_at'];
+  'fecha_solicitud', 'excluir_respuesta', 'excluir_motivo', 'emergencia', 'demora_min', 'demora_motivo', 'revisada_por', 'revisada_at'];
 
-/** OT del período (sin anuladas ni altas iniciales), con su seguimiento, y cuántas quedan sin revisar en total. */
+/** OT del período (sin anuladas ni altas iniciales), con su seguimiento; rebotes del período; cuántas OT quedan sin revisar; feriados. */
 async function seguimiento(sql, desde, hasta) {
   if (!esFechaValida(desde) || !esFechaValida(hasta) || desde > hasta) throw new ErrorDeUsuario('Elegí un período válido.');
   if (diasEntre(desde, hasta) > 400) throw new ErrorDeUsuario('Elegí un período de hasta un año.');
@@ -392,7 +413,9 @@ async function seguimiento(sql, desde, hasta) {
   const filas = await sql`select ${sql(COLUMNAS_SEGUIMIENTO)} from ot where estado <> 'ANULADA' and tipo <> 'ALTA_INICIAL' and fecha between ${desde} and ${hasta}
     order by fecha desc, ot_id desc`;
   const [p] = await sql`select count(*)::int as n, min(fecha) as desde from ot where estado <> 'ANULADA' and tipo <> 'ALTA_INICIAL' and revisada_at is null`;
-  return { desde, hasta, ots: filas.map((r) => filaSeguimiento(r, ctx)), sinRevisar: { cantidad: p.n, desde: p.desde ? iso(p.desde) : '' } };
+  const reb = await sql`select * from rebotes where fecha between ${desde} and ${hasta} order by fecha desc, rebote_id desc`;
+  return { desde, hasta, ots: filas.map((r) => filaSeguimiento(r, ctx)), rebotes: reb.map((r) => filaRebote(r, ctx)),
+    sinRevisar: { cantidad: p.n, desde: p.desde ? iso(p.desde) : '' }, feriados: await leerFeriados(sql) };
 }
 
 /** Guarda el seguimiento de varias OT juntas. Si alguna tiene un error no se guarda ninguna (vuelven los errores por OT). */
@@ -418,19 +441,18 @@ async function guardarSeguimiento(sql, u, cambios) {
     else if (sol && sol > fecha) mal('la fecha de solicitud (' + dma(sol) + ') es posterior a la OT (' + dma(fecha) + ').');
     const fija = esEmergenciaCo2(r), emerg = fija || !!x.emergencia;
     if (emerg && TIPOS_EMERGENCIA.indexOf(r.tipo) < 0) mal('una ' + (TIPO_OT_TEXTO[r.tipo] || r.tipo).toLowerCase() + ' no se marca como emergencia (solo mantenimientos, reparaciones y entregas).');
-    const reb = entero(x.rebotes), dem = entero(x.demora);
-    if (reb === null || reb < 0 || reb > 20) mal('rebotes: un número entero de 0 a 20.');
+    const dem = entero(x.demora);
     if (dem === null || dem < 0 || dem > 1440) mal('demora: minutos enteros de 0 a 1440 (24 h).');
     const excl = !!x.excluir, exclMot = textoCorto(x.excluirMotivo);
     if (excl && !exclMot) mal('para excluirla del tiempo de respuesta, elegí o escribí el motivo.');
     if (errores.length > n) return;
-    filas.push({ id, sol: sol || null, excl, exclMot: excl ? exclMot : '', emerg, reb, rebMot: reb > 0 ? textoCorto(x.reboteMotivo) : '', dem, demMot: dem > 0 ? textoCorto(x.demoraMotivo) : '' });
+    filas.push({ id, sol: sol || null, excl, exclMot: excl ? exclMot : '', emerg, dem, demMot: dem > 0 ? textoCorto(x.demoraMotivo) : '' });
   });
   if (errores.length) return { ok: false, errores, mensaje: 'Hay errores: no se guardó nada.' };
   await sql.begin(async (tx) => {
     for (const f of filas) {
       await tx`update ot set fecha_solicitud = ${f.sol}, excluir_respuesta = ${f.excl}, excluir_motivo = ${f.exclMot}, emergencia = ${f.emerg},
-        rebotes = ${f.reb}, rebote_motivo = ${f.rebMot}, demora_min = ${f.dem}, demora_motivo = ${f.demMot}, revisada_por = ${u.email}, revisada_at = now()
+        demora_min = ${f.dem}, demora_motivo = ${f.demMot}, revisada_por = ${u.email}, revisada_at = now()
         where ot_id = ${f.id}`;
     }
     await anotar(tx, u.email, 'SEGUIMIENTO_OT', ids.join(', '));
@@ -439,6 +461,55 @@ async function guardarSeguimiento(sql, u, cambios) {
   const ots = (await sql`select ${sql(COLUMNAS_SEGUIMIENTO)} from ot where ot_id = any(${ids})`).map((r) => filaSeguimiento(r, ctx));
   const [p] = await sql`select count(*)::int as n, min(fecha) as desde from ot where estado <> 'ANULADA' and tipo <> 'ALTA_INICIAL' and revisada_at is null`;
   return { ok: true, ots, sinRevisar: { cantidad: p.n, desde: p.desde ? iso(p.desde) : '' }, mensaje: 'Se guardó el seguimiento de ' + ids.length + ' OT.' };
+}
+
+// ---------------------------------------------------------------- v2.4: rebotes (ir al cliente y no hacer el trabajo)
+function filaRebote(r, ctx) {
+  const c = r.cliente_id ? ctx.clientes[r.cliente_id] || {} : {};
+  return { id: r.rebote_id, fecha: iso(r.fecha), idCliente: r.cliente_id || '', cliente: r.cliente_id ? c.nombre || r.cliente_id : r.cliente_nombre,
+    clienteNuevo: !r.cliente_id, plaza: r.plaza_id, tipo: r.tipo_trabajo, tecnico: r.tecnico || '', tecnico2: r.tecnico_2 || '',
+    motivo: r.motivo, persat: r.ot_persat || '', comentarios: r.comentarios || '', anulado: r.estado === 'ANULADO', anulacion: r.anulacion || '', cargadoPor: r.created_by };
+}
+async function guardarRebote(sql, u, datos) {
+  exigirRol(u, ['ADMIN', 'CARGA']);
+  const d = datos || {}, ctx = await contexto(sql);
+  const fecha = String(d.fecha || '').trim();
+  if (!esFechaValida(fecha) || fecha > ctx.hoy) throw new ErrorDeUsuario('La fecha del rebote no es válida (no puede ser futura).');
+  const idCli = String(d.idCliente || '').trim();
+  let plaza = '', nombre = '';
+  if (idCli) {
+    const c = ctx.clientes[idCli];
+    if (!c) throw new ErrorDeUsuario('El cliente ' + idCli + ' no existe. Si todavía no está dado de alta, elegí "Cliente nuevo" y escribí el nombre.');
+    plaza = c.plaza;
+  } else {
+    nombre = textoCorto(d.clienteNombre);
+    plaza = String(d.plaza || '').trim();
+    if (!nombre) throw new ErrorDeUsuario('Elegí el cliente, o escribí el nombre si todavía no está dado de alta.');
+    if (!ctx.plazas[plaza]) throw new ErrorDeUsuario('Elegí la plaza del cliente nuevo.');
+  }
+  const tipo = normalizarTipoOT(d.tipo);
+  if (!TIPO_OT_TEXTO[tipo] || tipo === 'ALTA_INICIAL') throw new ErrorDeUsuario('Elegí qué trabajo se iba a hacer.');
+  const motivo = textoCorto(d.motivo);
+  if (!motivo) throw new ErrorDeUsuario('Elegí o escribí el motivo del rebote.');
+  const t1 = textoCorto(d.tecnico), t2 = textoCorto(d.tecnico2);
+  if (t2 && t2 === t1) throw new ErrorDeUsuario('El segundo técnico es el mismo que el primero.');
+  return sql.begin(async (tx) => {
+    const [{ id }] = await tx`select siguiente_id('REB') as id`;
+    await insertar(tx, 'rebotes', [{ rebote_id: id, fecha, cliente_id: idCli || null, cliente_nombre: nombre, plaza_id: plaza, tipo_trabajo: tipo,
+      tecnico: t1, tecnico_2: t2, motivo, ot_persat: textoCorto(d.persat), comentarios: String(d.comentarios || '').trim().slice(0, 1000), created_by: u.email }]);
+    await anotar(tx, u.email, 'REBOTE', id + ' — ' + (idCli || nombre) + ' — ' + motivo);
+    const [r] = await tx`select * from rebotes where rebote_id = ${id}`;
+    return { ok: true, rebote: filaRebote(r, ctx), mensaje: 'Rebote ' + id + ' guardado.' };
+  });
+}
+async function anularRebote(sql, u, id, motivo) {
+  exigirRol(u, ['ADMIN', 'CARGA']);
+  if (!motivo || String(motivo).trim().length < 3) throw new ErrorDeUsuario('Escribí por qué se anula.');
+  const nota = 'Anulado por ' + u.email + ' el ' + fechaHora() + '. Motivo: ' + String(motivo).trim();
+  const [r] = await sql`update rebotes set estado = 'ANULADO', anulacion = ${nota} where rebote_id = ${String(id)} and estado = 'VIGENTE' returning *`;
+  if (!r) throw new ErrorDeUsuario('No hay un rebote vigente ' + id + '.');
+  await anotar(sql, u.email, 'ANULAR_REBOTE', id + ' — ' + String(motivo).trim());
+  return { ok: true, rebote: filaRebote(r, await contexto(sql)) };
 }
 
 /** Despacho de lo que pide la app: api(fn, ...args) → lo mismo que devolvía la función de Apps Script. */
@@ -464,6 +535,8 @@ export async function api(sql, u, fn, args) {
     case 'apiTecnicos': return tecnicos(sql, a[0], a[1]);
     case 'apiSeguimiento': return seguimiento(sql, a[0], a[1]);
     case 'apiGuardarSeguimiento': return guardarSeguimiento(sql, u, a[0]);
+    case 'apiGuardarRebote': return guardarRebote(sql, u, a[0]);
+    case 'apiAnularRebote': return anularRebote(sql, u, a[0], a[1]);
     case 'apiAnular': {
       const r = await anularOperacion(sql, u, a[0], a[1]);
       if (r.ok) r.ini = await datosInicio(sql, u);

@@ -8,7 +8,7 @@ import { sumarDias } from '../../supabase/functions/_compartido/motor.js';
 import {
   co2Validar, co2Guardar, co2EnviarAprobacion, co2RechazarPendiente, co2ValidarFactura, co2GuardarFactura, co2AnularFactura, co2Anular, co2Auditar
 } from '../../supabase/functions/_compartido/co2_estado.js';
-import { api } from '../../supabase/functions/_compartido/api.js';
+import { api, diasHabiles } from '../../supabase/functions/_compartido/api.js';
 import { co2Api } from '../../supabase/functions/_compartido/co2_api.js';
 import { importarValidar, importarMaquinas } from '../../supabase/functions/_compartido/importar.js';
 import { readFileSync } from 'node:fs';
@@ -493,7 +493,7 @@ await prueba('CO₂: "Otro peso" en un remito se suma a la lista de cargas', asy
   igual(codigos(await co2Validar(sql, carga, [rem('7002', 6)])), [], 'de ahí en más el 6 está en la lista');
 });
 
-await prueba('Seguimiento de OT: solicitud, emergencia, rebotes, demora y exclusión; errores por OT; CO₂ de emergencia marcada sola', async () => {
+await prueba('Seguimiento de OT: solicitud, emergencia, demora y exclusión; errores por OT; CO₂ de emergencia marcada sola', async () => {
   const ini = await api(sql, consulta, 'apiInicio', []);
   si(ini.listas.motivoRebote.includes('No atendieron') && ini.listas.motivoExclusion.length >= 3, 'motivos sugeridos en las listas');
   const s = await api(sql, consulta, 'apiSeguimiento', [hace(400), hoy]);
@@ -507,28 +507,67 @@ await prueba('Seguimiento de OT: solicitud, emergencia, rebotes, demora y exclus
   igual([co2.emergencia, co2.emergenciaFija, co2.puedeEmergencia], [false, false, true], 'la tradicional se puede marcar a mano');
   const mant = s.ots.find((o) => o.tipo === 'MANTENIMIENTO'), inst = s.ots.find((o) => o.tipo === 'INSTALACION');
   si(mant && inst && !inst.puedeEmergencia, 'hay mantenimiento e instalación para probar');
-  let r = await api(sql, carga, 'apiGuardarSeguimiento', [[{ id: mant.id, solicitud: sumarDias(mant.fecha, 1), rebotes: 1 }, { id: inst.id, emergencia: true, excluir: true }]]);
+  let r = await api(sql, carga, 'apiGuardarSeguimiento', [[{ id: mant.id, solicitud: sumarDias(mant.fecha, 1), demora: 1.5 }, { id: inst.id, emergencia: true, excluir: true }]]);
   igual(r.ok, false, 'con errores no se guarda');
-  igual(r.errores.map((e) => e.id), [mant.id, inst.id, inst.id], 'un error por problema, con su OT: ' + JSON.stringify(r.errores));
-  igual(await uno(sql`select rebotes, revisada_at from ot where ot_id = ${mant.id}`), { rebotes: 0, revisada_at: null }, 'no se guardó nada');
+  igual(r.errores.map((e) => e.id), [mant.id, mant.id, inst.id, inst.id], 'un error por problema, con su OT: ' + JSON.stringify(r.errores));
+  igual(await uno(sql`select demora_min, revisada_at from ot where ot_id = ${mant.id}`), { demora_min: 0, revisada_at: null }, 'no se guardó nada');
   let error = '';
   try { await api(sql, consulta, 'apiGuardarSeguimiento', [[{ id: mant.id }]]); } catch (e) { error = e.message; }
   si(/no permite/.test(error), 'CONSULTA no guarda el seguimiento');
   r = await api(sql, carga, 'apiGuardarSeguimiento', [[
-    { id: mant.id, solicitud: sumarDias(mant.fecha, -5), emergencia: true, rebotes: 2, reboteMotivo: '  No atendieron ', demora: 40, demoraMotivo: 'No lo atendían' },
+    { id: mant.id, solicitud: sumarDias(mant.fecha, -7), emergencia: true, demora: 40, demoraMotivo: '  No lo atendían ' },
     { id: inst.id, solicitud: sumarDias(inst.fecha, -30), excluir: true, excluirMotivo: 'El cliente pidió una fecha más adelante', demoraMotivo: 'se ignora sin demora' },
     { id: co2.id, emergencia: true }]]);
   igual(r.ok, true, 'se guarda: ' + JSON.stringify(r.errores));
-  igual(await uno(sql`select emergencia, rebotes, rebote_motivo, demora_min, revisada_por from ot where ot_id = ${mant.id}`),
-    { emergencia: true, rebotes: 2, rebote_motivo: 'No atendieron', demora_min: 40, revisada_por: 'carga@empresa.com' }, 'mantenimiento');
+  igual(await uno(sql`select emergencia, demora_min, demora_motivo, revisada_por from ot where ot_id = ${mant.id}`),
+    { emergencia: true, demora_min: 40, demora_motivo: 'No lo atendían', revisada_por: 'carga@empresa.com' }, 'mantenimiento');
   igual(await uno(sql`select excluir_respuesta, excluir_motivo, demora_motivo from ot where ot_id = ${inst.id}`),
     { excluir_respuesta: true, excluir_motivo: 'El cliente pidió una fecha más adelante', demora_motivo: '' }, 'instalación excluida de la métrica');
   igual(r.ots.find((o) => o.id === co2.id).emergencia, true, 'una entrega de CO₂ tradicional marcada como emergencia');
   igual(r.sinRevisar.cantidad, s.ots.length - 3, 'quedan 3 menos sin revisar');
   const f = await api(sql, consulta, 'apiFichaCliente', [mant.idCliente]);
-  igual(f.historial.find((h) => h.nOt === mant.id).seguimiento, { emergencia: true, rebotes: 2, reboteMotivo: 'No atendieron', demora: 40, demoraMotivo: 'No lo atendían', solicitud: sumarDias(mant.fecha, -5), respuesta: 5 },
-    'el historial del cliente muestra el seguimiento');
+  const habiles = diasHabiles(sumarDias(mant.fecha, -7), mant.fecha, s.feriados);
+  si(habiles >= 4 && habiles <= 5, '7 días corridos son 4 o 5 hábiles: ' + habiles);
+  igual(f.historial.find((h) => h.nOt === mant.id).seguimiento, { emergencia: true, demora: 40, demoraMotivo: 'No lo atendían', solicitud: sumarDias(mant.fecha, -7), respuesta: habiles },
+    'el historial del cliente muestra el seguimiento (respuesta en días hábiles)');
   igual((await auditar(sql, admin)).corregidas, [], 'el seguimiento no toca el estado');
+});
+
+await prueba('Días hábiles: sin sábados, domingos ni feriados; el mismo día es 0', async () => {
+  igual(diasHabiles('2026-11-20', '2026-11-24', ['2026-11-23']), 1, 'viernes → martes con el lunes feriado');
+  igual(diasHabiles('2026-11-27', '2026-11-27', []), 0, 'el mismo día');
+  igual(diasHabiles('2026-11-27', '2026-11-30', []), 1, 'viernes → lunes');
+  igual(diasHabiles('2026-11-28', '2026-12-04', []), 5, 'sábado → viernes siguiente');
+  igual(diasHabiles('2026-11-30', '2026-11-27', []), null, 'al revés no se calcula');
+});
+
+await prueba('Rebotes: se cargan sin OT (cliente o cliente nuevo), con motivo; se anulan; aparecen en seguimiento, ficha y técnicos', async () => {
+  let error = '';
+  try { await api(sql, consulta, 'apiGuardarRebote', [{ fecha: hoy, idCliente: '10001', tipo: 'MANTENIMIENTO', motivo: 'x' }]); } catch (e) { error = e.message; }
+  si(/no permite/.test(error), 'CONSULTA no carga rebotes');
+  const malo = async (d, re, msg) => { let e = ''; try { await api(sql, carga, 'apiGuardarRebote', [d]); } catch (x) { e = x.message; } si(re.test(e), msg + ': ' + e); };
+  await malo({ fecha: hoy, idCliente: '10001', tipo: 'MANTENIMIENTO' }, /motivo/, 'sin motivo');
+  await malo({ fecha: sumarDias(hoy, 1), idCliente: '10001', tipo: 'MANTENIMIENTO', motivo: 'x' }, /futura/, 'fecha futura');
+  await malo({ fecha: hoy, idCliente: '99999', tipo: 'MANTENIMIENTO', motivo: 'x' }, /no existe/, 'cliente inexistente');
+  await malo({ fecha: hoy, clienteNombre: 'Bar nuevo', tipo: 'INSTALACION', motivo: 'x' }, /plaza/, 'cliente nuevo sin plaza');
+  await malo({ fecha: hoy, idCliente: '10001', tipo: 'ALTA_INICIAL', motivo: 'x' }, /trabajo/, 'alta inicial no');
+  const a = await api(sql, carga, 'apiGuardarRebote', [{ fecha: hace(2), idCliente: '10001', tipo: 'REPARACION', tecnico: 'Juan', motivo: ' No atendieron ', persat: '555' }]);
+  const b = await api(sql, carga, 'apiGuardarRebote', [{ fecha: hace(1), clienteNombre: 'Heladería Nueva', plaza: 'Mendoza', tipo: 'INSTALACION', tecnico: 'Juan', motivo: 'Local cerrado' }]);
+  igual([a.rebote.cliente, a.rebote.plaza, a.rebote.motivo, b.rebote.clienteNuevo, b.rebote.cliente], ['Bar Ejemplo', 'Mendoza', 'No atendieron', true, 'Heladería Nueva'], 'guardados');
+  si(/^REB-\d{6}$/.test(a.rebote.id), 'numeración REB: ' + a.rebote.id);
+  const s = await api(sql, consulta, 'apiSeguimiento', [hace(10), hoy]);
+  igual(s.rebotes.map((x) => x.id).sort(), [a.rebote.id, b.rebote.id].sort(), 'en el seguimiento del período');
+  const f = await api(sql, consulta, 'apiFichaCliente', ['10001']);
+  si(f.historial.some((h) => h.nOt === a.rebote.id && h.rebote && /reparación/.test(h.tipo)), 'en el historial del cliente');
+  const t = await api(sql, consulta, 'apiTecnicos', [hace(10), hoy]);
+  igual(t.rebotes.filter((x) => x.tecnico === 'Juan').length, 2, 'en el informe de técnicos');
+  error = '';
+  try { await api(sql, carga, 'apiAnularRebote', [a.rebote.id, '']); } catch (e) { error = e.message; }
+  si(/por qué/.test(error), 'anular pide motivo');
+  const an = await api(sql, carga, 'apiAnularRebote', [a.rebote.id, 'cargado dos veces']);
+  igual(an.rebote.anulado, true, 'anulado');
+  igual((await api(sql, consulta, 'apiTecnicos', [hace(10), hoy])).rebotes.length, 1, 'el anulado no cuenta para técnicos');
+  igual((await auditar(sql, admin)).corregidas, [], 'los rebotes no tocan el estado');
 });
 
 await sql.end();

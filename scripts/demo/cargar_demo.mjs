@@ -253,7 +253,8 @@ await paso('CO₂: LINDE retira los vacíos del central y trae llenos; factura d
 });
 
 // ---------------------------------------------------------------- seguimiento de OT (v2.3)
-// Lo que completaría quien revisa las OT: solicitud, emergencias, rebotes, demoras y exclusiones.
+// Lo que completaría quien revisa las OT: solicitud, emergencias, demoras y exclusiones; y los rebotes
+// (visitas en las que no se hizo el trabajo: unos días antes de algunas OT, más uno de una instalación que no se hizo).
 // Las 8 OT más nuevas quedan sin revisar, para que se vea qué falta.
 await paso('Seguimiento de las OT (menos las 8 más nuevas)', async () => {
   await sql`with x as (select ot_id, fecha, tipo, abs(hashtext(ot_id)) % 100 as h from ot
@@ -266,12 +267,21 @@ await paso('Seguimiento de las OT (menos las 8 más nuevas)', async () => {
       excluir_respuesta = (x.tipo = 'INSTALACION' and x.h < 30) or (x.tipo = 'MANTENIMIENTO' and x.h >= 90),
       excluir_motivo = case when x.tipo = 'INSTALACION' and x.h < 30 then 'El cliente pidió una fecha más adelante'
         when x.tipo = 'MANTENIMIENTO' and x.h >= 90 then 'Trabajo programado (no es un pedido)' else '' end,
-      rebotes = case when x.h % 29 = 3 then 2 when x.h % 11 = 5 then 1 else 0 end,
-      rebote_motivo = case when x.h % 29 = 3 or x.h % 11 = 5 then (array['No atendieron', 'Local cerrado', 'No estaban las condiciones (agua, luz, espacio)', 'El cliente pidió reprogramar'])[1 + x.h % 4] else '' end,
       demora_min = case when x.h % 9 = 4 then 15 + (x.h % 4) * 15 else 0 end,
       demora_motivo = case when x.h % 9 = 4 then (array['No lo atendían', 'Esperando autorización o acceso', 'El cliente pidió esperar'])[1 + x.h % 3] else '' end,
       revisada_por = 'demo@fadefil.demo', revisada_at = now()
     from x where o.ot_id = x.ot_id`;
+  await sql`insert into rebotes (rebote_id, fecha, cliente_id, plaza_id, tipo_trabajo, tecnico, motivo, ot_persat, created_by)
+    select siguiente_id('REB'), r.fecha - (2 + r.h % 5), r.cliente_id, z.plaza_id, r.tipo, r.tecnico,
+      (array['No atendieron', 'Local cerrado', 'No estaban las condiciones (agua, luz, espacio)', 'El cliente pidió reprogramar', 'Faltó material o repuesto'])[1 + r.h % 5],
+      '', 'demo@fadefil.demo'
+    from (select ot_id, fecha, cliente_id, zona_id, tipo, tecnico, abs(hashtext(ot_id)) % 100 as h from ot
+          where estado = 'VIGENTE' and tipo not in ('ALTA_INICIAL', 'ENTREGA_CO2')) r join zonas z on z.zona_id = r.zona_id
+    where r.h % 11 = 5 or r.h % 29 = 3 order by r.fecha, r.ot_id`;
+  await sql`insert into rebotes (rebote_id, fecha, cliente_nombre, plaza_id, tipo_trabajo, tecnico, motivo, comentarios, created_by)
+    values (siguiente_id('REB'), ${hace(9)}, 'Café La Esquina (instalación pendiente)', 'CABA', 'INSTALACION',
+      coalesce((select tecnico_id from tecnicos where plaza_id = 'CABA' order by tecnico_id limit 1), ''), 'No estaban las condiciones (agua, luz, espacio)',
+      'No había toma de agua cerca; el cliente avisa cuando esté', 'demo@fadefil.demo')`;
 });
 
 // ---------------------------------------------------------------- foto para "Salir de la demo"

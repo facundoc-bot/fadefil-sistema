@@ -438,10 +438,11 @@ document.addEventListener('mousedown', (e) => { const c = document.getElementByI
     <div class="tarjeta">
       <h2>Seguimiento de OT</h2>
       <p class="ayuda">Se completa después de cargadas, OT por OT. No cambia clientes, máquinas ni stock: son datos para medir.
-        <strong>Solicitud:</strong> cuándo se pidió el trabajo; el tiempo de respuesta son los días corridos hasta la OT. Si no tiene que contar (pidieron una fecha más adelante, falta documentación…), marcá <strong>Excluir</strong> y elegí el motivo.
+        <strong>Solicitud:</strong> cuándo se pidió el trabajo; el tiempo de respuesta son los días hábiles hasta la OT (lunes a viernes, sin los feriados de Datos → Feriados). Si no tiene que contar (pidieron una fecha más adelante, falta documentación…), marcá <strong>Excluir</strong> y elegí el motivo.
         <strong>Emergencia:</strong> pedido urgente porque afecta el funcionamiento del equipo (mantenimientos, reparaciones y entregas; la entrega de CO₂ de emergencia ya viene marcada).
-        <strong>Rebotes:</strong> veces que se fue a hacer este trabajo y hubo que reprogramar la visita. <strong>Demora:</strong> minutos que el técnico perdió pudiendo hacer el trabajo (no lo atendían, no estaban las condiciones…).
-        Las filas que tocás quedan marcadas y se guardan todas juntas; al guardarlas quedan como revisadas. Si una OT no tiene nada que agregar, tocá <strong>Sin cambios</strong>.</p>
+        <strong>Demora:</strong> minutos que el técnico perdió pudiendo hacer el trabajo (no lo atendían, no estaban las condiciones…).
+        Las filas que tocás quedan marcadas y se guardan todas juntas; al guardarlas quedan como revisadas. Si una OT no tiene nada que agregar, tocá <strong>Sin cambios</strong>.
+        Los <strong>rebotes</strong> (se fue al cliente y no se hizo el trabajo) se cargan aparte, más abajo.</p>
       <div id="seg-pend"></div>
       <div class="fila" style="max-width:1000px">
         <div><label for="seg-desde">Desde</label><input type="date" id="seg-desde"></div>
@@ -454,7 +455,7 @@ document.addEventListener('mousedown', (e) => { const c = document.getElementByI
     </div>
     <div class="tarjeta">
       <h2>Tiempos de respuesta</h2>
-      <p class="ayuda">De las OT del período, con el filtro de región y plaza de arriba y el tipo elegido. No cuentan las excluidas ni las que no tienen fecha de solicitud.</p>
+      <p class="ayuda">De las OT del período, con el filtro de región y plaza de arriba y el tipo elegido, en días hábiles. No cuentan las excluidas ni las que no tienen fecha de solicitud. Los rebotes se cuentan por el trabajo que se iba a hacer.</p>
       <div class="metricas" id="seg-metricas"></div>
       <div class="tabla-scroll"><table id="seg-resumen"></table></div>
     </div>
@@ -468,12 +469,39 @@ document.addEventListener('mousedown', (e) => { const c = document.getElementByI
         <button onclick="excelSeguimiento()">Descargar Excel</button>
       </div>
     </div>
+    <div class="tarjeta" id="reb-tarjeta">
+      <h2>Rebotes</h2>
+      <p class="ayuda">Cada vez que se fue a un cliente y <strong>no se hizo el trabajo</strong> (no atendieron, estaba cerrado, no estaban las condiciones…). Es tiempo perdido aunque el trabajo se haga después, así que se carga aparte, sin OT. Si el cliente todavía no está dado de alta (por ejemplo, una instalación), elegí "Cliente nuevo" y escribí el nombre.</p>
+      <div class="fila">
+        <div><label for="reb-fecha">Fecha de la visita</label><input type="date" id="reb-fecha"></div>
+        <div class="ancho2"><label for="reb-cliente">Cliente</label>
+          <div class="selector"><input id="reb-cliente-filtro" placeholder="Buscar nombre o ID…" aria-label="Buscar cliente" oninput="filtrarClientesReb()"><select id="reb-cliente" onchange="clienteRebElegido()"></select></div></div>
+        <div><label for="reb-tipo">Trabajo que se iba a hacer</label><select id="reb-tipo"></select></div>
+      </div>
+      <div class="fila" id="reb-nuevo" style="display:none">
+        <div class="ancho2"><label for="reb-nombre">Nombre del cliente nuevo</label><input id="reb-nombre"></div>
+        <div><label for="reb-plaza">Plaza</label><select id="reb-plaza"></select></div>
+      </div>
+      <div class="fila">
+        <div><label for="reb-tecnico">Técnico</label><input id="reb-tecnico" list="lista-tecnicos-reb" autocomplete="off"></div>
+        <div><label for="reb-tecnico2">Segundo técnico (opcional)</label><input id="reb-tecnico2" list="lista-tecnicos-reb" autocomplete="off"></div>
+        <div class="ancho2"><label for="reb-motivo">Motivo</label><input id="reb-motivo" list="lista-motivo-rebote" placeholder="Elegí o escribí" autocomplete="off"></div>
+      </div>
+      <div class="fila">
+        <div><label for="reb-persat">N° Persat</label><input id="reb-persat" placeholder="Opcional"></div>
+        <div class="ancho2"><label for="reb-coment">Comentarios</label><input id="reb-coment" placeholder="Opcional"></div>
+        <div style="align-self:end"><button class="primario" onclick="guardarRebote()">Agregar rebote</button></div>
+      </div>
+      <datalist id="lista-tecnicos-reb"></datalist>
+      <h3>Rebotes del período</h3>
+      <div class="tabla-scroll"><table id="reb-tabla"></table></div>
+    </div>
   </section>
 
   <section class="panel" id="p-tecnicos">
     <div class="tarjeta">
       <h2>Técnicos</h2>
-      <p class="ayuda">Trabajos de cada técnico en el período, con el filtro de región y plaza de arriba. Un trabajo hecho de a dos cuenta para los dos. <strong>Retrabajo:</strong> hubo que volver al mismo cliente por una reparación dentro de los <span id="tec-dias"></span> días siguientes (cuenta para instalaciones, mantenimientos, reparaciones y cambios de modelo). No cuentan las altas iniciales ni las OT anuladas. Tocá un técnico para ver sus trabajos.</p>
+      <p class="ayuda">Trabajos de cada técnico en el período, con el filtro de región y plaza de arriba. Un trabajo hecho de a dos cuenta para los dos. <strong>Retrabajo:</strong> hubo que volver al mismo cliente por una reparación dentro de los <span id="tec-dias"></span> días siguientes (cuenta para instalaciones, mantenimientos, reparaciones y cambios de modelo). No cuentan las altas iniciales ni las OT anuladas. <strong>Rebotes:</strong> visitas en las que no se hizo el trabajo (se cargan en Seguimiento de OT). Tocá un técnico para ver sus trabajos.</p>
       <div class="fila" style="max-width:640px">
         <div><label for="tec-desde">Desde</label><input type="date" id="tec-desde"></div>
         <div><label for="tec-hasta">Hasta</label><input type="date" id="tec-hasta"></div>
@@ -719,7 +747,7 @@ function pintarTodo() {
   armarAltaMaquinas(); pintarMaquinas();
   pintarLote();
   pintarTecnicos();
-  pintarSeguimiento();
+  pintarSeguimiento(); armarRebote();
 }
 
 /* ======================================================================
@@ -960,6 +988,7 @@ function revisarIdNuevo() {
  * ==================================================================== */
 const SLOTS_SIS = ['SISTEMA', 'PREFILTRO'];
 const TIPOS_CAMBIO_SISTEMA = ['MANTENIMIENTO', 'REPARACION', 'REPARACION_BACKUP', 'CAMBIO_MODELO'];
+const TIPOS_SISTEMA_BACKUP = ['REPARACION_BACKUP', 'CAMBIO_MODELO']; // proponen "Backup del mismo" para el sistema
 function hayMaestroSis() { return (S.ini.sistemas || []).length > 0; }
 function defSis(n) { return (S.ini.sistemas || []).find(x => x.nombre === n); }
 /* Nombres para elegir: los sistemas completos y activos de SISTEMAS_PURIFICACION (sin maestro, las listas de antes). */
@@ -1011,10 +1040,14 @@ function htmlSistemaOT(t, c, prev) {
     const actual = nombreSlot(c, slot), k = slot === 'SISTEMA' ? 'sis' : 'pre', campo = slot === 'SISTEMA' ? 'sistema' : 'prefiltro';
     const txt = slot === 'SISTEMA' ? 'Sistema de purificación' : 'Prefiltro';
     if (TIPOS_CAMBIO_SISTEMA.includes(t)) {
-      const acc = prev['acc_' + k] || '';
-      h += `<div><label for="ot-acc-${k}">${txt} (${actual ? 'hoy: ' + esc(actual) : 'no tiene'})</label><select id="ot-acc-${k}" onchange="pintarCamposOT()">
+      // El equipo de backup o de otro modelo va con filtros nuevos (Facu, 27/11): se propone "Backup del mismo" para el
+      // sistema; el técnico lo cambia si no corresponde. Lo propuesto se recalcula al cambiar de tipo o de cliente.
+      const ctxSel = t + '|' + (S.ot.idCliente || ''), sel = $('ot-acc-' + k);
+      const propuesto = slot === 'SISTEMA' && actual && TIPOS_SISTEMA_BACKUP.includes(t) ? 'BACKUP' : '';
+      const acc = sel && sel.dataset.ctx === ctxSel ? prev['acc_' + k] || '' : propuesto;
+      h += `<div><label for="ot-acc-${k}">${txt} (${actual ? 'hoy: ' + esc(actual) : 'no tiene'})</label><select id="ot-acc-${k}" data-ctx="${esc(ctxSel)}" onchange="pintarCamposOT()">
         <option value="">Sin cambio</option><option value="CAMBIAR"${acc === 'CAMBIAR' ? ' selected' : ''}>${actual ? 'Cambiar por otro' : 'Instalar'}</option>
-        ${actual ? `<option value="BACKUP"${acc === 'BACKUP' ? ' selected' : ''}>Backup del mismo</option>` : ''}</select></div>`;
+        ${actual ? `<option value="BACKUP"${acc === 'BACKUP' ? ' selected' : ''}>Backup del mismo</option>` : ''}</select>${propuesto ? '<p class="ayuda">Propuesto: el equipo va con filtros nuevos (arrancan con la fecha de esta OT). Si no, elegí "Sin cambio".</p>' : ''}</div>`;
       if (acc === 'CAMBIAR') h += `<div><label for="ot-${campo}">${slot === 'SISTEMA' ? 'Sistema nuevo' : 'Prefiltro nuevo'}</label><select id="ot-${campo}" onchange="pintarCamposOT()">${opciones(sistemasDe(slot).filter(n => n !== actual), prev[campo], '— Elegí —')}</select></div>`;
     } else if (t === 'DESINSTALACION_MOMENTANEA' && actual) {
       h += `<div><label><input type="checkbox" id="ot-ret-${k}"${prev['ret_' + k] ? ' checked' : ''} onchange="pintarCamposOT()" style="width:auto;margin-right:6px">Se retiró ${slot === 'SISTEMA' ? 'el sistema' : 'el prefiltro'} ${esc(actual)}</label></div>`;
@@ -2116,6 +2149,10 @@ function datosTecnicos() {
     x.tipos[o.tipo] = (x.tipos[o.tipo] || 0) + 1; x.dias.add(o.fecha); x.ots.push(o);
     if (evalua.includes(o.tipo)) { x.evaluables++; if (ret[o.id]) x.retr++; }
   }));
+  (S.tec.rebotes || []).filter(r => enPlaza(r.plaza)).forEach(r => [r.tecnico, r.tecnico2].filter(Boolean).forEach(t => {
+    const x = por[t] = por[t] || { t, total: 0, solo: 0, dos: 0, tipos: {}, dias: new Set(), evaluables: 0, retr: 0, ots: [] };
+    x.rebotes = (x.rebotes || 0) + 1; (x.listaRebotes = x.listaRebotes || []).push(r);
+  }));
   return { ots, ret, por, sinTecnico: ots.filter(o => !o.t1).length };
 }
 function pintarTecnicos() {
@@ -2127,32 +2164,39 @@ function pintarTecnicos() {
   const tipos = TIPOS_ORDEN.filter(t => t !== 'ALTA_INICIAL' && lista.some(x => x.tipos[t]));
   const pct = x => x.evaluables ? Math.round(100 * x.retr / x.evaluables) + '%' : '—';
   $('tec-tabla').innerHTML = lista.length ? `<thead><tr><th>Técnico</th><th class="num">Trabajos</th><th class="num">Solo</th><th class="num">De a dos</th>${tipos.map(t => `<th class="num">${esc(S.ini.tipos[t])}</th>`).join('')}
-      <th class="num">Días trabajados</th><th class="num">Por día</th><th class="num">Retrabajos</th><th class="num">% retrabajo</th></tr></thead><tbody>` +
+      <th class="num">Días trabajados</th><th class="num">Por día</th><th class="num">Retrabajos</th><th class="num">% retrabajo</th><th class="num">Rebotes</th></tr></thead><tbody>` +
     lista.map(x => `<tr class="clic" onclick="verTecnico('${esc(x.t)}')"><td><strong>${esc(x.t)}</strong></td><td class="num">${x.total}</td><td class="num">${x.solo}</td><td class="num">${x.dos}</td>
       ${tipos.map(t => `<td class="num">${x.tipos[t] || ''}</td>`).join('')}<td class="num">${x.dias.size}</td><td class="num">${(x.total / Math.max(x.dias.size, 1)).toFixed(1)}</td>
-      <td class="num ${x.retr ? 'sem-Vencido' : ''}">${x.retr}</td><td class="num">${pct(x)}</td></tr>`).join('') + '</tbody>' +
-    (sinTecnico ? `<tfoot><tr><td colspan="${8 + tipos.length}" class="ayuda">${sinTecnico} OT del período sin técnico cargado.</td></tr></tfoot>` : '')
+      <td class="num ${x.retr ? 'sem-Vencido' : ''}">${x.retr}</td><td class="num">${pct(x)}</td><td class="num ${x.rebotes ? 'sem-Próximo' : ''}">${x.rebotes || ''}</td></tr>`).join('') + '</tbody>' +
+    (sinTecnico ? `<tfoot><tr><td colspan="${9 + tipos.length}" class="ayuda">${sinTecnico} OT del período sin técnico cargado.</td></tr></tfoot>` : '')
     : '<tbody><tr><td class="vacio">No hay trabajos en el período (con este filtro).</td></tr></tbody>';
   if (S.tecSel && por[S.tecSel]) verTecnico(S.tecSel); else $('tec-detalle').innerHTML = '';
 }
 /* ======================================================================
- *  Seguimiento de OT (v2.3): solicitud y tiempo de respuesta, emergencia, rebotes y demora.
+ *  Seguimiento de OT (v2.3/2.4): solicitud y tiempo de respuesta (días hábiles), emergencia y demora; rebotes aparte.
  *  Lo completa otra persona después de cargadas: tabla editable, se guarda todo junto.
  * ==================================================================== */
-const CAMPOS_SEG = ['solicitud', 'excluir', 'excluirMotivo', 'emergencia', 'rebotes', 'reboteMotivo', 'demora', 'demoraMotivo'];
+const CAMPOS_SEG = ['solicitud', 'excluir', 'excluirMotivo', 'emergencia', 'demora', 'demoraMotivo'];
 const MAX_FILAS_SEG = 300;
 function puedeCargarSeg() { return S.ini && ['ADMIN', 'CARGA'].includes(S.ini.usuario.rol); }
 function cambiosSeg() { return S.seg ? Object.keys(S.seg.cambios) : []; }
 /* La OT con lo que se cambió y todavía no se guardó. */
 function otSeg(o) { const c = S.seg && S.seg.cambios[o.id]; return c ? Object.assign({}, o, c) : o; }
-function diasRespuesta(o) { return o.solicitud && o.solicitud <= o.fecha ? Math.round((new Date(o.fecha + 'T12:00:00') - new Date(o.solicitud + 'T12:00:00')) / 864e5) : null; }
+/* Días hábiles (lunes a viernes, sin feriados) desde la solicitud hasta la OT; el mismo día = 0. Igual que en el servidor. */
+function diasHabiles(desde, hasta) {
+  if (!desde || !hasta || desde > hasta) return null;
+  const fer = (S.seg && S.seg.ferSet) || new Set();
+  let n = 0, d = new Date(desde + 'T12:00:00Z'); const fin = new Date(hasta + 'T12:00:00Z');
+  for (;;) { d = new Date(d.getTime() + 864e5); if (d > fin) break; const k = d.toISOString().slice(0, 10), w = d.getUTCDay(); if (w !== 0 && w !== 6 && !fer.has(k)) n++; }
+  return n;
+}
+function diasRespuesta(o) { return diasHabiles(o.solicitud, o.fecha); }
 function insigniasSeg(s) {
   if (!s) return '';
   const r = [];
   if (s.emergencia) r.push('<span class="insignia err">Emergencia</span>');
-  if (s.rebotes) r.push(`<span class="insignia adv" title="${esc(s.reboteMotivo || '')}">${s.rebotes === 1 ? '1 rebote' : s.rebotes + ' rebotes'}</span>`);
   if (s.demora) r.push(`<span class="insignia adv" title="${esc(s.demoraMotivo || '')}">Demora ${s.demora} min</span>`);
-  if (s.respuesta != null) r.push(`<span class="insignia pend" title="Pedido el ${fechaTxt(s.solicitud)}${s.excluida ? ' · no cuenta: ' + esc(s.excluida === true ? '' : s.excluida) : ''}">Respuesta ${s.respuesta} d${s.excluida ? ' (excl.)' : ''}</span>`);
+  if (s.respuesta != null) r.push(`<span class="insignia pend" title="Pedido el ${fechaTxt(s.solicitud)}${s.excluida ? ' · no cuenta: ' + esc(s.excluida === true ? '' : s.excluida) : ''}">Respuesta ${s.respuesta} d háb.${s.excluida ? ' (excl.)' : ''}</span>`);
   return r.length ? '<div class="insignias-seg">' + r.join('') + '</div>' : '';
 }
 async function cargarSeguimiento(desde) {
@@ -2163,7 +2207,7 @@ async function cargarSeguimiento(desde) {
   const d = $('seg-desde').value, h = $('seg-hasta').value;
   if (!d || !h || d > h) return aviso('Elegí un período válido.', 'err');
   ocupado('Buscando las OT…');
-  try { S.seg = Object.assign(await llamar('apiSeguimiento', d, h), { cambios: {}, tocadas: {}, errores: {} }); pintarSeguimiento(); pintarSinGuardar(); }
+  try { const r = await llamar('apiSeguimiento', d, h); S.seg = Object.assign(r, { cambios: {}, tocadas: {}, errores: {}, ferSet: new Set(r.feriados || []) }); pintarSeguimiento(); pintarSinGuardar(); }
   catch (e) { aviso(e.message, 'err'); }
   libre();
 }
@@ -2175,7 +2219,7 @@ function pintarSeguimiento() {
   $('seg-tipo').innerHTML = '<option value="">Todos</option>' + TIPOS_ORDEN.filter(t => t !== 'ALTA_INICIAL').map(t => `<option value="${t}"${t === tipoPrev ? ' selected' : ''}>${esc(S.ini.tipos[t])}</option>`).join('');
   if (!S.seg) {
     $('seg-tabla').innerHTML = '<tbody><tr><td class="vacio">Elegí el período y tocá "Ver OT".</td></tr></tbody>';
-    $('seg-metricas').innerHTML = ''; $('seg-resumen').innerHTML = ''; $('seg-pend').innerHTML = ''; botonesSeg(); return;
+    $('seg-metricas').innerHTML = ''; $('seg-resumen').innerHTML = ''; $('seg-pend').innerHTML = ''; botonesSeg(); pintarRebotes(); return;
   }
   const p = S.seg.sinRevisar;
   $('seg-pend').innerHTML = p.cantidad ? `<div class="nota adv">Faltan revisar <strong>${p.cantidad}</strong> OT en total (la más vieja, del ${fechaTxt(p.desde)}).
@@ -2188,12 +2232,12 @@ function pintarSeguimiento() {
     (!q || [o.id, o.idCliente, o.cliente, o.persat].some(x => String(x || '').toLowerCase().includes(q))));
   const ver = lista.slice(0, MAX_FILAS_SEG);
   $('seg-tabla').innerHTML = ver.length ? `<thead><tr><th>Fecha y OT</th><th>Cliente y trabajo</th><th>Solicitud</th>
-      <th>Emerg.</th><th>Rebotes</th><th>Demora (min)</th><th></th></tr></thead><tbody>` + ver.map(filaSeg).join('') + '</tbody>' +
-      (lista.length > ver.length ? `<tfoot><tr><td colspan="7" class="ayuda">Se muestran ${ver.length} de ${lista.length}: acotá el período, el tipo o buscá.</td></tr></tfoot>` : '')
+      <th>Emerg.</th><th>Demora (min)</th><th></th></tr></thead><tbody>` + ver.map(filaSeg).join('') + '</tbody>' +
+      (lista.length > ver.length ? `<tfoot><tr><td colspan="6" class="ayuda">Se muestran ${ver.length} de ${lista.length}: acotá el período, el tipo o buscá.</td></tr></tfoot>` : '')
     : `<tbody><tr><td class="vacio">${solo && base.length ? 'No quedan OT por revisar en el período (con este filtro).' : 'No hay OT en el período (con este filtro).'}</td></tr></tbody>`;
-  botonesSeg();
+  botonesSeg(); pintarRebotes();
 }
-function textoDiasSeg(dias, excluir) { return dias == null ? '' : 'Respuesta: ' + (excluir ? `<s>${dias} ${dias === 1 ? 'día' : 'días'}</s> (no cuenta)` : `${dias} ${dias === 1 ? 'día' : 'días'}`); }
+function textoDiasSeg(dias, excluir) { return dias == null ? '' : 'Respuesta: ' + (excluir ? `<s>${dias} ${dias === 1 ? 'día hábil' : 'días hábiles'}</s> (no cuenta)` : `${dias} ${dias === 1 ? 'día hábil' : 'días hábiles'}`); }
 function filaSeg(o0) {
   const o = otSeg(o0), id = esc(o.id), cambio = !!S.seg.cambios[o.id], err = S.seg.errores[o.id];
   const dias = diasRespuesta(o);
@@ -2211,7 +2255,6 @@ function filaSeg(o0) {
     <td><input type="date" data-c="solicitud" value="${esc(o.solicitud)}" max="${esc(o.fecha)}" onchange="cambioSeg(this)"><div class="ayuda dias-seg" data-dias>${textoDiasSeg(dias, o.excluir)}</div>
       <label class="excluir-seg" title="Que no cuente para el tiempo de respuesta"><input type="checkbox" data-c="excluir"${o.excluir ? ' checked' : ''} onchange="cambioSeg(this)"> Excluir</label>${motivo('excluirMotivo', 'lista-motivo-exclusion', o.excluir, 'Motivo de la exclusión')}</td>
     <td>${emerg}</td>
-    <td><input type="number" class="num-chico" data-c="rebotes" min="0" max="20" step="1" value="${o.rebotes || ''}" placeholder="0" oninput="cambioSeg(this)">${motivo('reboteMotivo', 'lista-motivo-rebote', o.rebotes > 0, 'Por qué se reprogramó')}</td>
     <td><input type="number" class="num-chico" data-c="demora" min="0" max="1440" step="5" value="${o.demora || ''}" placeholder="0" oninput="cambioSeg(this)">${motivo('demoraMotivo', 'lista-motivo-demora', o.demora > 0, 'Por qué')}</td>
     <td data-estado>${estado}${err ? `<div class="err-seg">${esc(err)}</div>` : ''}</td></tr>`;
 }
@@ -2221,7 +2264,7 @@ function leerFilaSeg(tr) {
   const o = S.seg.ots.find(x => x.id === tr.dataset.id);
   const num = c => { const x = v(c).value.trim(); return x === '' ? 0 : Number(x); };
   return { o, d: { solicitud: v('solicitud').value, excluir: v('excluir').checked, excluirMotivo: v('excluirMotivo').value.trim(),
-    emergencia: v('emergencia') ? v('emergencia').checked : o.emergencia, rebotes: num('rebotes'), reboteMotivo: v('reboteMotivo').value.trim(),
+    emergencia: v('emergencia') ? v('emergencia').checked : o.emergencia,
     demora: num('demora'), demoraMotivo: v('demoraMotivo').value.trim() } };
 }
 function cambioSeg(el) {
@@ -2231,7 +2274,6 @@ function cambioSeg(el) {
   S.seg.tocadas[o.id] = true; delete S.seg.errores[o.id];
   // Sin volver a pintar la tabla (no se pierde el foco): motivos, días y estado de la fila.
   tr.querySelector('[data-c="excluirMotivo"]').style.display = d.excluir ? '' : 'none';
-  tr.querySelector('[data-c="reboteMotivo"]').style.display = d.rebotes > 0 ? '' : 'none';
   tr.querySelector('[data-c="demoraMotivo"]').style.display = d.demora > 0 ? '' : 'none';
   const dias = diasRespuesta(Object.assign({ fecha: o.fecha }, d));
   tr.querySelector('[data-dias]').innerHTML = textoDiasSeg(dias, d.excluir);
@@ -2283,34 +2325,37 @@ async function guardarSeguimiento() {
   } catch (e) { aviso(e.message, 'err'); }
   libre();
 }
-/* Métricas: promedio, mediana y máximo de días de respuesta (sin excluidas ni OT sin solicitud), emergencias, rebotes y demoras. */
-function estadSeg(ots) {
+/* Métricas: promedio, mediana y máximo de días hábiles de respuesta (sin excluidas ni OT sin solicitud), emergencias y demoras;
+   los rebotes salen de su propio registro (por el trabajo que se iba a hacer). */
+function rebotesVisibles() { return S.seg ? (S.seg.rebotes || []).filter(r => !r.anulado && enPlaza(r.plaza) && (!r.idCliente || !S.zona || (cliente(r.idCliente) || {}).zonaId === S.zona) && (!$('seg-tipo').value || r.tipo === $('seg-tipo').value)) : []; }
+function estadSeg(ots, rebotes) {
   const dias = ots.filter(o => !o.excluir).map(diasRespuesta).filter(d => d != null).sort((a, b) => a - b);
   const prom = dias.length ? dias.reduce((a, b) => a + b, 0) / dias.length : null;
   const med = dias.length ? (dias.length % 2 ? dias[(dias.length - 1) / 2] : (dias[dias.length / 2 - 1] + dias[dias.length / 2]) / 2) : null;
   return { n: ots.length, medidas: dias.length, prom, med, max: dias.length ? dias[dias.length - 1] : null,
     excluidas: ots.filter(o => o.excluir).length, sinSolicitud: ots.filter(o => !o.solicitud).length,
-    emergencias: ots.filter(o => o.emergencia).length, rebotes: ots.reduce((a, o) => a + (Number(o.rebotes) || 0), 0), conRebote: ots.filter(o => o.rebotes > 0).length,
+    emergencias: ots.filter(o => o.emergencia).length, rebotes: (rebotes || []).length,
     demora: ots.reduce((a, o) => a + (Number(o.demora) || 0), 0), conDemora: ots.filter(o => o.demora > 0).length };
 }
 const unDec = x => (x == null ? '—' : (Math.round(x * 10) / 10).toLocaleString('es-AR'));
 function horasMin(m) { return m >= 60 ? Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' min' : m + ' min'; }
 function pintarMetricasSeg(base) {
-  const ots = base.map(otSeg), t = estadSeg(ots), e = estadSeg(ots.filter(o => o.emergencia));
+  const ots = base.map(otSeg), reb = rebotesVisibles(), t = estadSeg(ots, reb), e = estadSeg(ots.filter(o => o.emergencia));
+  const visitas = ots.length + reb.length;
   const met = (n, tx, cl) => `<div class="metrica ${cl || ''}"><div class="n">${n}</div><div class="t">${tx}</div></div>`;
-  $('seg-metricas').innerHTML = met(unDec(t.prom) + (t.prom != null ? ' d' : ''), 'Respuesta promedio (' + t.medidas + ' de ' + t.n + ' OT)') +
-    met(unDec(t.med) + (t.med != null ? ' d' : ''), 'Mediana') +
+  $('seg-metricas').innerHTML = met(unDec(t.prom) + (t.prom != null ? ' d' : ''), 'Respuesta promedio, días hábiles (' + t.medidas + ' de ' + t.n + ' OT)') +
+    met(unDec(t.med) + (t.med != null ? ' d' : ''), 'Mediana (días hábiles)') +
     met(unDec(e.prom) + (e.prom != null ? ' d' : ''), 'Respuesta en emergencias (' + e.medidas + ' de ' + e.n + ')') +
-    met(t.rebotes, 'Rebotes (en ' + t.conRebote + ' OT)', t.rebotes ? 'adv' : '') +
+    met(t.rebotes, 'Rebotes' + (visitas ? ' (' + Math.round(100 * t.rebotes / visitas) + '% de las visitas)' : ''), t.rebotes ? 'adv' : '') +
     met(horasMin(t.demora), 'Demora en clientes (' + t.conDemora + ' OT)') +
     met(t.sinSolicitud, 'Sin fecha de solicitud', t.sinSolicitud ? 'adv' : '');
-  const tipos = TIPOS_ORDEN.filter(x => ots.some(o => o.tipo === x));
+  const tipos = TIPOS_ORDEN.filter(x => ots.some(o => o.tipo === x) || reb.some(r => r.tipo === x));
   const fila = (nombre, x, ex) => `<tr><td>${nombre}</td><td class="num">${x.n}</td><td class="num">${x.medidas}</td><td class="num">${unDec(x.prom)}</td><td class="num">${unDec(x.med)}</td>
     <td class="num">${x.max == null ? '—' : x.max}</td><td class="num">${x.emergencias || ''}</td><td class="num">${unDec(ex.prom)}</td><td class="num">${x.excluidas || ''}</td>
     <td class="num">${x.rebotes || ''}</td><td class="num">${x.demora || ''}</td></tr>`;
-  $('seg-resumen').innerHTML = tipos.length ? `<thead><tr><th>Tipo</th><th class="num">OT</th><th class="num">Medidas</th><th class="num">Promedio (días)</th><th class="num">Mediana</th><th class="num">Máximo</th>
+  $('seg-resumen').innerHTML = tipos.length ? `<thead><tr><th>Tipo</th><th class="num">OT</th><th class="num">Medidas</th><th class="num">Promedio (días háb.)</th><th class="num">Mediana</th><th class="num">Máximo</th>
       <th class="num">Emergencias</th><th class="num">Prom. emergencia</th><th class="num">Excluidas</th><th class="num">Rebotes</th><th class="num">Demora (min)</th></tr></thead><tbody>` +
-    tipos.map(x => { const g = ots.filter(o => o.tipo === x); return fila(esc(S.ini.tipos[x]), estadSeg(g), estadSeg(g.filter(o => o.emergencia))); }).join('') + '</tbody>' +
+    tipos.map(x => { const g = ots.filter(o => o.tipo === x); return fila(esc(S.ini.tipos[x]), estadSeg(g, reb.filter(r => r.tipo === x)), estadSeg(g.filter(o => o.emergencia))); }).join('') + '</tbody>' +
     `<tfoot><tr class="total">${fila('<strong>Total</strong>', t, e).replace(/^<tr>|<\/tr>$/g, '')}</tr></tfoot>` : '';
 }
 async function excelSeguimiento() {
@@ -2319,16 +2364,85 @@ async function excelSeguimiento() {
   const ots = S.seg.ots.filter(filtroSeg).map(otSeg);
   const filas = ots.map(o => ({ 'Fecha': f(o.fecha), 'OT': o.id, 'N° Persat': o.persat, 'ID cliente': o.idCliente, 'Cliente': o.cliente, 'Plaza': nomPlaza(o.plaza),
     'Tipo': S.ini.tipos[o.tipo] || o.tipo, 'Mantenimiento': o.tipoMant ? (S.ini.tiposMant[o.tipoMant] || o.tipoMant) : '', 'Técnico': o.tecnico, 'Falla': o.falla,
-    'Fecha de solicitud': f(o.solicitud), 'Días de respuesta': diasRespuesta(o) == null ? '' : diasRespuesta(o), 'Excluida de la métrica': o.excluir ? 'Sí' : '', 'Motivo de exclusión': o.excluirMotivo,
-    'Emergencia': o.emergencia ? 'Sí' : '', 'Rebotes': o.rebotes || 0, 'Motivo del rebote': o.reboteMotivo, 'Demora (min)': o.demora || 0, 'Motivo de la demora': o.demoraMotivo,
+    'Fecha de solicitud': f(o.solicitud), 'Días hábiles de respuesta': diasRespuesta(o) == null ? '' : diasRespuesta(o), 'Excluida de la métrica': o.excluir ? 'Sí' : '', 'Motivo de exclusión': o.excluirMotivo,
+    'Emergencia': o.emergencia ? 'Sí' : '', 'Demora (min)': o.demora || 0, 'Motivo de la demora': o.demoraMotivo,
     'Revisada por': o.revisadaPor, 'Sin guardar': S.seg.cambios[o.id] ? 'Sí' : '' }));
-  const tipos = TIPOS_ORDEN.filter(x => ots.some(o => o.tipo === x));
-  const res = g => { const x = estadSeg(g), e = estadSeg(g.filter(o => o.emergencia)); const r = v => (v == null ? '' : Math.round(v * 10) / 10);
-    return { 'OT': x.n, 'Medidas': x.medidas, 'Promedio (días)': r(x.prom), 'Mediana (días)': r(x.med), 'Máximo (días)': x.max == null ? '' : x.max, 'Emergencias': x.emergencias,
+  const reb = rebotesVisibles();
+  const tipos = TIPOS_ORDEN.filter(x => ots.some(o => o.tipo === x) || reb.some(r => r.tipo === x));
+  const res = (g, rb) => { const x = estadSeg(g, rb), e = estadSeg(g.filter(o => o.emergencia)); const r = v => (v == null ? '' : Math.round(v * 10) / 10);
+    return { 'OT': x.n, 'Medidas': x.medidas, 'Promedio (días hábiles)': r(x.prom), 'Mediana (días hábiles)': r(x.med), 'Máximo (días hábiles)': x.max == null ? '' : x.max, 'Emergencias': x.emergencias,
       'Promedio emergencias (días)': r(e.prom), 'Excluidas': x.excluidas, 'Sin solicitud': x.sinSolicitud, 'Rebotes': x.rebotes, 'Demora (min)': x.demora }; };
-  const resumen = tipos.map(x => Object.assign({ 'Tipo': S.ini.tipos[x] }, res(ots.filter(o => o.tipo === x)))).concat([Object.assign({ 'Tipo': 'Total' }, res(ots))]);
-  try { await descargarExcel('seguimiento_ot_' + S.seg.desde + '_' + S.seg.hasta + '.xlsx', [{ nombre: 'OT', filas }, { nombre: 'Resumen', filas: resumen }]); }
+  const resumen = tipos.map(x => Object.assign({ 'Tipo': S.ini.tipos[x] }, res(ots.filter(o => o.tipo === x), reb.filter(r => r.tipo === x)))).concat([Object.assign({ 'Tipo': 'Total' }, res(ots, reb))]);
+  const rebotes = reb.map(r => ({ 'Fecha': f(r.fecha), 'Rebote': r.id, 'N° Persat': r.persat, 'ID cliente': r.idCliente || '(cliente nuevo)', 'Cliente': r.cliente, 'Plaza': nomPlaza(r.plaza),
+    'Trabajo que se iba a hacer': S.ini.tipos[r.tipo] || r.tipo, 'Técnico': [r.tecnico, r.tecnico2].filter(Boolean).join(' y '), 'Motivo': r.motivo, 'Comentarios': r.comentarios, 'Cargado por': r.cargadoPor }));
+  try { await descargarExcel('seguimiento_ot_' + S.seg.desde + '_' + S.seg.hasta + '.xlsx', [{ nombre: 'OT', filas }, { nombre: 'Rebotes', filas: rebotes, columnas: rebotes.length ? null : ['Fecha', 'Rebote', 'Cliente', 'Motivo'] }, { nombre: 'Resumen', filas: resumen }]); }
   catch (e) { aviso(e.message, 'err'); }
+}
+
+/* Rebotes: se fue al cliente y no se hizo el trabajo. Se cargan de a uno y se guardan al momento. */
+function armarRebote() {
+  if (!$('reb-fecha').value) { $('reb-fecha').value = S.ini.hoy; }
+  $('reb-fecha').max = S.ini.hoy;
+  const tp = $('reb-tipo').value;
+  $('reb-tipo').innerHTML = '<option value="">— Elegí —</option>' + TIPOS_ORDEN.filter(t => t !== 'ALTA_INICIAL').map(t => `<option value="${t}"${t === tp ? ' selected' : ''}>${esc(S.ini.tipos[t])}</option>`).join('');
+  const pl = $('reb-plaza').value || S.plaza;
+  $('reb-plaza').innerHTML = '<option value="">— Elegí —</option>' + S.ini.plazas.filter(p => enPlaza(p.plaza)).map(p => `<option value="${esc(p.plaza)}"${p.plaza === pl ? ' selected' : ''}>${esc(p.nombre)}</option>`).join('');
+  $('lista-tecnicos-reb').innerHTML = (S.ini.tecnicos || []).filter(t => t.activo !== false && enPlaza(t.plaza)).map(t => `<option value="${esc(t.id)}">`).join('');
+  filtrarClientesReb();
+}
+function filtrarClientesReb() {
+  const sel = $('reb-cliente'), f = sinAcentos($('reb-cliente-filtro').value), previo = sel.value;
+  const lista = S.ini.clientes.filter(c => enCli(c) && (!f || sinAcentos([c.nombre, c.id, c.razon, c.sector, c.zona].join(' ')).includes(f)));
+  const grupos = {};
+  lista.forEach(c => { const g = (S.plaza ? '' : nomPlaza(c.plaza) + ' · ') + (c.zona || 'Sin zona'); (grupos[g] = grupos[g] || []).push(c); });
+  sel.innerHTML = `<option value="">— ${lista.length ? 'Elegí un cliente (' + lista.length + ')' : 'Ningún cliente coincide'} —</option><option value="__NUEVO__">+ Cliente nuevo (todavía sin alta)</option>` +
+    Object.keys(grupos).sort().map(g => `<optgroup label="${esc(g)}">${grupos[g].map(c => `<option value="${esc(c.id)}">${esc(c.nombre)} · ${esc(c.id)}</option>`).join('')}</optgroup>`).join('');
+  if (previo === '__NUEVO__' || lista.some(c => String(c.id) === previo)) sel.value = previo;
+  clienteRebElegido();
+}
+function clienteRebElegido() { $('reb-nuevo').style.display = $('reb-cliente').value === '__NUEVO__' ? '' : 'none'; }
+async function guardarRebote() {
+  const v = id => $(id).value.trim(), cli = $('reb-cliente').value;
+  const d = { fecha: v('reb-fecha'), idCliente: cli === '__NUEVO__' ? '' : cli, clienteNombre: cli === '__NUEVO__' ? v('reb-nombre') : '', plaza: cli === '__NUEVO__' ? v('reb-plaza') : '',
+    tipo: v('reb-tipo'), tecnico: v('reb-tecnico'), tecnico2: v('reb-tecnico2'), motivo: v('reb-motivo'), persat: v('reb-persat'), comentarios: v('reb-coment') };
+  if (!d.fecha) return aviso('Falta la fecha de la visita.', 'err');
+  if (!cli) return aviso('Elegí el cliente (o "Cliente nuevo").', 'err');
+  if (!d.tipo) return aviso('Elegí qué trabajo se iba a hacer.', 'err');
+  if (!d.motivo) return aviso('Elegí o escribí el motivo.', 'err');
+  ocupado('Guardando el rebote…');
+  try {
+    const r = await llamar('apiGuardarRebote', d);
+    if (S.seg && r.rebote.fecha >= S.seg.desde && r.rebote.fecha <= S.seg.hasta) S.seg.rebotes.unshift(r.rebote);
+    ['reb-motivo', 'reb-persat', 'reb-coment', 'reb-nombre', 'reb-cliente-filtro'].forEach(id => { $(id).value = ''; });
+    $('reb-cliente').value = ''; filtrarClientesReb();
+    aviso(r.mensaje, 'ok');
+    if (S.seg) { pintarRebotes(); pintarMetricasSeg(S.seg.ots.filter(filtroSeg)); }
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+async function anularRebote(id) {
+  const motivo = prompt('¿Por qué se anula el rebote ' + id + '?');
+  if (motivo == null) return;
+  ocupado('Anulando…');
+  try {
+    const r = await llamar('apiAnularRebote', id, motivo);
+    const k = S.seg.rebotes.findIndex(x => x.id === id); if (k >= 0) S.seg.rebotes[k] = r.rebote;
+    pintarRebotes(); pintarMetricasSeg(S.seg.ots.filter(filtroSeg)); aviso('Rebote anulado.', 'ok');
+  } catch (e) { aviso(e.message, 'err'); }
+  libre();
+}
+function pintarRebotes() {
+  if (!S.seg) { $('reb-tabla').innerHTML = '<tbody><tr><td class="vacio">Tocá "Ver OT" para ver los rebotes del período.</td></tr></tbody>'; return; }
+  const q = sinAcentos($('seg-busca').value.trim());
+  const lista = (S.seg.rebotes || []).filter(r => enPlaza(r.plaza) && (!$('seg-tipo').value || r.tipo === $('seg-tipo').value) &&
+    (!q || sinAcentos([r.id, r.idCliente, r.cliente, r.persat, r.tecnico, r.motivo].join(' ')).includes(q)));
+  $('reb-tabla').innerHTML = lista.length ? `<thead><tr><th>Fecha</th><th>Cliente</th><th>Iba a hacer</th><th>Técnico</th><th>Motivo</th><th></th></tr></thead><tbody>` +
+    lista.map(r => `<tr style="${r.anulado ? 'text-decoration:line-through;color:#8a95a3' : ''}" title="${esc(r.anulacion || '')}"><td>${fechaTxt(r.fecha)}<div class="mono ayuda">${esc(r.id)}</div>${r.persat ? `<div class="ayuda">Persat ${esc(r.persat)}</div>` : ''}</td>
+      <td><strong>${esc(r.cliente)}</strong> ${r.idCliente ? `<span class="mono ayuda">${esc(r.idCliente)}</span>` : '<span class="insignia pend">sin alta</span>'} <span class="ayuda">· ${esc(nomPlaza(r.plaza))}</span></td>
+      <td>${esc(S.ini.tipos[r.tipo] || r.tipo)}</td><td>${esc([r.tecnico, r.tecnico2].filter(Boolean).join(' y '))}</td>
+      <td>${esc(r.motivo)}${r.comentarios ? `<div class="ayuda">${esc(r.comentarios)}</div>` : ''}</td>
+      <td>${r.anulado ? '<span class="insignia pend">Anulado</span>' : `<button class="chico" onclick="anularRebote('${esc(r.id)}')">Anular</button>`}</td></tr>`).join('') + '</tbody>'
+    : '<tbody><tr><td class="vacio">No hay rebotes en el período (con este filtro).</td></tr></tbody>';
 }
 
 function verTecnico(t) {
@@ -2338,7 +2452,9 @@ function verTecnico(t) {
   $('tec-detalle').innerHTML = `<h3>${esc(t)} · ${x.total} trabajos</h3><div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>OT</th><th>Tipo</th><th>Cliente</th><th>Con</th><th>Retrabajo</th></tr></thead><tbody>` +
     x.ots.map(o => { const r = ret[o.id], otro = o.t1 === t ? o.t2 : o.t1;
       return `<tr><td>${fechaTxt(o.fecha)}</td><td class="mono">${esc(o.id)}</td><td>${esc(S.ini.tipos[o.tipo] || o.tipo)}</td><td>${esc(o.cliente)} <span class="mono ayuda">${esc(o.idCliente)}</span></td>
-        <td>${esc(otro || '')}</td><td>${r ? `<span class="sem-Vencido">Reparación ${esc(r.reparacion)} a los ${r.dias} días</span>` : ''}</td></tr>`; }).join('') + '</tbody></table></div>';
+        <td>${esc(otro || '')}</td><td>${r ? `<span class="sem-Vencido">Reparación ${esc(r.reparacion)} a los ${r.dias} días</span>` : ''}</td></tr>`; }).join('') + '</tbody></table></div>' +
+    (x.listaRebotes ? `<h3>Rebotes · ${x.listaRebotes.length}</h3><div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>Rebote</th><th>Iba a hacer</th><th>Cliente</th><th>Motivo</th></tr></thead><tbody>` +
+      x.listaRebotes.map(b => `<tr><td>${fechaTxt(b.fecha)}</td><td class="mono">${esc(b.id)}</td><td>${esc(S.ini.tipos[b.tipo] || b.tipo)}</td><td>${esc(b.cliente)}</td><td>${esc(b.motivo)}</td></tr>`).join('') + '</tbody></table></div>' : '');
 }
 
 /* ======================================================================

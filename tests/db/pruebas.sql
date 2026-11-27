@@ -291,23 +291,51 @@ do $$ begin
   exception when check_violation then null; end;
   begin update ot set excluir_respuesta = true where ot_id = 'OT-000001'; raise exception 'FALLA: se excluyó de la métrica sin motivo';
   exception when check_violation then null; end;
-  begin update ot set rebotes = -1 where ot_id = 'OT-000001'; raise exception 'FALLA: rebotes negativos';
-  exception when check_violation then null; end;
   begin update ot set demora_min = 2000 where ot_id = 'OT-000001'; raise exception 'FALLA: demora de más de 24 h';
   exception when check_violation then null; end;
-  update ot set fecha_solicitud = '2026-01-20', rebotes = 1, demora_min = 30, excluir_respuesta = true, excluir_motivo = 'Falta documentación para ingresar' where ot_id = 'OT-000001';
+  update ot set fecha_solicitud = '2026-01-20', demora_min = 30, excluir_respuesta = true, excluir_motivo = 'Falta documentación para ingresar' where ot_id = 'OT-000001';
   if (select count(*) from listas where tipo in ('MOTIVO_REBOTE', 'MOTIVO_DEMORA', 'MOTIVO_EXCLUSION')) < 10 then raise exception 'FALLA: faltan los motivos sugeridos'; end if;
-  if (select valor from config where clave = 'VERSION') <> '2.3' then raise exception 'FALLA: versión'; end if;
-  raise notice 'OK: seguimiento de OT (solicitud no posterior, emergencia solo en mantenimientos/reparaciones/entregas, exclusión con motivo, rebotes y demora acotados)';
+  raise notice 'OK: seguimiento de OT (solicitud no posterior, emergencia solo en mantenimientos/reparaciones/entregas, exclusión con motivo, demora acotada)';
 end $$;
 begin;
 set local role authenticated;
 set local request.jwt.claims = '{"email":"carga@empresa.com"}';
 do $$ begin
-  begin update ot set rebotes = 3 where ot_id = 'OT-000001'; raise exception 'FALLA: la app escribió el seguimiento directo en la base';
+  begin update ot set demora_min = 3 where ot_id = 'OT-000001'; raise exception 'FALLA: la app escribió el seguimiento directo en la base';
   exception when insufficient_privilege then null; end;
   raise notice 'OK: el seguimiento se guarda solo por la función del servidor';
 end $$;
+commit;
+
+-- ---------------------------------------------------------------- v2.4: rebotes y feriados
+do $$ begin
+  if exists (select 1 from information_schema.columns where table_name = 'ot' and column_name in ('rebotes', 'rebote_motivo')) then
+    raise exception 'FALLA: los rebotes ya no van dentro de la OT'; end if;
+  insert into rebotes (rebote_id, fecha, cliente_id, plaza_id, tipo_trabajo, motivo, created_by) values ('REB-T1', '2026-02-01', '50001', 'Córdoba', 'MANTENIMIENTO', 'No atendieron', 'x');
+  insert into rebotes (rebote_id, fecha, cliente_nombre, plaza_id, tipo_trabajo, motivo, created_by) values ('REB-T2', '2026-02-01', 'Bar nuevo', 'Córdoba', 'INSTALACION', 'Local cerrado', 'x');
+  begin insert into rebotes (rebote_id, fecha, plaza_id, tipo_trabajo, motivo, created_by) values ('REB-T3', '2026-02-01', 'Córdoba', 'INSTALACION', 'x', 'x');
+    raise exception 'FALLA: un rebote sin cliente'; exception when check_violation then null; end;
+  begin insert into rebotes (rebote_id, fecha, cliente_id, plaza_id, tipo_trabajo, motivo, created_by) values ('REB-T4', '2026-02-01', '50001', 'Córdoba', 'MANTENIMIENTO', '', 'x');
+    raise exception 'FALLA: un rebote sin motivo'; exception when check_violation then null; end;
+  if (select count(*) from feriados where fecha between '2026-01-01' and '2026-12-31') <> 16 or not exists (select 1 from feriados where fecha = '2026-11-23') then
+    raise exception 'FALLA: feriados 2026'; end if;
+  if (select valor from config where clave = 'VERSION') <> '2.4' then raise exception 'FALLA: versión'; end if;
+  raise notice 'OK: rebotes como registro propio (con cliente o nombre del cliente nuevo, y motivo); feriados nacionales 2026 cargados';
+end $$;
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"email":"carga@empresa.com"}';
+do $$ begin
+  if (select count(*) from rebotes) <> 2 or (select count(*) from feriados) < 16 then raise exception 'FALLA: CARGA no lee rebotes o feriados'; end if;
+  begin insert into rebotes (rebote_id, fecha, cliente_id, plaza_id, tipo_trabajo, motivo, created_by) values ('REB-T5', '2026-02-01', '50001', 'Córdoba', 'MANTENIMIENTO', 'x', 'x');
+    raise exception 'FALLA: la app escribió un rebote directo'; exception when insufficient_privilege then null; end;
+  begin insert into feriados values ('2026-02-02', 'x'); raise exception 'FALLA: CARGA agregó un feriado';
+  exception when insufficient_privilege then null; end;
+end $$;
+set local request.jwt.claims = '{"email":"facu@empresa.com"}';
+insert into feriados values ('2026-02-02', 'Prueba');
+delete from feriados where fecha = '2026-02-02';
+do $$ begin raise notice 'OK: los rebotes los escribe solo la función del servidor; los feriados, un ADMIN desde Datos'; end $$;
 commit;
 
 \echo 'Todas las pruebas de la base pasaron.'
