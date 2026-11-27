@@ -7,8 +7,10 @@ do $$ begin  -- los roles son de todo el servidor: se crean una sola vez
   if not exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then create role supabase_auth_admin nologin; end if;
 end $$;
 grant usage on schema public to anon, authenticated, service_role;
-alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
-alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+-- Como un proyecto nuevo de Supabase: las tablas NO quedan abiertas por defecto a anon/authenticated
+-- (las migraciones tienen que dar los permisos de forma explícita).
+alter default privileges in schema public grant all on tables to service_role;
+alter default privileges in schema public grant all on sequences to service_role;
 alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
 create schema auth;
 grant usage on schema auth to anon, authenticated, service_role;
