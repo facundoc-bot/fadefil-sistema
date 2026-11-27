@@ -26,6 +26,14 @@ if command -v node >/dev/null && [ -d node_modules/postgres ]; then
   PGHOST=$DIR PGPORT=$PORT PGUSER=postgres PGDATABASE=motor node tests/motor/pruebas_base.mjs
   DENO=$(command -v deno || ls node_modules/.bin/deno 2>/dev/null || true)
   if [ -n "$DENO" ]; then PGHOST=$DIR PGPORT=$PORT PGUSER=postgres PGDATABASE=motor "$DENO" run -A --quiet tests/motor/humo_deno.ts; fi
+  # La demo (datos de ejemplo) se carga entera con el motor y queda coherente.
+  $PSQL -c "create database demo"
+  PSQLD="psql -h $DIR -p $PORT -U postgres -d demo -v ON_ERROR_STOP=1 -q"
+  $PSQLD -f tests/db/supabase_simulado.sql
+  for f in supabase/migrations/*.sql; do $PSQLD -f "$f"; done
+  $PSQLD -f supabase/demo/demo.sql
+  PGHOST=$DIR PGPORT=$PORT PGUSER=postgres PGDATABASE=demo node scripts/demo/cargar_demo.mjs > /dev/null
+  PGHOST=$DIR PGPORT=$PORT PGUSER=postgres PGDATABASE=demo node scripts/demo/verificar_demo.mjs
   echo "Todas las pruebas del motor pasaron."
 else
   echo "(Sin Node o sin npm install: no se probaron el motor ni el guardado.)"

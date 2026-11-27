@@ -45,7 +45,10 @@ jobs:
           CLAVE=$(curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/api-keys?reveal=true" \
             | jq -r '([.[] | select(.name == "anon")] + [.[] | select(.type == "publishable")])[0].api_key')
           [ -n "$CLAVE" ] && [ "$CLAVE" != "null" ] || { echo "No se pudo leer la clave pública de Supabase"; exit 1; }
-          printf "window.FADEFIL_CONFIG = { supabaseUrl: 'https://%s.supabase.co', supabaseKey: '%s' };\n" "$SUPABASE_PROJECT_REF" "$CLAVE" > app/config.js
+          # Si ya existe la demo (workflow Demo), la app real ofrece abrirla.
+          DEMO_SUB=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/fadefil-demo" | jq -r '.result.subdomain // empty')
+          DEMO=""; [ -n "$DEMO_SUB" ] && DEMO=", demoUrl: 'https://$DEMO_SUB'"
+          printf "window.FADEFIL_CONFIG = { supabaseUrl: 'https://%s.supabase.co', supabaseKey: '%s'%s };\n" "$SUPABASE_PROJECT_REF" "$CLAVE" "$DEMO" > app/config.js
           rm -f app/config.ejemplo.js
       - name: Publicar en Cloudflare Pages
         if: steps.secretos.outputs.listo == 'si'

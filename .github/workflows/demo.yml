@@ -1,0 +1,146 @@
+# DEMO: copia exacta de la app con datos inventados, en su propio proyecto de Supabase (fadefil-demo)
+# y su propia dirección en Cloudflare Pages (fadefil-demo). Nunca toca la base real.
+# - Se publica con cada cambio que llega a main (la demo siempre es la misma versión que la app real)
+#   y se recarga cada noche (las fechas de los datos de ejemplo quedan siempre "al día").
+# - Cada publicación vuelve a crear la base de la demo desde cero: migraciones + supabase/demo/demo.sql
+#   + datos de ejemplo (scripts/demo/cargar_demo.mjs) + foto para "Salir de la demo".
+# - Se entra con "Entrar a la demo" (sesión anónima = ADMIN de la demo), sin Google.
+# La clave de la base de la demo se deriva de SUPABASE_DB_PASSWORD (no hace falta otro secreto).
+name: Demo
+
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', 'supabase/**', 'scripts/demo/**', 'scripts/copiar_librerias.mjs', 'package.json', 'package-lock.json', '.github/workflows/demo.yml']
+  schedule:
+    - cron: '41 7 * * *'   # 04:41 hora argentina
+  workflow_dispatch:
+
+concurrency:
+  group: demo
+  cancel-in-progress: true
+
+jobs:
+  demo:
+    runs-on: ubuntu-24.04
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF_REAL: ${{ secrets.SUPABASE_PROJECT_REF }}
+      CLAVE_BASE_REAL: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROYECTO_DEMO: fadefil-demo
+      PROYECTO_PAGES: fadefil-demo
+      API: https://api.supabase.com/v1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+
+      - name: Proyecto de Supabase de la demo (se crea la primera vez)
+        run: |
+          CLAVE=$(printf '%s' "$CLAVE_BASE_REAL:fadefil-demo" | sha256sum | cut -c1-32)
+          echo "::add-mask::$CLAVE"
+          echo "SUPABASE_DB_PASSWORD=$CLAVE" >> $GITHUB_ENV
+          H="Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+          REF=$(curl -sf -H "$H" "$API/projects" | jq -r --arg n "$PROYECTO_DEMO" '[.[] | select(.name == $n)][0].id // empty')
+          if [ -z "$REF" ]; then
+            ORG=$(curl -sf -H "$H" "$API/projects" | jq -r --arg r "$SUPABASE_PROJECT_REF_REAL" '.[] | select(.id == $r) | .organization_id')
+            echo "Creando el proyecto $PROYECTO_DEMO en la organización de la app real (São Paulo, plan gratuito)…"
+            jq -n --arg n "$PROYECTO_DEMO" --arg o "$ORG" --arg p "$CLAVE" '{name: $n, organization_id: $o, region: "sa-east-1", db_pass: $p}' > p.json
+            COD=$(curl -s -X POST -H "$H" -H "Content-Type: application/json" "$API/projects" -d @p.json -o r.json -w '%{http_code}')
+            rm -f p.json
+            if [ "$COD" != "201" ] && [ "$COD" != "200" ]; then echo "Supabase no creó el proyecto ($COD):"; jq -r '.message // .' r.json; exit 1; fi
+            REF=$(jq -r '.id' r.json); rm -f r.json
+          fi
+          for i in $(seq 1 60); do
+            S=$(curl -sf -H "$H" "$API/projects/$REF" | jq -r '.status')
+            [ "$S" = "ACTIVE_HEALTHY" ] && break
+            [ "$S" = "INACTIVE" ] && { echo "El proyecto de la demo estaba en pausa: se reactiva"; curl -s -X POST -H "$H" "$API/projects/$REF/restore" -o /dev/null; }
+            echo "Esperando el proyecto ($S)…"; sleep 10
+          done
+          [ "$S" = "ACTIVE_HEALTHY" ] || { echo "El proyecto de la demo no quedó activo ($S)"; exit 1; }
+          echo "DEMO_REF=$REF" >> $GITHUB_ENV
+          echo "Proyecto de la demo: $REF"
+
+      - name: Base de la demo desde cero (migraciones + marca de demo)
+        run: |
+          supabase link --project-ref "$DEMO_REF" --password "$SUPABASE_DB_PASSWORD"
+          URL=""
+          for i in $(seq 1 12); do
+            URL=$(curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "$API/projects/$DEMO_REF/config/database/pooler" \
+              | jq -r '[.[] | select(.pool_mode == "session" or .database_type == "PRIMARY")][0].connection_string // empty')
+            [ -n "$URL" ] && break; sleep 10
+          done
+          [ -n "$URL" ] || { echo "No se pudo leer la conexión a la base de la demo"; exit 1; }
+          DB=$(echo "$URL" | sed "s|\[YOUR-PASSWORD\]|$(node -e 'process.stdout.write(encodeURIComponent(process.env.SUPABASE_DB_PASSWORD))')|")
+          echo "::add-mask::$DB"
+          echo "DATABASE_URL=$DB" >> $GITHUB_ENV
+          # Se borra todo lo de la app (solo en la demo) y se vuelve a armar con las migraciones.
+          [ "$DEMO_REF" != "$SUPABASE_PROJECT_REF_REAL" ] || { echo "El proyecto de la demo no puede ser el real."; exit 1; }
+          TIENE=$(psql "$DB" -At -c "select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'operaciones'")
+          if [ "$TIENE" = "1" ]; then
+            OK=$(psql "$DB" -At -c "select (exists (select 1 from config where clave = 'DEMO' and valor = 'SI') or not exists (select 1 from operaciones))::text")
+            [ "$OK" = "true" ] || { echo "Esta base tiene datos y no tiene la marca de demo: no se borra nada."; exit 1; }
+          fi
+          yes | supabase db reset --linked
+          psql "$DB" -v ON_ERROR_STOP=1 -q -c "drop schema if exists demo_base cascade"
+          psql "$DB" -v ON_ERROR_STOP=1 -q -f supabase/demo/demo.sql
+
+      - name: Datos de ejemplo
+        run: node scripts/demo/cargar_demo.mjs
+
+      - name: Función del servidor (modo demo)
+        run: |
+          supabase secrets set FADEFIL_DEMO=1 --project-ref "$DEMO_REF"
+          supabase functions deploy guardar --project-ref "$DEMO_REF" --use-api --no-verify-jwt
+
+      - name: Publicar la app de la demo en Cloudflare Pages
+        run: |
+          node scripts/copiar_librerias.mjs
+          CLAVE=$(curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "$API/projects/$DEMO_REF/api-keys?reveal=true" \
+            | jq -r '([.[] | select(.name == "anon")] + [.[] | select(.type == "publishable")])[0].api_key')
+          [ -n "$CLAVE" ] && [ "$CLAVE" != "null" ] || { echo "No se pudo leer la clave pública de la demo"; exit 1; }
+          echo "DEMO_CLAVE=$CLAVE" >> $GITHUB_ENV
+          printf "window.FADEFIL_CONFIG = { supabaseUrl: 'https://%s.supabase.co', supabaseKey: '%s', demo: true };\n" "$DEMO_REF" "$CLAVE" > app/config.js
+          rm -f app/config.ejemplo.js
+          npx --yes wrangler@3 pages project create "$PROYECTO_PAGES" --production-branch main 2>&1 | tail -2 || true
+          npx --yes wrangler@3 pages deploy app --project-name "$PROYECTO_PAGES" --branch main --commit-dirty=true
+          SUB=$(curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PROYECTO_PAGES" | jq -r '.result.subdomain')
+          echo "DEMO_URL=https://$SUB" >> $GITHUB_ENV
+
+      - name: Login de la demo (botón "Entrar a la demo", sin Google)
+        run: |
+          jq -n --arg url "$DEMO_URL" '{site_url: $url, uri_allow_list: ($url + "/**"), disable_signup: false, external_anonymous_users_enabled: true,
+            external_email_enabled: false, external_phone_enabled: false, external_google_enabled: false, hook_before_user_created_enabled: false}' > auth.json
+          COD=$(curl -s -X PATCH -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" "$API/projects/$DEMO_REF/config/auth" -d @auth.json -o r.json -w '%{http_code}')
+          rm -f auth.json
+          if [ "$COD" != "200" ]; then echo "Supabase no aceptó la configuración del login de la demo ($COD):"; jq -r '.message // .msg // .' r.json; exit 1; fi
+          rm -f r.json
+
+      - name: Comprobar la demo de punta a punta
+        run: |
+          sleep 15
+          for p in index.html co2.html datos.html config.js; do echo "$p: $(curl -s -o /dev/null -w '%{http_code}' "$DEMO_URL/$p")"; done
+          TOKEN=$(curl -sf -X POST -H "apikey: $DEMO_CLAVE" -H "Content-Type: application/json" "https://$DEMO_REF.supabase.co/auth/v1/signup" -d '{}' | jq -r '.access_token')
+          [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ] || { echo "No se pudo entrar a la demo (sesión anónima)"; exit 1; }
+          R=$(curl -sf -X POST -H "Authorization: Bearer $TOKEN" -H "apikey: $DEMO_CLAVE" -H "Content-Type: application/json" \
+            "https://$DEMO_REF.supabase.co/functions/v1/guardar" -d '{"accion":"api","fn":"apiInicio","args":[]}')
+          echo "$R" | jq -e '.exito and (.datos.clientes | length) > 20' >/dev/null || { echo "La demo no responde como se espera:"; echo "$R" | head -c 600; exit 1; }
+          echo "Entra a la demo y ve $(echo "$R" | jq '.datos.clientes | length') clientes."
+          R=$(curl -sf -X POST -H "Authorization: Bearer $TOKEN" -H "apikey: $DEMO_CLAVE" -H "Content-Type: application/json" \
+            "https://$DEMO_REF.supabase.co/functions/v1/guardar" -d '{"accion":"demo_reiniciar"}')
+          echo "$R" | jq -e '.exito' >/dev/null || { echo "Salir de la demo (reinicio) falló:"; echo "$R" | head -c 600; exit 1; }
+          echo "Reinicio de la demo: OK"
+          echo "### La demo está en $DEMO_URL" >> $GITHUB_STEP_SUMMARY
+          echo "La demo está en $DEMO_URL"
+
+      - name: Probar la demo en un navegador (entrar, recorrer, cargar algo y salir)
+        run: |
+          pip install --quiet playwright && python -m playwright install --with-deps chromium > /dev/null
+          DEMO_URL="$DEMO_URL" python scripts/demo/probar_demo.py

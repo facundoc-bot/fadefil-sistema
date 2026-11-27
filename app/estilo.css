@@ -287,3 +287,8 @@ label.check { display: flex; align-items: center; gap: 10px; font-weight: 500; m
 .carrito .fila { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .carrito .fila > div { min-width: 0; }
 @media (max-width: 700px) { .carrito .fila { grid-template-columns: 1fr; } }
+/* Demo */
+.marca-demo { font-style: normal; background: var(--lima); color: var(--negro); font-weight: 700; font-size: 11px; letter-spacing: .08em; border-radius: 999px; padding: 3px 9px; margin-left: auto; }
+.tope .demo-pill { background: var(--lima); border-color: var(--lima); color: var(--negro); font-weight: 700; }
+.tope .demo-pill:hover { filter: brightness(.95); }
+@media (max-width: 900px) { .tope .demo-pill { width: auto !important; padding: 0 12px !important; } }

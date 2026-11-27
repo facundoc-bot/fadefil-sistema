@@ -43,6 +43,11 @@ const CORS = {
 const responder = (cuerpo: unknown, estado = 200) =>
   new Response(JSON.stringify(cuerpo), { status: estado, headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' } });
 
+// DEMO (solo en el proyecto fadefil-demo, con el secreto FADEFIL_DEMO=1): "Entrar a la demo" abre una sesión
+// anónima, que trabaja como el usuario demo@fadefil.demo (ADMIN de la demo), y "Salir de la demo" vuelve a la foto.
+const DEMO = Deno.env.get('FADEFIL_DEMO') === '1';
+const EMAIL_DEMO = 'demo@fadefil.demo';
+
 /** Email del usuario logueado: se le pregunta al servicio de login de Supabase (valida el token). */
 async function emailDelLogin(req: Request): Promise<string> {
   const auth = req.headers.get('Authorization') || '';
@@ -52,6 +57,7 @@ async function emailDelLogin(req: Request): Promise<string> {
   });
   if (!r.ok) throw new ErrorDeUsuario('Tu sesión venció. Volvé a iniciar sesión.');
   const u = await r.json();
+  if (DEMO && u.is_anonymous) return EMAIL_DEMO;
   return String(u.email || '');
 }
 
@@ -81,6 +87,11 @@ Deno.serve(async (req) => {
       case 'co2_anular_factura': datos = await co2AnularFactura(sql, usuario, p.id, p.motivo); break;
       case 'co2_anular': datos = await co2Anular(sql, usuario, p.id, p.motivo); break;
       case 'co2_auditar': datos = await co2Auditar(sql, usuario); break;
+      case 'demo_reiniciar':
+        if (!DEMO) throw new ErrorDeUsuario('Esta acción existe solo en la demo.');
+        await sql`select demo_restaurar()`;
+        datos = { ok: true };
+        break;
       default: throw new ErrorDeUsuario('Acción desconocida: ' + p.accion);
     }
     return responder({ exito: true, datos });

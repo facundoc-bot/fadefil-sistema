@@ -969,7 +969,8 @@ function aplicarOT_(d, ef, W, ctx) {
     var actual = sis[p.slot];
     if (p.accion === 'RETIRAR' || p.accion === 'NO_DEVUELTO') {
       if (!actual) return;
-      Object.keys(actual.partes).forEach(function (k) {
+      // v2.2: en orden de código, para que los lotes se numeren igual al guardar de a poco y al rearmar desde el registro.
+      Object.keys(actual.partes).sort().forEach(function (k) {
         if (p.accion === 'RETIRAR') aRevisar(k, actual.partes[k]);
         else noDevuelto[k] = cant_((noDevuelto[k] || 0) + actual.partes[k]);
       });

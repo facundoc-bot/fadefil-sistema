@@ -7,11 +7,15 @@
 const CFG = window.FADEFIL_CONFIG || {};
 const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
 const FUNCION = CFG.supabaseUrl + '/functions/v1/guardar';
+/* DEMO: el mismo sistema con datos inventados (config.js de la demo trae demo: true). Se entra sin Google
+   y, al salir, todo vuelve a los datos de ejemplo. La app real trae demoUrl para ofrecer la demo. */
+const ES_DEMO = !!CFG.demo;
 
 /** Sesión activa; si no hay, muestra la pantalla de ingreso y no sigue. */
 async function exigirSesion() {
   const { data } = await sb.auth.getSession();
   if (data && data.session) return data.session;
+  if (ES_DEMO) return pantallaDemo();
   document.body.className = '';
   document.body.innerHTML = `
     <div style="min-height:100vh;display:grid;place-items:center;background:#0b0b0b;padding:24px">
@@ -23,6 +27,7 @@ async function exigirSesion() {
           <button id="btn-google" style="width:100%;background:#eeff41;color:#0b0b0b;border:0;font-weight:650;padding:13px 18px">Entrar con Google</button>
           <p id="login-error" style="color:#ff8a80;font-size:13px;margin:12px 0 0"></p>
         </div>
+        ${CFG.demoUrl ? `<p style="margin-top:18px;font-size:14px"><a href="${CFG.demoUrl}" target="_blank" rel="noopener" style="color:#eeff41">¿Querés verlo funcionando? Abrí la demo →</a></p>` : ''}
         <p style="color:#6e6e6e;font-size:12px;margin-top:18px">Premium Eco Water · AQA®</p>
       </div>
     </div>`;
@@ -41,7 +46,41 @@ async function exigirSesion() {
   throw new Error('SIN_SESION');
 }
 
-async function salir() { await sb.auth.signOut(); location.href = 'index.html'; }
+/** Pantalla de ingreso de la demo: un botón, sin cuenta. */
+function pantallaDemo() {
+  document.body.className = '';
+  document.body.innerHTML = `
+    <div style="min-height:100vh;display:grid;place-items:center;background:#0b0b0b;padding:24px">
+      <div style="width:100%;max-width:400px;text-align:center;color:#fff">
+        <img src="marca/logo-aqa-blanco.png" alt="AQA" style="height:64px;width:auto;margin-bottom:28px">
+        <div style="background:#1f1f1f;border-radius:24px;padding:28px 26px">
+          <span style="display:inline-block;background:#eeff41;color:#0b0b0b;font-weight:700;font-size:12px;letter-spacing:.08em;border-radius:999px;padding:4px 12px;margin-bottom:14px">DEMO</span>
+          <h1 style="margin:0 0 6px;font-size:22px;font-weight:650;letter-spacing:-.02em">Sistema FADEFIL</h1>
+          <p style="color:#a3a3a3;margin:0 0 22px;font-size:14px">Una copia del sistema con datos inventados, para mostrarlo y probarlo. Podés cargar lo que quieras: al salir, todo vuelve a los datos de ejemplo.</p>
+          <button id="btn-demo" style="width:100%;background:#eeff41;color:#0b0b0b;border:0;font-weight:650;padding:13px 18px">Entrar a la demo</button>
+          <p id="login-error" style="color:#ff8a80;font-size:13px;margin:12px 0 0"></p>
+        </div>
+        <p style="color:#6e6e6e;font-size:12px;margin-top:18px">Premium Eco Water · AQA®</p>
+      </div>
+    </div>`;
+  document.getElementById('btn-demo').onclick = async () => {
+    document.getElementById('btn-demo').disabled = true;
+    const { error } = await sb.auth.signInAnonymously();
+    if (error) { document.getElementById('login-error').textContent = error.message; document.getElementById('btn-demo').disabled = false; return; }
+    location.reload();
+  };
+  throw new Error('SIN_SESION');
+}
+
+async function salir() {
+  if (ES_DEMO) { try { await servidor('demo_reiniciar'); } catch (e) { /* se sale igual */ } }
+  await sb.auth.signOut(); location.href = 'index.html';
+}
+/** Demo: vuelve a los datos de ejemplo sin salir. */
+async function reiniciarDemo() {
+  if (typeof ocupado === 'function') ocupado('Volviendo a los datos de ejemplo…');
+  try { await servidor('demo_reiniciar'); location.reload(); } catch (e) { if (typeof libre === 'function') libre(); aviso(e.message, 'err'); }
+}
 
 /** Llama a la función del servidor. Devuelve "datos" o lanza el error con el mensaje para el usuario. */
 async function servidor(accion, cuerpo) {
@@ -267,16 +306,18 @@ function armarMarco(pagina, opciones) {
   document.body.classList.add('con-marco');
   const lateral = document.createElement('aside');
   lateral.className = 'lateral';
-  lateral.innerHTML = `<div class="marca"><img src="marca/logo-aqa-blanco.png" alt="AQA"><span>Sistema<br>FADEFIL</span></div>
+  lateral.innerHTML = `<div class="marca"><img src="marca/logo-aqa-blanco.png" alt="AQA"><span>Sistema<br>FADEFIL</span>${ES_DEMO ? '<em class="marca-demo">DEMO</em>' : ''}</div>
     <nav id="pestanas">${MENU.filter((g) => !g.fijo).map((g) => grupoMenu(g, pagina)).join('')}</nav>
-    <nav class="menu-fijo solo-admin">${MENU.filter((g) => g.fijo).map((g) => grupoMenu(g, pagina)).join('')}</nav>
+    <nav class="menu-fijo solo-admin">${MENU.filter((g) => g.fijo).map((g) => grupoMenu(g, pagina)).join('')}${CFG.demoUrl && !ES_DEMO
+      ? `<a href="${CFG.demoUrl}" target="_blank" rel="noopener" title="El sistema con datos inventados, para mostrarlo">${icono('presentation')}<span>Abrir la demo</span></a>` : ''}</nav>
     <div class="pie"><div class="avatar" id="avatar">·</div><div class="quien"><b id="quien-nombre">Cargando…</b><small id="quien-rol"></small></div>
-      <button onclick="salir()" title="Cerrar la sesión">${icono('log-out')}</button></div>`;
+      <button onclick="salir()" title="${ES_DEMO ? 'Salir de la demo (todo vuelve a los datos de ejemplo)' : 'Cerrar la sesión'}">${icono('log-out')}</button></div>`;
   const tope = document.createElement('header');
   tope.className = 'tope';
   tope.innerHTML = `<button class="boton-icono boton-menu" onclick="document.body.classList.toggle('menu-abierto')" aria-label="Menú">${icono('menu')}</button>
     <h1 id="titulo-seccion"></h1><div class="espacio"></div>${opciones.extra || ''}
     <span class="usuario" id="usuario"></span>
+    ${ES_DEMO ? `<button class="boton-icono demo-pill" onclick="reiniciarDemo()" title="Datos inventados. Vuelve a los datos de ejemplo (se borra lo que se cargó).">${icono('rotate-ccw')}<span>DEMO<span class="ocultar-movil"> · Reiniciar</span></span></button>` : ''}
     <button class="boton-icono" onclick="${opciones.actualizar || 'location.reload()'}" title="Volver a traer los datos (no borra lo que tengas sin guardar)">${icono('refresh-cw')}<span class="ocultar-movil">Actualizar</span></button>`;
   const inferior = document.createElement('nav');
   inferior.className = 'inferior';
