@@ -477,6 +477,22 @@ await prueba('Carrito de envíos: reserva en CABA, se completa, se despacha; "En
   igual((await auditar(sql, admin)).corregidas, [], 'la auditoría rearma los carritos igual que el guardado de a poco');
 });
 
+await prueba('CO₂: "Otro peso" en un remito se suma a la lista de cargas', async () => {
+  const antes = (await uno(sql`select valor from co2_config where clave = 'CARGAS_KG'`)).valor;
+  const rem = (nro, kg, nueva) => ({ clase: 'REMITO', datos: { nroRemito: nro, fecha: hoy, idDeposito: 'Depósito Mendoza', proveedor: 'LINDE', origenCarga: 'MANUAL',
+    lineas: [{ tipo: 'ENTREGA', serie: 'P' + nro, pesoKg: kg, ...(nueva ? { cargaNueva: true } : {}) }] } });
+  si(codigos(await co2Validar(sql, carga, [rem('7001', 6)])).includes('CARGA_INVALIDA'), 'sin marcarlo como nuevo, un peso que no está en la lista no pasa');
+  let error = '';
+  try { await co2Validar(sql, carga, [rem('7001', 150, true)]); } catch (e) { error = e.message; }
+  si(/hasta 100/.test(error), 'un peso nuevo absurdo se rechaza: ' + error);
+  const r = await co2Guardar(sql, carga, [rem('7001', 6, true)]);
+  igual(r.ok, true, 'se guarda con el peso nuevo: ' + JSON.stringify(r.resultados && r.resultados.map((x) => x.errores)));
+  const despues = (await uno(sql`select valor from co2_config where clave = 'CARGAS_KG'`)).valor;
+  si(!/(^|; )6(;|$)/.test(antes) && /(^|; )6(;|$)/.test(despues), 'el 6 se suma a la lista: ' + antes + ' → ' + despues);
+  si(r.cargas.includes(6), 'la pantalla recibe la lista nueva');
+  igual(codigos(await co2Validar(sql, carga, [rem('7002', 6)])), [], 'de ahí en más el 6 está en la lista');
+});
+
 await sql.end();
 console.log(`Guardado en la base: ${ok} pruebas OK${fallas ? ', ' + fallas + ' con fallas' : ''}.`);
 if (fallas) process.exit(1);

@@ -332,7 +332,8 @@ document.addEventListener('mousedown', (e) => { const c = document.getElementByI
         <div><label for="alta-ubic">Dónde está hoy</label>
           <select id="alta-ubic" onchange="altaUbicacion()"><option value="DEPOSITO">En el depósito</option><option value="CLIENTE">En un cliente</option></select></div>
         <div><label for="alta-proveedor">Proveedor</label><select id="alta-proveedor"></select></div>
-        <div><label for="alta-carga">Carga</label><select id="alta-carga"></select></div>
+        <div><label for="alta-carga">Carga</label><select id="alta-carga" onchange="$('alta-otro-bloque').style.display=this.value==='__OTRO__'?'':'none'"></select></div>
+        <div id="alta-otro-bloque" style="display:none"><label for="alta-otro">Peso nuevo (kg)</label><input type="number" id="alta-otro" min="0.01" max="100" step="0.01" placeholder="Ej.: 6"></div>
         <div id="alta-estado-bloque"><label for="alta-estado">Estado</label>
           <select id="alta-estado"><option value="LLENO_DISPONIBLE">Lleno disponible</option><option value="VACIO_DISPONIBLE">Vacío disponible</option></select></div>
       </div>
@@ -450,8 +451,7 @@ async function recargar(forzar) {
     const opcDep = S.ini.depositos.map(d => `<option value="${esc(d.id)}"${d.activo ? '' : ' disabled'}>${esc(d.nombre)}${d.direccion ? ' · ' + esc(d.direccion) : ''}${d.activo ? '' : ' — inactivo'}</option>`).join('');
     $('rem-deposito').innerHTML = '<option value="">— Elegí —</option>' + opcDep;
     $('alta-deposito').innerHTML = '<option value="">— Elegí —</option>' + opcDep;
-    const opcCarga = '<option value="">— Elegí —</option>' + S.ini.cargas.map(p => `<option value="${p}">${p} kg</option>`).join('');
-    $('alta-carga').innerHTML = opcCarga;
+    $('alta-carga').innerHTML = opcCargaAlta();
     $('alta-proveedor').innerHTML = opcProv('LINDE');
     if (!S.altaProvListo) { S.altaProvListo = true; $('alta-cliente').addEventListener('change', () => { const c = cliente($('alta-cliente').value); if (c) $('alta-proveedor').value = provDePlazaCo2(c.plazaId); }); } $('rr-proveedor').innerHTML = '<option value="">Todos</option>' + opcProv('');
     elegirProvRemito(S.provRemito || 'LINDE'); elegirProvFactura(S.provFactura || 'LINDE');
@@ -913,10 +913,33 @@ function filtrarSerieRetiro(i, input, conEnter) {
 function celdaCarga(l, i) {
   const conocida = S.ini.pesos[norm(l.serie)];
   if (l.tipo === 'RETIRO') return `<span class="ayuda" style="margin:0">${l.serie ? cargaTxt(conocida) : ''}</span>`;
-  if (conocida) { l.pesoKg = conocida; return `<span class="ayuda" style="margin:0">${conocida} kg · registrada</span>`; }
-  return `<select aria-label="Carga" onchange="S.remito.lineas[${i}].pesoKg=Number(this.value);remitoCambio()">
-    <option value="">— Carga —</option>${S.ini.cargas.map(p => `<option value="${p}"${Number(l.pesoKg) === p ? ' selected' : ''}>${p} kg</option>`).join('')}</select>`;
+  if (conocida) { l.pesoKg = conocida; l.cargaNueva = false; return `<span class="ayuda" style="margin:0">${cargaTxt(conocida)} · registrada</span>`; }
+  // v2.2: "Otro peso…" permite cargar uno que no está en la lista; al guardar el remito queda en la lista.
+  if (l.otroPeso) return `<span style="display:inline-flex;gap:6px;align-items:center"><input type="number" min="0.01" max="100" step="0.01" style="width:90px" placeholder="kg" aria-label="Peso nuevo en kg" value="${esc(l.pesoKg || '')}"
+      oninput="S.remito.lineas[${i}].pesoKg=Number(this.value)||'';S.remito.lineas[${i}].cargaNueva=true;remitoCambio()" onchange="pintarLineas()"> kg
+    <button class="link" title="Volver a la lista" onclick="S.remito.lineas[${i}].otroPeso=false;S.remito.lineas[${i}].cargaNueva=false;S.remito.lineas[${i}].pesoKg='';pintarLineas();remitoCambio()">Lista</button></span>`;
+  return `<select aria-label="Carga" onchange="elegirCargaLinea(${i}, this.value)">
+    <option value="">— Carga —</option>${cargasDisponibles().map(p => `<option value="${p}"${Number(l.pesoKg) === p ? ' selected' : ''}>${cargaTxt(p)}</option>`).join('')}
+    <option value="__OTRO__">Otro peso…</option></select>`;
 }
+/* Pesos de la lista más los nuevos que ya se escribieron en este remito. */
+function cargasDisponibles() {
+  const nuevas = S.remito ? S.remito.lineas.filter(l => l.cargaNueva && Number(l.pesoKg) > 0).map(l => Number(l.pesoKg)) : [];
+  return [...new Set(S.ini.cargas.concat(nuevas))].sort((a, b) => a - b);
+}
+function elegirCargaLinea(i, v) {
+  const l = S.remito.lineas[i];
+  if (v === '__OTRO__') { l.otroPeso = true; l.pesoKg = ''; l.cargaNueva = true; pintarLineas(); const inp = document.querySelector('#rem-lineas tr:nth-child(' + (i + 1) + ') .c-carga input'); if (inp) inp.focus(); }
+  else { l.pesoKg = Number(v) || ''; l.cargaNueva = !S.ini.cargas.includes(Number(v)) && !!v; }
+  remitoCambio();
+}
+/* Después de guardar: la lista de pesos puede haber sumado alguno. */
+function actualizarCargas(cargas) {
+  if (!cargas || !cargas.length) return;
+  S.ini.cargas = cargas;
+  $('alta-carga').innerHTML = opcCargaAlta();
+}
+function opcCargaAlta() { return '<option value="">— Elegí —</option>' + S.ini.cargas.map(p => `<option value="${p}">${cargaTxt(p)}</option>`).join('') + '<option value="__OTRO__">Otro peso…</option>'; }
 function pintarLineas(malas) {
   malas = malas || {};
   $('rem-lineas').innerHTML = S.remito.lineas.map((l, i) => {
@@ -1043,6 +1066,7 @@ function opRemito() {
     plazaTexto: S.remito.plazaTexto || '', tipoCopia: $('rem-copia').value, observaciones: $('rem-obs').value.trim(),
     archivoUrl: S.remito.archivoUrl || '', archivoHash: S.remito.archivoHash || '', origenCarga: S.remito.origenCarga || 'MANUAL',
     lineas: S.remito.lineas.map(l => Object.assign({ tipo: l.tipo, serie: norm(l.serie), pesoKg: Number(l.pesoKg) || '', serieLeidaIA: l.serieLeidaIA || '' },
+      l.cargaNueva && l.tipo === 'ENTREGA' && Number(l.pesoKg) > 0 && !S.ini.cargas.includes(Number(l.pesoKg)) ? { cargaNueva: true } : {},
       l.dudosa ? { dudosa: true, sugerida: l.sugerida || '', aprobada: !!l.aprobada } : {}))
   } };
 }
@@ -1070,7 +1094,7 @@ async function confirmarRemito() {
     const eraPendiente = !!S.remito.idPendiente;
     limpiarRemito();
     if (eraPendiente) await verPendientesAprobacion(true);
-    aplicarCilindros(r.cilindros);
+    aplicarCilindros(r.cilindros); actualizarCargas(r.cargas);
   } catch (e) { aviso(e.message, 'err'); }
   libre();
 }
@@ -1415,14 +1439,17 @@ function altaUbicacion() {
   $('alta-estado-bloque').style.display = cli ? 'none' : '';
 }
 function agregarAltas() {
-  const fecha = $('alta-fecha').value, dep = $('alta-deposito').value, ubic = $('alta-ubic').value, pesoKg = Number($('alta-carga').value);
+  const otro = $('alta-carga').value === '__OTRO__';
+  const fecha = $('alta-fecha').value, dep = $('alta-deposito').value, ubic = $('alta-ubic').value, pesoKg = Number(otro ? $('alta-otro').value : $('alta-carga').value);
+  if (otro && !(pesoKg > 0 && pesoKg <= 100)) return aviso('Indicá el peso nuevo en kg (mayor que 0 y hasta 100).', 'err');
+  const cargaNueva = otro && !S.ini.cargas.includes(pesoKg);
   const idCliente = ubic === 'CLIENTE' ? $('alta-cliente').value : '', proveedor = $('alta-proveedor').value || 'LINDE';
   const series = $('alta-series').value.split(/[\s,;]+/).map(norm).filter(Boolean);
   if (!fecha || !dep || !pesoKg) return aviso('Completá fecha, depósito de origen y carga.', 'err');
   if (ubic === 'CLIENTE' && !idCliente) return aviso('Elegí el cliente.', 'err');
   if (!series.length) return aviso('Cargá al menos una serie.', 'err');
   const estado = ubic === 'CLIENTE' ? 'EN_USO' : $('alta-estado').value;
-  series.forEach(serie => S.altas.push({ clase: 'ALTA', datos: { fecha, serie, pesoKg, proveedor, idDepositoOrigen: dep, ubicacion: ubic, idCliente, estado } }));
+  series.forEach(serie => S.altas.push({ clase: 'ALTA', datos: Object.assign({ fecha, serie, pesoKg, proveedor, idDepositoOrigen: dep, ubicacion: ubic, idCliente, estado }, cargaNueva ? { cargaNueva: true } : {}) }));
   $('alta-series').value = '';
   altasCambio();
 }
@@ -1453,7 +1480,7 @@ async function guardarAltas() {
     const r = await llamar('apiConfirmar', S.altas.map(o => ({ clase: o.clase, datos: o.datos })));
     if (!r.ok) { $('altas-resultado').innerHTML = htmlResultados(r.resultados, i => S.altas[i].datos.serie); S.altasValidado = false; $('btn-guardar-altas').disabled = true; libre(); return; }
     aviso(r.mensaje); S.altas = []; altasCambio(); $('altas-resultado').innerHTML = '';
-    aplicarCilindros(r.cilindros);
+    aplicarCilindros(r.cilindros); actualizarCargas(r.cargas);
   } catch (e) { aviso(e.message, 'err'); }
   libre();
 }

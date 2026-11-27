@@ -255,9 +255,42 @@ function validarPedidoCo2(usuario, ops) {
   return JSON.parse(JSON.stringify(ops)).map((o) => ({ clase: String(o.clase || ''), datos: o.datos || {} }));
 }
 
+/* ---------------------------------------------------------------------------
+ *  Pesos nuevos (v2.2, pedido 26/11/2026): al cargar un remito o el inventario inicial se
+ *  puede elegir "Otro peso"; esa carga (marcada cargaNueva) vale para esa operación y, al
+ *  guardarla, se suma a la lista de Configuración CO₂ (CARGAS_KG).
+ * ------------------------------------------------------------------------ */
+const PESO_MAXIMO_KG = 100;
+function cargasNuevas(ops) {
+  const out = new Set();
+  (ops || []).forEach((op) => {
+    const d = op.datos || {};
+    if (op.clase === 'ALTA' && d.cargaNueva) out.add(Number(d.pesoKg));
+    if (op.clase === 'REMITO') (d.lineas || []).forEach((l) => { if (l.cargaNueva && String(l.tipo).toUpperCase() === 'ENTREGA') out.add(Number(l.pesoKg)); });
+  });
+  const lista = [...out];
+  const mal = lista.filter((p) => !(p > 0 && p <= PESO_MAXIMO_KG) || Math.round(p * 100) !== p * 100);
+  if (mal.length) throw new ErrorDeUsuario('El peso nuevo tiene que ser un número de kg mayor que 0 y hasta ' + PESO_MAXIMO_KG + ' (con hasta 2 decimales).');
+  return lista;
+}
+function sumarCargasAlContexto(cctx, nuevas) {
+  nuevas.forEach((p) => { if (cctx.cargasValidas.indexOf(p) < 0) cctx.cargasValidas.push(p); });
+  cctx.cargasValidas.sort((a, b) => a - b);
+}
+async function guardarCargasNuevas(tx, cctx, nuevas, usuario) {
+  if (!nuevas.length) return;
+  const lista = leerCargas((await tx`select valor from co2_config where clave = 'CARGAS_KG'`).map((r) => r.valor)[0]);
+  const sumar = nuevas.filter((p) => lista.indexOf(p) < 0);
+  if (!sumar.length) return;
+  const valor = lista.concat(sumar).sort((a, b) => a - b).map((p) => String(p).replace('.', ',')).join('; ');
+  await tx`update co2_config set valor = ${valor} where clave = 'CARGAS_KG'`;
+  await anotar(tx, usuario.email, 'CO2_PESO_NUEVO', sumar.join(', ') + ' kg', 'Lista: ' + valor);
+}
+
 export async function co2Validar(sql, usuario, opsPedido) {
   const ops = validarPedidoCo2(usuario, opsPedido);
   const cctx = await co2Contexto(sql);
+  sumarCargasAlContexto(cctx, cargasNuevas(ops));
   cctx.rolUsuario = usuario.rol; // las series dudosas las aprueba un administrador
   const sim = co2_simularLote(ops, cctx);
   return { ok: sim.ok, resultados: sim.resultados };
@@ -270,16 +303,19 @@ export async function co2Guardar(sql, usuario, opsPedido) {
     await tx`select pg_advisory_xact_lock(${BLOQUEO})`;
     const cctx = await co2Contexto(tx);
     cctx.rolUsuario = usuario.rol;
+    const nuevas = cargasNuevas(ops);
+    sumarCargasAlContexto(cctx, nuevas);
     const sim = co2_simularLote(ops, cctx);
     const resultados = sim.resultados.map((r) => ({ clase: r.clase, errores: r.errores, advertencias: r.advertencias }));
     if (!sim.ok) return { ok: false, resultados, mensaje: 'Hay errores: no se guardó nada.' };
+    await guardarCargasNuevas(tx, cctx, nuevas, usuario);
     const pendientes = ops.filter((o) => o.clase === 'REMITO' && o.datos.idPendiente).map((o) => String(o.datos.idPendiente));
     if (pendientes.length) await tx`delete from co2_remitos where remito_id = any(${pendientes}) and estado = 'PENDIENTE_APROBACION'`;
     const C = await contadores(tx);
     const r = await co2Escribir(tx, ops, sim, cctx, usuario, { C });
     await C.guardar();
     await anotar(tx, usuario.email, 'CO2_GUARDAR', r.ids.join(', '), 'OK (' + r.movimientos + ' movimientos)');
-    return { ok: true, resultados, ids: r.ids, confirmadas: r.confirmadas, cilindros: r.cilindros, mensaje: 'Se guardaron ' + r.ids.length + ' operaciones y ' + r.movimientos + ' movimientos.' };
+    return { ok: true, resultados, ids: r.ids, confirmadas: r.confirmadas, cilindros: r.cilindros, cargas: cctx.cargasValidas, mensaje: 'Se guardaron ' + r.ids.length + ' operaciones y ' + r.movimientos + ' movimientos.' };
   });
 }
 
@@ -295,10 +331,13 @@ export async function co2EnviarAprobacion(sql, usuario, d) {
     await tx`select pg_advisory_xact_lock(${BLOQUEO})`;
     const cctx = await co2Contexto(tx);
     cctx.rolUsuario = 'ADMIN';
+    const nuevas = cargasNuevas([{ clase: 'REMITO', datos: d }]);
+    sumarCargasAlContexto(cctx, nuevas);
     const prueba = JSON.parse(JSON.stringify(d));
     prueba.lineas.forEach((l) => { if (l.dudosa) l.aprobada = true; });
     const sim = co2_simularLote([{ clase: 'REMITO', datos: prueba }], cctx);
     if (!sim.ok) return { ok: false, resultados: sim.resultados.map((r) => ({ errores: r.errores, advertencias: r.advertencias })), mensaje: 'Hay errores: corregilos antes de enviarlo a aprobación.' };
+    await guardarCargasNuevas(tx, cctx, nuevas, usuario); // así, cuando se apruebe, el peso ya está en la lista
     let id = '', creado = null;
     if (d.idPendiente) {
       const [p] = await tx`select remito_id, created_by, created_at from co2_remitos where remito_id = ${String(d.idPendiente)} and estado = 'PENDIENTE_APROBACION'`;
