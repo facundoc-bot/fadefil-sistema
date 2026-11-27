@@ -463,7 +463,9 @@ export async function guardarLote(sql, usuario, opsPedido, aceptarAdvertencias) 
           serie_retirada: ef.serieOut || '', serie_instalada: ef.serieIn || '', falla: d.falla || '',
           sistema: textoPlanSistema_(ef.plan, 'SISTEMA', d.sistema, ctx), prefiltro: textoPlanSistema_(ef.plan, 'PREFILTRO', d.prefiltro, ctx),
           comentarios: d.comentarios || '', pendiente: d.pendiente || '', ot_persat: d.nOtPersat || '', modalidad_co2: d.modalidadCo2 || '',
-          tipo_mantenimiento: ef.tipo === 'MANTENIMIENTO' ? normalizarTipoMant(d.tipoMant) || 'PROFUNDO' : '', estado: 'VIGENTE', created_by: usuario.email });
+          tipo_mantenimiento: ef.tipo === 'MANTENIMIENTO' ? normalizarTipoMant(d.tipoMant) || 'PROFUNDO' : '',
+          // La entrega de CO₂ de emergencia queda marcada como emergencia (el resto se marca en Seguimiento de OT).
+          emergencia: ef.tipo === 'ENTREGA_CO2' && /^EMERGENCIA/.test(String(d.modalidadCo2 || '').toUpperCase()), estado: 'VIGENTE', created_by: usuario.email });
         const lineas = lineasDeOT_(id, ef, d, ctx);
         // Cilindros de CO₂: una línea por movimiento (código CO2); las series quedan en co2_trabajo_lineas (trabajo = esta OT).
         const cil = cilindrosDeOT_(d), cob = co2VaACobranza_(ef.tipo, String(d.modalidadCo2 || '').toUpperCase());

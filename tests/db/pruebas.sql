@@ -242,7 +242,6 @@ do $$ begin
 end $$;
 commit;
 
-\echo 'Todas las pruebas de la base pasaron.'
 
 -- ---------------------------------------------------------------- seguridad general
 -- Toda tabla de la base tiene seguridad por filas (una tabla nueva sin permisos quedaría abierta),
@@ -283,3 +282,32 @@ do $$ begin
     raise exception 'FALLA: proveedores iniciales'; end if;
   raise notice 'OK: esquema de mantenimientos en Configuración; CO₂ con LINDE (CABA y resto) y Gases Nordelta (GBA)';
 end $$;
+
+-- ---------------------------------------------------------------- v2.3: seguimiento de las OT
+do $$ begin
+  begin update ot set fecha_solicitud = '2026-02-05' where ot_id = 'OT-000001'; raise exception 'FALLA: se guardó una solicitud posterior a la OT';
+  exception when check_violation then null; end;
+  begin update ot set emergencia = true where ot_id = 'OT-000001'; raise exception 'FALLA: una instalación quedó como emergencia';
+  exception when check_violation then null; end;
+  begin update ot set excluir_respuesta = true where ot_id = 'OT-000001'; raise exception 'FALLA: se excluyó de la métrica sin motivo';
+  exception when check_violation then null; end;
+  begin update ot set rebotes = -1 where ot_id = 'OT-000001'; raise exception 'FALLA: rebotes negativos';
+  exception when check_violation then null; end;
+  begin update ot set demora_min = 2000 where ot_id = 'OT-000001'; raise exception 'FALLA: demora de más de 24 h';
+  exception when check_violation then null; end;
+  update ot set fecha_solicitud = '2026-01-20', rebotes = 1, demora_min = 30, excluir_respuesta = true, excluir_motivo = 'Falta documentación para ingresar' where ot_id = 'OT-000001';
+  if (select count(*) from listas where tipo in ('MOTIVO_REBOTE', 'MOTIVO_DEMORA', 'MOTIVO_EXCLUSION')) < 10 then raise exception 'FALLA: faltan los motivos sugeridos'; end if;
+  if (select valor from config where clave = 'VERSION') <> '2.3' then raise exception 'FALLA: versión'; end if;
+  raise notice 'OK: seguimiento de OT (solicitud no posterior, emergencia solo en mantenimientos/reparaciones/entregas, exclusión con motivo, rebotes y demora acotados)';
+end $$;
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"email":"carga@empresa.com"}';
+do $$ begin
+  begin update ot set rebotes = 3 where ot_id = 'OT-000001'; raise exception 'FALLA: la app escribió el seguimiento directo en la base';
+  exception when insufficient_privilege then null; end;
+  raise notice 'OK: el seguimiento se guarda solo por la función del servidor';
+end $$;
+commit;
+
+\echo 'Todas las pruebas de la base pasaron.'

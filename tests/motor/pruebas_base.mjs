@@ -493,6 +493,44 @@ await prueba('CO₂: "Otro peso" en un remito se suma a la lista de cargas', asy
   igual(codigos(await co2Validar(sql, carga, [rem('7002', 6)])), [], 'de ahí en más el 6 está en la lista');
 });
 
+await prueba('Seguimiento de OT: solicitud, emergencia, rebotes, demora y exclusión; errores por OT; CO₂ de emergencia marcada sola', async () => {
+  const ini = await api(sql, consulta, 'apiInicio', []);
+  si(ini.listas.motivoRebote.includes('No atendieron') && ini.listas.motivoExclusion.length >= 3, 'motivos sugeridos en las listas');
+  const s = await api(sql, consulta, 'apiSeguimiento', [hace(400), hoy]);
+  si(s.ots.length >= 3 && s.ots.every((o) => o.tipo !== 'ALTA_INICIAL' && !o.revisada), 'OT del período, sin altas iniciales y sin revisar');
+  igual(s.sinRevisar.cantidad, s.ots.length, 'cuenta las que faltan revisar');
+  igual(await uno(sql`select emergencia from ot where modalidad_co2 = 'EMERGENCIA_CON_COSTO'`), { emergencia: true }, 'la entrega de CO₂ de emergencia queda marcada sola');
+  let falla = '';
+  try { await sql`update ot set emergencia = false where modalidad_co2 = 'EMERGENCIA_CON_COSTO'`; } catch (e) { falla = e.code; }
+  igual(falla, '23514', 'y no se puede desmarcar');
+  const co2 = s.ots.find((o) => o.tipo === 'ENTREGA_CO2' && o.modalidadCo2 === 'TRADICIONAL');
+  igual([co2.emergencia, co2.emergenciaFija, co2.puedeEmergencia], [false, false, true], 'la tradicional se puede marcar a mano');
+  const mant = s.ots.find((o) => o.tipo === 'MANTENIMIENTO'), inst = s.ots.find((o) => o.tipo === 'INSTALACION');
+  si(mant && inst && !inst.puedeEmergencia, 'hay mantenimiento e instalación para probar');
+  let r = await api(sql, carga, 'apiGuardarSeguimiento', [[{ id: mant.id, solicitud: sumarDias(mant.fecha, 1), rebotes: 1 }, { id: inst.id, emergencia: true, excluir: true }]]);
+  igual(r.ok, false, 'con errores no se guarda');
+  igual(r.errores.map((e) => e.id), [mant.id, inst.id, inst.id], 'un error por problema, con su OT: ' + JSON.stringify(r.errores));
+  igual(await uno(sql`select rebotes, revisada_at from ot where ot_id = ${mant.id}`), { rebotes: 0, revisada_at: null }, 'no se guardó nada');
+  let error = '';
+  try { await api(sql, consulta, 'apiGuardarSeguimiento', [[{ id: mant.id }]]); } catch (e) { error = e.message; }
+  si(/no permite/.test(error), 'CONSULTA no guarda el seguimiento');
+  r = await api(sql, carga, 'apiGuardarSeguimiento', [[
+    { id: mant.id, solicitud: sumarDias(mant.fecha, -5), emergencia: true, rebotes: 2, reboteMotivo: '  No atendieron ', demora: 40, demoraMotivo: 'No lo atendían' },
+    { id: inst.id, solicitud: sumarDias(inst.fecha, -30), excluir: true, excluirMotivo: 'El cliente pidió una fecha más adelante', demoraMotivo: 'se ignora sin demora' },
+    { id: co2.id, emergencia: true }]]);
+  igual(r.ok, true, 'se guarda: ' + JSON.stringify(r.errores));
+  igual(await uno(sql`select emergencia, rebotes, rebote_motivo, demora_min, revisada_por from ot where ot_id = ${mant.id}`),
+    { emergencia: true, rebotes: 2, rebote_motivo: 'No atendieron', demora_min: 40, revisada_por: 'carga@empresa.com' }, 'mantenimiento');
+  igual(await uno(sql`select excluir_respuesta, excluir_motivo, demora_motivo from ot where ot_id = ${inst.id}`),
+    { excluir_respuesta: true, excluir_motivo: 'El cliente pidió una fecha más adelante', demora_motivo: '' }, 'instalación excluida de la métrica');
+  igual(r.ots.find((o) => o.id === co2.id).emergencia, true, 'una entrega de CO₂ tradicional marcada como emergencia');
+  igual(r.sinRevisar.cantidad, s.ots.length - 3, 'quedan 3 menos sin revisar');
+  const f = await api(sql, consulta, 'apiFichaCliente', [mant.idCliente]);
+  igual(f.historial.find((h) => h.nOt === mant.id).seguimiento, { emergencia: true, rebotes: 2, reboteMotivo: 'No atendieron', demora: 40, demoraMotivo: 'No lo atendían', solicitud: sumarDias(mant.fecha, -5), respuesta: 5 },
+    'el historial del cliente muestra el seguimiento');
+  igual((await auditar(sql, admin)).corregidas, [], 'el seguimiento no toca el estado');
+});
+
 await sql.end();
 console.log(`Guardado en la base: ${ok} pruebas OK${fallas ? ', ' + fallas + ' con fallas' : ''}.`);
 if (fallas) process.exit(1);

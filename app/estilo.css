@@ -292,3 +292,18 @@ label.check { display: flex; align-items: center; gap: 10px; font-weight: 500; m
 .tope .demo-pill { background: var(--lima); border-color: var(--lima); color: var(--negro); font-weight: 700; }
 .tope .demo-pill:hover { filter: brightness(.95); }
 @media (max-width: 900px) { .tope .demo-pill { width: auto !important; padding: 0 12px !important; } }
+
+/* v2.3: Seguimiento de OT (tabla editable) */
+.tabla-seg td { vertical-align: top; padding-left: 6px; padding-right: 6px; } .tabla-seg td.nowrap { white-space: nowrap; }
+.tabla-seg input[type=date] { width: 138px; padding: 7px 8px; font-size: 14px; }
+.tabla-seg input.num-chico { width: 72px; padding: 7px 8px; font-size: 14px; text-align: right; }
+.tabla-seg input.motivo { display: block; width: 138px; margin-top: 6px; padding: 6px 8px; font-size: 13px; }
+.tabla-seg .dias-seg { margin-top: 4px; white-space: nowrap; }
+.tabla-seg input[type=checkbox] { width: 18px; height: 18px; margin: 9px 0 0; }
+.tabla-seg label.excluir-seg { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--suave); margin: 6px 0 0; cursor: pointer; }
+.tabla-seg label.excluir-seg input { margin: 0; width: 16px; height: 16px; }
+.tabla-seg tr.cambiada td { background: #fbfde6; }
+.tabla-seg tr.con-error td { background: var(--err-f); }
+.tabla-seg .err-seg { color: var(--err); font-size: 12.5px; margin-top: 4px; max-width: 220px; }
+.insignias-seg { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+#seg-resumen tfoot td { border-top: 2px solid var(--linea-2); font-weight: 600; }

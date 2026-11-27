@@ -252,7 +252,30 @@ await paso('CO₂: LINDE retira los vacíos del central y trae llenos; factura d
   if (!f || f.ok === false) throw new Error('factura: ' + JSON.stringify(f).slice(0, 500));
 });
 
+// ---------------------------------------------------------------- seguimiento de OT (v2.3)
+// Lo que completaría quien revisa las OT: solicitud, emergencias, rebotes, demoras y exclusiones.
+// Las 8 OT más nuevas quedan sin revisar, para que se vea qué falta.
+await paso('Seguimiento de las OT (menos las 8 más nuevas)', async () => {
+  await sql`with x as (select ot_id, fecha, tipo, abs(hashtext(ot_id)) % 100 as h from ot
+      where estado = 'VIGENTE' and tipo <> 'ALTA_INICIAL'
+        and ot_id not in (select ot_id from ot where estado = 'VIGENTE' and tipo <> 'ALTA_INICIAL' order by fecha desc, ot_id desc limit 8))
+    update ot o set
+      fecha_solicitud = x.fecha - case when x.tipo in ('REPARACION', 'REPARACION_BACKUP') then x.h % 4 when x.tipo = 'INSTALACION' then 5 + x.h % 20
+        when x.tipo = 'MANTENIMIENTO' then 2 + x.h % 10 else 1 + x.h % 6 end,
+      emergencia = o.emergencia or (x.tipo in ('REPARACION', 'REPARACION_BACKUP') and x.h < 40) or (x.tipo in ('MANTENIMIENTO', 'ENTREGA_ADICIONALES') and x.h < 8),
+      excluir_respuesta = (x.tipo = 'INSTALACION' and x.h < 30) or (x.tipo = 'MANTENIMIENTO' and x.h >= 90),
+      excluir_motivo = case when x.tipo = 'INSTALACION' and x.h < 30 then 'El cliente pidió una fecha más adelante'
+        when x.tipo = 'MANTENIMIENTO' and x.h >= 90 then 'Trabajo programado (no es un pedido)' else '' end,
+      rebotes = case when x.h % 29 = 3 then 2 when x.h % 11 = 5 then 1 else 0 end,
+      rebote_motivo = case when x.h % 29 = 3 or x.h % 11 = 5 then (array['No atendieron', 'Local cerrado', 'No estaban las condiciones (agua, luz, espacio)', 'El cliente pidió reprogramar'])[1 + x.h % 4] else '' end,
+      demora_min = case when x.h % 9 = 4 then 15 + (x.h % 4) * 15 else 0 end,
+      demora_motivo = case when x.h % 9 = 4 then (array['No lo atendían', 'Esperando autorización o acceso', 'El cliente pidió esperar'])[1 + x.h % 3] else '' end,
+      revisada_por = 'demo@fadefil.demo', revisada_at = now()
+    from x where o.ot_id = x.ot_id`;
+});
+
 // ---------------------------------------------------------------- foto para "Salir de la demo"
+
 await paso('Foto de la demo (para volver a este punto al salir)', async () => {
   await sql`select demo_guardar_base()`;
 });

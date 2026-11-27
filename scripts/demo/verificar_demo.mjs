@@ -25,6 +25,9 @@ if ((await n()) !== antes) fallas.push('demo_restaurar no volvió a la foto');
 const r = await guardarLote(sql, yo, ajuste, true);
 if (!r.ok) fallas.push('después de restaurar no se puede guardar');
 const c = (await sql`select count(*)::int n from clientes`)[0].n;
+const seg = (await sql`select count(*) filter (where revisada_at is not null)::int rev, count(*) filter (where revisada_at is null and tipo <> 'ALTA_INICIAL')::int pend,
+  count(*) filter (where rebotes > 0)::int reb, count(*) filter (where emergencia)::int emer from ot where estado = 'VIGENTE'`)[0];
+if (!seg.rev || !seg.pend || !seg.reb || !seg.emer) fallas.push('seguimiento de OT de ejemplo: ' + JSON.stringify(seg));
 await sql.end();
 if (fallas.length) { console.error('Demo: ' + fallas.join('\n')); process.exit(1); }
-console.log('Demo: ' + c + ' clientes, ' + antes + ' operaciones; auditoría sin correcciones; salir vuelve a la foto.');
+console.log('Demo: ' + c + ' clientes, ' + antes + ' operaciones, ' + seg.rev + ' OT con seguimiento (' + seg.pend + ' sin revisar); auditoría sin correcciones; salir vuelve a la foto.');

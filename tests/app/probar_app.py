@@ -177,6 +177,35 @@ with sync_playwright() as p:
     print('OT desde la app:', r)
     if not r['ok'] or r['mant'] != 'MANTENIMIENTO': fallas.append('OT desde la app: ' + json.dumps(r))
 
+    # Seguimiento de OT: completar solicitud, rebote y demora en la tabla, un error marcado en la fila, guardar todo junto y Excel
+    pag.click('nav button[data-panel="p-seguimiento"]')
+    pag.wait_for_function("() => S.seg && document.querySelector('#seg-tabla tbody tr[data-id]')", timeout=20000)
+    fila = pag.locator('#seg-tabla tbody tr[data-id]').first
+    ot_id = fila.get_attribute('data-id'); fecha = pag.evaluate("(id) => S.seg.ots.find(o => o.id === id).fecha", ot_id)
+    fila.locator('[data-c="solicitud"]').fill(pag.evaluate("(f) => sumarDiasIso(f, 3)", fecha))
+    fila.locator('[data-c="rebotes"]').fill('1')
+    motivo_visible = fila.locator('[data-c="reboteMotivo"]').is_visible()
+    fila.locator('[data-c="reboteMotivo"]').fill('No atendieron')
+    otra = pag.locator('#seg-tabla tbody tr[data-id]').nth(1); otra_id = otra.get_attribute('data-id')
+    otra.locator('[data-c="demora"]').fill('25')
+    boton = pag.inner_text('#seg-guardar')
+    pag.click('#seg-guardar'); pag.wait_for_selector('#seg-tabla tr.con-error', timeout=20000)
+    marcada = pag.locator(f'#seg-tabla tr[data-id="{ot_id}"]').get_attribute('class')
+    pag.locator(f'#seg-tabla tr[data-id="{ot_id}"] [data-c="solicitud"]').fill(pag.evaluate("(f) => sumarDiasIso(f, -2)", fecha))
+    pag.click('#seg-guardar')
+    pag.wait_for_function("(id) => !cambiosSeg().length && S.seg.ots.find(o => o.id === id).revisada", arg=ot_id, timeout=20000)
+    seg = pag.evaluate("([a, b]) => { const x = S.seg.ots.find(o => o.id === a), y = S.seg.ots.find(o => o.id === b); return [x.rebotes, x.reboteMotivo, diasRespuesta(x), y.demora, !!y.revisada, document.querySelector('#seg-metricas').innerText.includes('Rebotes')]; }", [ot_id, otra_id])
+    print('Seguimiento de OT:', boton, '· error marcado:', marcada, '· motivo visible:', motivo_visible, '·', seg)
+    if boton != 'Guardar 2 OT' or 'con-error' not in (marcada or '') or not motivo_visible or seg != [1, 'No atendieron', 2, 25, True, True]:
+        fallas.append('Seguimiento de OT: ' + json.dumps([boton, marcada, motivo_visible, seg]))
+    pag.uncheck('#seg-solo'); pag.wait_for_timeout(300)
+    pag.locator('#seg-tabla tbody tr[data-id]').nth(2).locator('[data-c="excluir"]').check()
+    pag.screenshot(path='/tmp/app_seguimiento.png', full_page=True); pag.locator('#p-seguimiento .tarjeta').nth(2).screenshot(path='/tmp/app_seguimiento_tabla.png')
+    with pag.expect_download(timeout=20000) as d: pag.click('#p-seguimiento button:has-text("Descargar Excel")')
+    wb = openpyxl.load_workbook(bajado(d.value))
+    print('Excel de seguimiento:', wb.sheetnames, [wb[n].max_row for n in wb.sheetnames])
+    if wb.sheetnames != ['OT', 'Resumen'] or wb['OT'].max_row < 3: fallas.append('Excel de seguimiento: ' + json.dumps(wb.sheetnames))
+
     reales = [e for e in errores if 'favicon' not in e and 'Failed to load resource' not in e]
     if reales: fallas.append('Errores en la consola: ' + ' | '.join(reales[:8]))
     nav.close()

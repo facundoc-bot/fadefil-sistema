@@ -259,7 +259,8 @@ const MENU = [
     { pag: 'index', panel: 'p-ot', t: 'Nueva OT', i: 'clipboard-plus', rol: 'carga' },
     { pag: 'index', panel: 'p-envios', t: 'Envíos', i: 'truck', rol: 'carga' },
     { pag: 'index', panel: 'p-revision', t: 'Revisión', i: 'scan-search', rol: 'carga' },
-    { pag: 'index', panel: 'p-reparacion', t: 'Reparación', i: 'wrench', rol: 'carga' }] },
+    { pag: 'index', panel: 'p-reparacion', t: 'Reparación', i: 'wrench', rol: 'carga' },
+    { pag: 'index', panel: 'p-seguimiento', t: 'Seguimiento de OT', i: 'calendar-clock', rol: 'carga' }] },
   { grupo: 'Consultas', items: [
     { pag: 'index', panel: 'p-clientes', t: 'Clientes', i: 'users' },
     { pag: 'index', panel: 'p-maquinas', t: 'Máquinas', i: 'refrigerator' },

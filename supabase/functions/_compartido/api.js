@@ -15,11 +15,12 @@ import { contexto, cargarEstado, validarLote, guardarLote, anularOperacion, audi
 import { co2Contexto } from './co2_estado.js';
 import { ErrorDeUsuario, exigirRol, iso, insertar, anotar, BLOQUEO, hoyArgentina } from './base.js';
 
-export const VERSION_SISTEMA = '2.2';
+export const VERSION_SISTEMA = '2.3';
 
-const CLAVES_LISTAS = { TIPO_CLIENTE: 'tipoCliente', MODALIDAD: 'modalidad', PREFILTRO: 'prefiltro', TIPO_FALLA: 'falla', TRANSPORTE: 'transporte' };
+const CLAVES_LISTAS = { TIPO_CLIENTE: 'tipoCliente', MODALIDAD: 'modalidad', PREFILTRO: 'prefiltro', TIPO_FALLA: 'falla', TRANSPORTE: 'transporte',
+  MOTIVO_REBOTE: 'motivoRebote', MOTIVO_DEMORA: 'motivoDemora', MOTIVO_EXCLUSION: 'motivoExclusion' };
 function leerListas(ctx) {
-  const l = { tipoCliente: [], modalidad: [], sistema: [], prefiltro: [], falla: [], transporte: [] };
+  const l = { tipoCliente: [], modalidad: [], sistema: [], prefiltro: [], falla: [], transporte: [], motivoRebote: [], motivoDemora: [], motivoExclusion: [] };
   (ctx.listas || []).forEach((r) => {
     const k = CLAVES_LISTAS[String(r.tipo || '').toUpperCase().trim()], v = String(r.valor || '').trim();
     if (k && v && l[k].indexOf(v) < 0) l[k].push(v);
@@ -178,7 +179,7 @@ async function fichaCliente(sql, idCliente) {
   const historial = ots.map((r) => ({ nOt: r.ot_id, fecha: iso(r.fecha), tipo: (TIPO_OT_TEXTO[r.tipo] || r.tipo) + (MODALIDAD_CO2[r.modalidad_co2] ? ' (' + MODALIDAD_CO2[r.modalidad_co2].toLowerCase() + ')' : ''),
     tecnico: [r.tecnico, r.tecnico_2].filter(String).join(' y '), serieRetirada: r.serie_retirada, serieInstalada: r.serie_instalada, falla: r.falla,
     sistema: r.sistema || '', prefiltro: r.prefiltro || '', comentarios: r.comentarios, pendiente: r.pendiente, estado: r.estado, otPersat: r.ot_persat || '',
-    items: porOT[r.ot_id] || [], adicionales: [] }))
+    items: porOT[r.ot_id] || [], adicionales: [], seguimiento: resumenSeguimiento(r) }))
     .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || String(b.nOt).localeCompare(String(a.nOt)));
   const mant = vistaMantenimiento(W, ctxUno, { hoy: ctx.hoy, diasAviso: ctx.diasAviso })[0] || null;
   const datos = {};
@@ -349,6 +350,97 @@ async function tecnicos(sql, desde, hasta) {
   return { desde, hasta, diasRetrabajo: dias, ots: ots.filter((o) => o.fecha <= hasta), retrabajos };
 }
 
+// ---------------------------------------------------------------- v2.3: seguimiento de las OT
+// Lo completa una persona distinta de la que carga las OT: fecha de solicitud (tiempo de respuesta, con opción de
+// excluirla de la métrica), emergencia, rebotes (visitas reprogramadas) y demora en el cliente. No cambia el estado.
+export const TIPOS_EMERGENCIA = ['MANTENIMIENTO', 'REPARACION', 'REPARACION_BACKUP', 'ENTREGA_ADICIONALES', 'ENTREGA_CO2'];
+const esEmergenciaCo2 = (r) => r.tipo === 'ENTREGA_CO2' && /^EMERGENCIA/.test(String(r.modalidad_co2 || '').toUpperCase());
+const dma = (f) => String(f || '').split('-').reverse().join('/');
+const textoCorto = (x) => String(x == null ? '' : x).replace(/\s+/g, ' ').trim().slice(0, 200);
+function entero(x) {
+  if (x === '' || x == null) return 0;
+  const n = Number(x);
+  return Number.isInteger(n) ? n : null;
+}
+/** Lo que se muestra en el historial del cliente (solo lo que tiene datos). */
+function resumenSeguimiento(r) {
+  const s = {};
+  if (r.emergencia) s.emergencia = true;
+  if (r.rebotes > 0) { s.rebotes = r.rebotes; s.reboteMotivo = r.rebote_motivo || ''; }
+  if (r.demora_min > 0) { s.demora = r.demora_min; s.demoraMotivo = r.demora_motivo || ''; }
+  if (r.fecha_solicitud) { s.solicitud = iso(r.fecha_solicitud); s.respuesta = diasEntre(iso(r.fecha_solicitud), iso(r.fecha)); if (r.excluir_respuesta) s.excluida = r.excluir_motivo || true; }
+  return Object.keys(s).length ? s : null;
+}
+function filaSeguimiento(r, ctx) {
+  const c = ctx.clientes[r.cliente_id] || {};
+  return { id: r.ot_id, fecha: iso(r.fecha), idCliente: r.cliente_id, cliente: c.nombre || r.cliente_id, plaza: c.plaza || '', region: c.region || '',
+    tipo: r.tipo, tipoMant: r.tipo_mantenimiento || '', tecnico: [r.tecnico, r.tecnico_2].filter((x) => String(x || '').trim()).join(' y '),
+    persat: r.ot_persat || '', falla: r.falla || '', modalidadCo2: r.modalidad_co2 || '',
+    solicitud: r.fecha_solicitud ? iso(r.fecha_solicitud) : '', excluir: !!r.excluir_respuesta, excluirMotivo: r.excluir_motivo || '',
+    emergencia: !!r.emergencia, emergenciaFija: esEmergenciaCo2(r), puedeEmergencia: TIPOS_EMERGENCIA.indexOf(r.tipo) >= 0,
+    rebotes: Number(r.rebotes) || 0, reboteMotivo: r.rebote_motivo || '', demora: Number(r.demora_min) || 0, demoraMotivo: r.demora_motivo || '',
+    revisadaPor: r.revisada_por || '', revisada: r.revisada_at ? new Date(r.revisada_at).toISOString() : '' };
+}
+const COLUMNAS_SEGUIMIENTO = ['ot_id', 'fecha', 'cliente_id', 'tipo', 'tipo_mantenimiento', 'tecnico', 'tecnico_2', 'ot_persat', 'falla', 'modalidad_co2',
+  'fecha_solicitud', 'excluir_respuesta', 'excluir_motivo', 'emergencia', 'rebotes', 'rebote_motivo', 'demora_min', 'demora_motivo', 'revisada_por', 'revisada_at'];
+
+/** OT del período (sin anuladas ni altas iniciales), con su seguimiento, y cuántas quedan sin revisar en total. */
+async function seguimiento(sql, desde, hasta) {
+  if (!esFechaValida(desde) || !esFechaValida(hasta) || desde > hasta) throw new ErrorDeUsuario('Elegí un período válido.');
+  if (diasEntre(desde, hasta) > 400) throw new ErrorDeUsuario('Elegí un período de hasta un año.');
+  const ctx = await contexto(sql);
+  const filas = await sql`select ${sql(COLUMNAS_SEGUIMIENTO)} from ot where estado <> 'ANULADA' and tipo <> 'ALTA_INICIAL' and fecha between ${desde} and ${hasta}
+    order by fecha desc, ot_id desc`;
+  const [p] = await sql`select count(*)::int as n, min(fecha) as desde from ot where estado <> 'ANULADA' and tipo <> 'ALTA_INICIAL' and revisada_at is null`;
+  return { desde, hasta, ots: filas.map((r) => filaSeguimiento(r, ctx)), sinRevisar: { cantidad: p.n, desde: p.desde ? iso(p.desde) : '' } };
+}
+
+/** Guarda el seguimiento de varias OT juntas. Si alguna tiene un error no se guarda ninguna (vuelven los errores por OT). */
+async function guardarSeguimiento(sql, u, cambios) {
+  exigirRol(u, ['ADMIN', 'CARGA']);
+  const lista = Array.isArray(cambios) ? cambios : [];
+  if (!lista.length) throw new ErrorDeUsuario('No hay cambios para guardar.');
+  if (lista.length > 300) throw new ErrorDeUsuario('Guardá de a 300 OT como máximo.');
+  const ids = lista.map((x) => String((x && x.id) || '').trim());
+  const rep = ids.filter((x, i) => ids.indexOf(x) !== i);
+  if (rep.length) throw new ErrorDeUsuario('OT repetidas en los cambios: ' + rep.join(', '));
+  const por = {};
+  (await sql`select ot_id, fecha, tipo, modalidad_co2, estado from ot where ot_id = any(${ids})`).forEach((r) => { por[r.ot_id] = r; });
+  const errores = [], filas = [];
+  lista.forEach((x, i) => {
+    const id = ids[i], r = por[id], mal = (m) => errores.push({ id, mensaje: id + ': ' + m });
+    if (!r) return mal('no existe.');
+    if (r.estado === 'ANULADA') return mal('está anulada.');
+    if (r.tipo === 'ALTA_INICIAL') return mal('un alta inicial no lleva seguimiento.');
+    const fecha = iso(r.fecha), sol = String(x.solicitud || '').trim();
+    const n = errores.length;
+    if (sol && !esFechaValida(sol)) mal('la fecha de solicitud no es válida.');
+    else if (sol && sol > fecha) mal('la fecha de solicitud (' + dma(sol) + ') es posterior a la OT (' + dma(fecha) + ').');
+    const fija = esEmergenciaCo2(r), emerg = fija || !!x.emergencia;
+    if (emerg && TIPOS_EMERGENCIA.indexOf(r.tipo) < 0) mal('una ' + (TIPO_OT_TEXTO[r.tipo] || r.tipo).toLowerCase() + ' no se marca como emergencia (solo mantenimientos, reparaciones y entregas).');
+    const reb = entero(x.rebotes), dem = entero(x.demora);
+    if (reb === null || reb < 0 || reb > 20) mal('rebotes: un número entero de 0 a 20.');
+    if (dem === null || dem < 0 || dem > 1440) mal('demora: minutos enteros de 0 a 1440 (24 h).');
+    const excl = !!x.excluir, exclMot = textoCorto(x.excluirMotivo);
+    if (excl && !exclMot) mal('para excluirla del tiempo de respuesta, elegí o escribí el motivo.');
+    if (errores.length > n) return;
+    filas.push({ id, sol: sol || null, excl, exclMot: excl ? exclMot : '', emerg, reb, rebMot: reb > 0 ? textoCorto(x.reboteMotivo) : '', dem, demMot: dem > 0 ? textoCorto(x.demoraMotivo) : '' });
+  });
+  if (errores.length) return { ok: false, errores, mensaje: 'Hay errores: no se guardó nada.' };
+  await sql.begin(async (tx) => {
+    for (const f of filas) {
+      await tx`update ot set fecha_solicitud = ${f.sol}, excluir_respuesta = ${f.excl}, excluir_motivo = ${f.exclMot}, emergencia = ${f.emerg},
+        rebotes = ${f.reb}, rebote_motivo = ${f.rebMot}, demora_min = ${f.dem}, demora_motivo = ${f.demMot}, revisada_por = ${u.email}, revisada_at = now()
+        where ot_id = ${f.id}`;
+    }
+    await anotar(tx, u.email, 'SEGUIMIENTO_OT', ids.join(', '));
+  });
+  const ctx = await contexto(sql);
+  const ots = (await sql`select ${sql(COLUMNAS_SEGUIMIENTO)} from ot where ot_id = any(${ids})`).map((r) => filaSeguimiento(r, ctx));
+  const [p] = await sql`select count(*)::int as n, min(fecha) as desde from ot where estado <> 'ANULADA' and tipo <> 'ALTA_INICIAL' and revisada_at is null`;
+  return { ok: true, ots, sinRevisar: { cantidad: p.n, desde: p.desde ? iso(p.desde) : '' }, mensaje: 'Se guardó el seguimiento de ' + ids.length + ' OT.' };
+}
+
 /** Despacho de lo que pide la app: api(fn, ...args) → lo mismo que devolvía la función de Apps Script. */
 export async function api(sql, u, fn, args) {
   const a = Array.isArray(args) ? args : [];
@@ -370,6 +462,8 @@ export async function api(sql, u, fn, args) {
     case 'apiInconsistencias': return inconsistencias(sql);
     case 'apiResolverInconsistencia': return resolverInconsistencia(sql, u, a[0], a[1]);
     case 'apiTecnicos': return tecnicos(sql, a[0], a[1]);
+    case 'apiSeguimiento': return seguimiento(sql, a[0], a[1]);
+    case 'apiGuardarSeguimiento': return guardarSeguimiento(sql, u, a[0]);
     case 'apiAnular': {
       const r = await anularOperacion(sql, u, a[0], a[1]);
       if (r.ok) r.ini = await datosInicio(sql, u);
