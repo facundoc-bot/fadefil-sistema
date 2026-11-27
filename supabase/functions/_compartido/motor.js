@@ -428,7 +428,7 @@ function cliente_(W, id) {
     W.clientes[id] = {
       id: id, estado: EST_CLI.SIN_DATOS, serie: '', tieneOT: false,
       fechaInstalacion: '', fechaCambio: '', fechaDesinstalacion: '', ultimaVisita: '', tipoUltimaVisita: '',
-      ultimaFechaOT: '', fechaBase: '', ultimoMantenimiento: '', pendiente: '',
+      ultimaFechaOT: '', fechaBase: '', ultimoMantenimiento: '', mantMes: 0, tipoUltimoMant: '', pendiente: '',
       sistema: '', prefiltro: '', comodato: {}, adicionales: {}, comentarioDesinstalacion: '', faltante: {}, devueltoDeMas: {}
     };
   }
@@ -748,6 +748,7 @@ function validarOT_(d, W, ctx, idOp) {
       break;
     case TIPO_OT.MANTENIMIENTO:
       if (c.estado !== EST_CLI.ACTIVO) err_(res, 'CLIENTE_SIN_EQUIPO', noTieneEquipo);
+      if (d.tipoMant != null && d.tipoMant !== '' && !normalizarTipoMant(d.tipoMant)) err_(res, 'TIPO_MANT_INVALIDO', 'El mantenimiento tiene que ser Profundo o Express.');
       break;
     case TIPO_OT.ENTREGA_ADICIONALES:
       // v1.0 (decidido 22/10): a un Ex cliente o desinstalado momentáneo no se le entrega nada, pero sí se le puede retirar
@@ -1090,7 +1091,13 @@ function aplicarOT_(d, ef, W, ctx) {
       c.serie = ef.serieIn; c.fechaCambio = f; c.fechaBase = f;
       break;
     case TIPO_OT.MANTENIMIENTO:
-      c.fechaBase = f; c.ultimoMantenimiento = f;
+      var tm = normalizarTipoMant(d.tipoMant) || TIPO_MANT.PROFUNDO;
+      if (tm === TIPO_MANT.PROFUNDO) c.mantMes = 0;
+      else {
+        var sig = siguienteEnEsquema_(esquemaDe_(ctx && ctx.clientes[ef.idCliente], ctx), c.mantMes);
+        if (sig && sig.tipo === TIPO_MANT.EXPRESS) c.mantMes = sig.mes; // si tocaba Profundo, queda pendiente
+      }
+      c.fechaBase = f; c.ultimoMantenimiento = f; c.tipoUltimoMant = tm;
       break;
     case TIPO_OT.DESINST_MOMENTANEA:
       c.estado = EST_CLI.MOMENTANEO; c.serie = ''; c.fechaDesinstalacion = f;
@@ -1105,6 +1112,7 @@ function aplicarOT_(d, ef, W, ctx) {
         : '';
       break;
   }
+  if (TIPOS_REINICIAN_ESQUEMA.indexOf(tipo) >= 0 && c.estado === EST_CLI.ACTIVO) c.mantMes = 0;
   c.tieneOT = true;
   c.ultimaFechaOT = f;
   if (tipo !== TIPO_OT.ALTA_INICIAL) { c.ultimaVisita = f; c.tipoUltimaVisita = tipo; }
@@ -1615,11 +1623,67 @@ function textoTrabajos(c, ctx, proximo) {
   return partes.join(' · ');
 }
 
-/** Próximo mantenimiento de un cliente activo. */
-function proximoMantenimiento_(c, cm, porDefecto) {
-  var frec = Number(cm.frecuencia) > 0 ? Number(cm.frecuencia) : porDefecto;
+/* ---------------------------------------------------------------------------
+ *  Esquema de mantenimientos (v2.1, pedido 26/11/2026): seis meses, cada uno
+ *  Profundo, Express o nada. Hay uno por defecto (Configuración) y cada cliente
+ *  puede tener el suyo (ficha del cliente).
+ *  - El mes 0 es el último reinicio: un Profundo, una Reparación con backup,
+ *    una Instalación, un Cambio de modelo o el Alta inicial.
+ *  - El próximo es el siguiente mes con algo en el esquema, contado desde la fecha
+ *    del ÚLTIMO mantenimiento (si se atrasa, corre todo lo que sigue). Pasado el
+ *    mes 6, el esquema vuelve a empezar por el mes 1.
+ *  - Un Express ocupa su lugar en el esquema; si tocaba Profundo y se hizo Express,
+ *    el Profundo sigue pendiente (y se cuenta desde el Express).
+ *  - Los mantenimientos sin tipo (anteriores al esquema) cuentan como Profundo.
+ * ------------------------------------------------------------------------ */
+var TIPO_MANT = { PROFUNDO: 'PROFUNDO', EXPRESS: 'EXPRESS' };
+var TIPO_MANT_TEXTO = { PROFUNDO: 'Profundo', EXPRESS: 'Express' };
+var MESES_ESQUEMA = 6;
+var ESQUEMA_MANT_DEFECTO = ['', '', 'EXPRESS', '', '', 'PROFUNDO'];
+var TIPOS_REINICIAN_ESQUEMA = ['ALTA_INICIAL', 'INSTALACION', 'CAMBIO_MODELO', 'REPARACION_BACKUP'];
+
+function normalizarTipoMant(x) {
+  var t = String(x == null ? '' : x).trim().toUpperCase();
+  return t === 'P' || t === 'PROFUNDO' ? TIPO_MANT.PROFUNDO : t === 'E' || t === 'EXPRESS' ? TIPO_MANT.EXPRESS : '';
+}
+/** "-;-;E;-;-;P" (o una lista) → ['', '', 'EXPRESS', '', '', 'PROFUNDO']. null si está vacío o no es válido. */
+function leerEsquemaMant(x) {
+  if (x == null || x === '') return null;
+  var partes = Array.isArray(x) ? x : String(x).split(';');
+  if (partes.length !== MESES_ESQUEMA) return null;
+  var esq = [];
+  for (var i = 0; i < partes.length; i++) {
+    var t = String(partes[i] == null ? '' : partes[i]).trim().toUpperCase();
+    if (t === '' || t === '-' || t === 'N' || t === 'NADA') esq.push('');
+    else if (normalizarTipoMant(t)) esq.push(normalizarTipoMant(t));
+    else return null;
+  }
+  return esq.some(String) ? esq : null;
+}
+/** ['', 'EXPRESS', …] → "-;E;…" (como se guarda). */
+function textoEsquemaMant(esq) {
+  return (esq || []).map(function (t) { return t === TIPO_MANT.PROFUNDO ? 'P' : t === TIPO_MANT.EXPRESS ? 'E' : '-'; }).join(';');
+}
+/** El esquema del cliente: el suyo, si tiene; si no, el de Configuración. */
+function esquemaDe_(cm, ctx) {
+  return leerEsquemaMant(cm && cm.esquemaMant) || leerEsquemaMant(ctx && ctx.esquemaMant) || ESQUEMA_MANT_DEFECTO;
+}
+/** Lo que sigue después del mes "mes" (0 a 6): { mes, meses (desde el último), tipo }. */
+function siguienteEnEsquema_(esq, mes) {
+  for (var k = 1; k <= MESES_ESQUEMA; k++) {
+    var slot = ((Number(mes || 0) + k - 1) % MESES_ESQUEMA) + 1;
+    if (esq[slot - 1]) return { mes: slot, meses: k, tipo: esq[slot - 1] };
+  }
+  return null;
+}
+
+/** Próximo mantenimiento de un cliente activo: fecha y tipo según su esquema. */
+function proximoMantenimiento_(c, cm, ctx) {
+  var esq = esquemaDe_(cm, ctx);
   var base = c.fechaBase || c.fechaInstalacion || '';
-  return { frecuencia: frec, base: base, proximo: base ? sumarDias(base, frec) : '' };
+  var sig = siguienteEnEsquema_(esq, c.mantMes);
+  return { base: base, proximo: base && sig ? sumarMeses(base, sig.meses) : '', tipo: sig ? sig.tipo : '', mesEsquema: sig ? sig.mes : '',
+    esquema: esq, esquemaPropio: !!leerEsquemaMant(cm && cm.esquemaMant) };
 }
 
 function vistaClientes(W, ctx) {
@@ -1641,15 +1705,14 @@ function vistaClientes(W, ctx) {
 
 function vistaMantenimiento(W, ctx, op) {
   var hoy = (op && op.hoy) || ctx.hoy;
-  var porDefecto = Number((op && op.diasPorDefecto) || 90);
   var aviso = Number((op && op.diasAviso) || 15);
   var filas = [];
   Object.keys(ctx.clientes).forEach(function (id) {
     var c = W.clientes[id];
     if (!c || c.estado !== EST_CLI.ACTIVO) return;
     var cm = ctx.clientes[id];
-    var pm = proximoMantenimiento_(c, cm, porDefecto);
-    var frec = pm.frecuencia, base = pm.base, prox = pm.proximo;
+    var pm = proximoMantenimiento_(c, cm, ctx);
+    var base = pm.base, prox = pm.proximo;
     var dias = prox ? diasEntre(hoy, prox) : '';
     var semaforo = prox === '' ? 'Sin fecha base' : dias < 0 ? 'Vencido' : dias <= aviso ? 'Próximo' : 'Al día';
     var m = ctx.maquinas[c.serie] || {};
@@ -1660,7 +1723,9 @@ function vistaMantenimiento(W, ctx, op) {
       id: id, nombre: cm.nombre, plaza: cm.plaza, zona: cm.zona || '', serie: c.serie, modelo: m.modelo || '',
       // Lo instalado según el historial; sin maestro de sistemas, la ficha (como antes).
       sistema: hayMaestroSistemas_(ctx) ? (c.sistema || '') : (c.sistema || cm.sistema || ''), prefiltro: hayMaestroSistemas_(ctx) ? (c.prefiltro || '') : (c.prefiltro || cm.prefiltro || ''),
-      fechaBase: base, frecuencia: frec, proximo: prox, dias: dias, semaforo: semaforo,
+      fechaBase: base, proximo: prox, dias: dias, semaforo: semaforo,
+      tipoMant: pm.tipo, tipoMantTexto: TIPO_MANT_TEXTO[pm.tipo] || '', mesEsquema: pm.mesEsquema, esquema: textoEsquemaMant(pm.esquema), esquemaPropio: pm.esquemaPropio,
+      ultimoTipoMant: TIPO_MANT_TEXTO[c.tipoUltimoMant] || '',
       // Si el mantenimiento ya está vencido, la visita es de hoy en adelante.
       trabajos: textoTrabajos(c, ctx, prox && prox > hoy ? prox : hoy), ultimoCambioFiltros: ultimo, proximoVencFiltros: primero
     });
@@ -1671,13 +1736,12 @@ function vistaMantenimiento(W, ctx, op) {
 /** Vencimientos de filtros de los clientes activos: un componente por fila (hoja VENCIMIENTOS_FILTROS y app). */
 function vistaVencimientos(W, ctx, op) {
   var hoy = (op && op.hoy) || ctx.hoy;
-  var porDefecto = Number((op && op.diasPorDefecto) || 90);
   var filas = [];
   Object.keys(ctx.clientes).forEach(function (id) {
     var c = W.clientes[id];
     if (!c || c.estado !== EST_CLI.ACTIVO) return;
     var cm = ctx.clientes[id];
-    var pm = proximoMantenimiento_(c, cm, porDefecto);
+    var pm = proximoMantenimiento_(c, cm, ctx);
     var visita = pm.proximo && pm.proximo > hoy ? pm.proximo : hoy;
     var cambiar = aCambiarEnVisita_(componentesCliente_(c, ctx), visita, ctx.diasAnticipoFiltros).map(function (x) { return x.slot + '|' + x.codigo; });
     componentesCliente_(c, ctx).forEach(function (x) {
@@ -1965,6 +2029,14 @@ export {
   planSistemas_,
   procesarOperacion_,
   proximoMantenimiento_,
+  TIPO_MANT,
+  TIPO_MANT_TEXTO,
+  ESQUEMA_MANT_DEFECTO,
+  normalizarTipoMant,
+  leerEsquemaMant,
+  textoEsquemaMant,
+  esquemaDe_,
+  siguienteEnEsquema_,
   reconstruir,
   registrarKardex_,
   registrarMov_,

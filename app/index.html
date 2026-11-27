@@ -121,7 +121,7 @@ document.addEventListener('mousedown', (e) => { const c = document.getElementByI
       <button class="acceso principal solo-carga" onclick="ir('p-ot')"><svg class="icono"><use href="lib/iconos.svg#clipboard-plus"/></svg><span>Nueva OT<small>Cargar el trabajo de un técnico</small></span></button>
       <button class="acceso solo-carga" onclick="ir('p-envios')"><svg class="icono"><use href="lib/iconos.svg#truck"/></svg><span>Envíos<small>Despachar o recibir</small></span></button>
       <button class="acceso solo-carga" onclick="ir('p-revision')"><svg class="icono"><use href="lib/iconos.svg#scan-search"/></svg><span>Revisión<small>Lo que volvió de los clientes</small></span></button>
-      <a class="acceso solo-carga" href="co2.html#p-remito"><svg class="icono"><use href="lib/iconos.svg#file-text"/></svg><span>Remito LINDE<small>Leer el PDF y cargarlo</small></span></a>
+      <a class="acceso solo-carga" href="co2.html#p-remito"><svg class="icono"><use href="lib/iconos.svg#file-text"/></svg><span>Remito de CO₂<small>LINDE o Gases Nordelta</small></span></a>
       <button class="acceso" onclick="ir('p-clientes')"><svg class="icono"><use href="lib/iconos.svg#users"/></svg><span>Clientes<small>Buscar una ficha</small></span></button>
       <button class="acceso" onclick="ir('p-stock')"><svg class="icono"><use href="lib/iconos.svg#boxes"/></svg><span>Stock<small>Por depósito</small></span></button>
     </div>
@@ -390,9 +390,11 @@ document.addEventListener('mousedown', (e) => { const c = document.getElementByI
         <div><label for="cf-modalidad">Modalidad comercial</label><select id="cf-modalidad"></select></div>
         <div><label for="cf-plaza">Plaza</label><select id="cf-plaza" onchange="zonasFormCliente()"></select></div>
         <div><label for="cf-zona">Zona</label><select id="cf-zona"></select></div>
-        <div><label for="cf-frecuencia">Mantenimiento cada (días)</label><input type="number" id="cf-frecuencia" min="1" placeholder="Vacío = por defecto"></div>
         <div class="ancho2"><label for="cf-coment">Comentarios</label><input id="cf-coment"></div>
       </div>
+      <h3>Esquema de mantenimiento</h3>
+      <label class="check"><input type="checkbox" id="cf-esq-propio" onchange="$('cf-esquema-caja').style.display=this.checked?'':'none'"> Este cliente tiene su propio esquema (si no, usa el de Configuración)</label>
+      <div id="cf-esquema-caja"></div>
       <datalist id="lista-razones"></datalist>
       <div class="acciones"><button class="exito" onclick="guardarCliente()">Guardar cliente</button><button onclick="$('cli-form').style.display='none'">Cancelar</button></div>
     </div>
@@ -487,12 +489,12 @@ const CAT_TXT = { INSUMO: 'Insumos', ADICIONAL: 'Adicionales', REPUESTO: 'Repues
 const CAMPOS = {
   ALTA_INICIAL: { serieIn: true, alta: true, ayuda: 'Para clientes que ya existían antes del sistema: registra su estado actual. Se usa una sola vez por ID. Los ítems y el sistema que se dejan en el cliente entran al depósito con un ajuste "Alta inicial" y salen como entrega, los dos con la fecha de instalación (no hace falta que haya stock).' },
   INSTALACION: { serieIn: true, ayuda: 'La máquina sale del depósito de la plaza. Cargá los insumos y adicionales que quedan en el cliente (por acuerdo): quedan en comodato y se retiran al desinstalar.' },
-  MANTENIMIENTO: { ayuda: 'Reinicia el contador de mantenimiento.' },
-  REPARACION: { falla: true, ayuda: 'No reinicia el contador de mantenimiento.' },
-  REPARACION_BACKUP: { serieOut: true, serieIn: true, falla: true, ayuda: 'La máquina retirada queda A revisar en el depósito; el backup queda definitivo y reinicia el contador.' },
-  CAMBIO_MODELO: { serieOut: true, serieIn: true, ayuda: 'La retirada queda A revisar; reinicia el contador. El sistema de purificación se mantiene salvo que lo cambies. Cargá los insumos y adicionales que se entregan o retiran según el modelo nuevo: lo entregado pasa al comodato, lo retirado sale del comodato y queda A revisar.' },
+  MANTENIMIENTO: { ayuda: 'Profundo o Express según el esquema del cliente (se propone lo que le toca). Un Profundo vuelve el esquema al mes 0; el próximo se cuenta desde esta fecha.' },
+  REPARACION: { falla: true, ayuda: 'No cambia el esquema de mantenimiento.' },
+  REPARACION_BACKUP: { serieOut: true, serieIn: true, falla: true, ayuda: 'La máquina retirada queda A revisar en el depósito; el backup queda definitivo y el esquema de mantenimiento vuelve al mes 0 (como un Profundo).' },
+  CAMBIO_MODELO: { serieOut: true, serieIn: true, ayuda: 'La retirada queda A revisar; el esquema de mantenimiento vuelve al mes 0. El sistema de purificación se mantiene salvo que lo cambies. Cargá los insumos y adicionales que se entregan o retiran según el modelo nuevo: lo entregado pasa al comodato, lo retirado sale del comodato y queda A revisar.' },
   ENTREGA_ADICIONALES: { ayuda: 'Adicionales entregados, retirados o cambiados: quedan en las líneas de la OT para cobranzas. Lo entregado es del cliente (no se pide al desinstalar); un cambio no toca el comodato. A un ex cliente o desinstalado momentáneo no se le entrega nada: solo se le retira lo pendiente.' },
-  ENTREGA_CO2: { ayuda: 'Cilindros de CO₂ por serie: entrega, retiro o recambio (las dos cosas en la misma visita). Para entregar aparecen los llenos del depósito de la plaza del cliente; para retirar, los que tiene hoy (vuelven vacíos al depósito). Solo la emergencia con costo va a cobranzas. A un ex cliente o desinstalado momentáneo solo se le retira, y a un cliente Hielogic no se le entrega.' },
+  ENTREGA_CO2: { ayuda: 'Cilindros de CO₂ por serie: entrega, retiro o recambio (las dos cosas en la misma visita). Para entregar aparecen los llenos del depósito de la plaza del cliente y de su proveedor (CABA: LINDE; GBA: Gases Nordelta); para retirar, los que tiene hoy (vuelven vacíos al depósito). Solo la emergencia con costo va a cobranzas. A un ex cliente o desinstalado momentáneo solo se le retira, y a un cliente Hielogic no se le entrega.' },
   DESINSTALACION_MOMENTANEA: { serieOut: true, ayuda: 'Pausa el mantenimiento. Registrá solo lo que efectivamente se retira: podés elegir cualquier ítem del catálogo (si no figura en el cliente, avisa al guardar) y va a revisión.' },
   DESINSTALACION: { serieOut: 'siActivo', ayuda: 'Se precarga el comodato (lo entregado en la instalación). Cargá lo que realmente se retira, aunque sea más o menos: todo va a revisión y el faltante o lo retirado de más queda en la ficha. Los adicionales son del cliente y no se piden. Se puede retirar cualquier ítem del catálogo: si no figura en el cliente, avisa al guardar.' }
 };
@@ -647,6 +649,8 @@ function insigniaCliente(e) {
   const cl = { ACTIVO: 'ok', DESINSTALADO_MOMENTANEO: 'adv', SIN_DATOS: 'adv', EX_CLIENTE: 'pend' }[e] || 'pend';
   return `<span class="insignia ${cl}">${esc(S.ini.estadosCliente[e] || e)}</span>`;
 }
+/* Profundo / Express como etiqueta. */
+function insigniaMant(t) { return t ? `<span class="insignia ${t === 'PROFUNDO' ? 'prof' : 'expr'}">${esc((S.ini.tiposMant || {})[t] || t)}</span>` : ''; }
 function actualizarEnlaceCo2() { // el filtro elegido se muestra en la barra superior
   const t = S.zona ? nomPlaza(S.plaza) + ' · ' + S.zona : S.plaza ? nomPlaza(S.plaza) : S.region ? 'Región ' + S.region : 'Todo el país';
   const e = $('contexto-texto'); if (e) e.textContent = t;
@@ -686,8 +690,8 @@ function pintarInicio() {
     met(prox.length, 'Mantenimientos próximos', prox.length ? 'adv' : '') + met(taller.length, 'Máquinas a revisar') + met(transito.length, 'Envíos en camino') +
     met(negativos, 'Ítems con stock negativo', negativos ? 'err' : '');
   const lista = venc.concat(prox).sort((a, b) => String(a.proximo).localeCompare(String(b.proximo)));
-  $('ini-mant').innerHTML = lista.length ? '<thead><tr><th>Próximo</th><th>Días</th><th>Cliente</th><th>Plaza / zona</th><th>Serie</th><th>Trabajos a realizar</th><th></th></tr></thead><tbody>' +
-    lista.map(m => `<tr><td>${fechaTxt(m.proximo)}</td><td class="sem-${esc(m.semaforo.split(' ')[0])} num">${m.dias}</td><td>${esc(m.nombre)} <span class="mono ayuda">${esc(m.id)}</span></td>
+  $('ini-mant').innerHTML = lista.length ? '<thead><tr><th>Próximo</th><th>Días</th><th>Toca</th><th>Cliente</th><th>Plaza / zona</th><th>Serie</th><th>Trabajos a realizar</th><th></th></tr></thead><tbody>' +
+    lista.map(m => `<tr><td>${fechaTxt(m.proximo)}</td><td class="sem-${esc(m.semaforo.split(' ')[0])} num">${m.dias}</td><td>${insigniaMant(m.tipoMant)}</td><td>${esc(m.nombre)} <span class="mono ayuda">${esc(m.id)}</span></td>
       <td>${esc(plazaYZona(m))}</td><td class="mono">${esc(m.serie)}</td><td>${esc(m.trabajos) || '<span class="vacio">—</span>'}</td>
       <td><button class="chico solo-carga" onclick="otDesdeInicio('${esc(m.id)}','MANTENIMIENTO')">Cargar OT</button></td></tr>`).join('') + '</tbody>'
     : '<tbody><tr><td class="vacio">No hay mantenimientos vencidos ni próximos.</td></tr></tbody>';
@@ -748,7 +752,7 @@ function clienteOTElegido() {
     <br><span class="gris">En comodato:</span> ${esc(textoCant(c.comodato)) || '—'} · <span class="gris">Adicionales:</span> ${esc(textoCant(c.adicionales)) || '—'}
     ${textoCant(c.faltante) ? `<br><span class="gris">Pendiente de retirar (no lo devolvió al desinstalar):</span> <strong>${esc(textoCant(c.faltante))}</strong>` : ''}
     ${cilindrosDelCliente(c).length ? `<br><span class="gris">Cilindros de CO₂:</span> <span class="mono">${esc(cilindrosDelCliente(c).map(x => x.serie).join(', '))}</span>` : ''}
-    ${mant ? `<br><span class="gris">Próximo mantenimiento:</span> ${fechaTxt(mant.proximo)} (<span class="sem-${esc(mant.semaforo.split(' ')[0])}">${esc(mant.semaforo)}</span>)` : ''}
+    ${mant ? `<br><span class="gris">Próximo mantenimiento:</span> ${fechaTxt(mant.proximo)} ${insigniaMant(mant.tipoMant)} (<span class="sem-${esc(mant.semaforo.split(' ')[0])}">${esc(mant.semaforo)}</span>)` : ''}
     ${c.sistema || c.prefiltro ? `<br><span class="gris">Sistema:</span> ${esc(c.sistema || '—')} · <span class="gris">Prefiltro:</span> ${esc(c.prefiltro || '—')}` : ''}
     ${textoACambiar(c) ? `<br><span class="gris">Filtros en esta visita:</span> <strong>${esc(textoACambiar(c))}</strong>` : ''}
     ${c.pendiente ? `<br><span class="gris">Pendiente de la última visita:</span> <strong>${esc(c.pendiente)}</strong>` : ''}
@@ -805,7 +809,7 @@ function pintarCamposOT() {
   const prev = { serieIn: val('ot-serie-in'), falla: val('ot-falla'), tecnico: val('ot-tecnico'), tecnico2: val('ot-tecnico2'), sistema: val('ot-sistema'), prefiltro: val('ot-prefiltro'),
     coment: val('ot-coment'), pendiente: val('ot-pendiente'), estadoIni: val('ot-estado-ini'), fInst: val('ot-f-inst'), fBase: val('ot-f-base'), fUlt: val('ot-f-ult'),
     ncId: val('nc-id'), ncNombre: val('nc-nombre'), ncRazon: val('nc-razon'), ncSector: val('nc-sector'), ncTipo: val('nc-tipo'), ncModalidad: val('nc-modalidad'),
-    ncPlaza: $('nc-plaza') ? val('nc-plaza') : S.plaza, ncZona: $('nc-zona') ? val('nc-zona') : S.zona, ncFrec: val('nc-frec'), ncComent: val('nc-coment'),
+    ncPlaza: $('nc-plaza') ? val('nc-plaza') : S.plaza, ncZona: $('nc-zona') ? val('nc-zona') : S.zona, ncComent: val('nc-coment'),
     serieNueva: val('ot-serie-nueva'), modeloNueva: val('ot-modelo-nueva'),
     acc_sis: val('ot-acc-sis'), acc_pre: val('ot-acc-pre'), nd_sis: val('ot-nd-sis'), nd_pre: val('ot-nd-pre'),
     ret_sis: $('ot-ret-sis') ? $('ot-ret-sis').checked : true, ret_pre: $('ot-ret-pre') ? $('ot-ret-pre').checked : true, fechas: {} };
@@ -830,7 +834,6 @@ function pintarCamposOT() {
       <div><label for="nc-modalidad">Modalidad comercial</label><select id="nc-modalidad">${opciones(S.ini.listas.modalidad, prev.ncModalidad, '—')}</select></div>
       <div><label for="nc-plaza">Plaza</label><select id="nc-plaza" onchange="pintarCamposOT()">${opcionesVT(plazasNc, prev.ncPlaza, '— Elegí —')}</select></div>
       <div><label for="nc-zona">Zona</label><select id="nc-zona">${opcionesVT(zonas, prev.ncZona, zonas.length ? '— Elegí —' : 'La plaza no tiene zonas: cargalas en Datos')}</select></div>
-      <div><label for="nc-frec">Mantenimiento cada (días)</label><input type="number" id="nc-frec" min="1" placeholder="Vacío = por defecto" value="${esc(prev.ncFrec)}"></div>
       <div class="ancho2"><label for="nc-coment">Comentarios de la ficha</label><input id="nc-coment" value="${esc(prev.ncComent)}"></div>
     </div><div id="nc-aviso"></div><h3>${t === 'INSTALACION' ? 'Instalación' : 'Estado actual'}</h3>`;
   }
@@ -860,6 +863,14 @@ function pintarCamposOT() {
       h += `<div><label for="ot-serie-nueva">Serie nueva</label><input id="ot-serie-nueva" class="mono" value="${esc(prev.serieNueva)}"></div>
         <div><label for="ot-modelo-nueva">Modelo</label><select id="ot-modelo-nueva">${opciones(S.ini.modelos, prev.modeloNueva, '— Elegí —')}</select></div>`;
     }
+  }
+  if (t === 'MANTENIMIENTO') {
+    // Se propone lo que le toca según el esquema; si se cambia a mano, se respeta mientras sea el mismo cliente.
+    const m = c ? S.ini.mantenimiento.find(x => x.id === c.id) : null, sug = (m && m.tipoMant) || 'PROFUNDO';
+    if (!c || S.ot.tipoMantCliente !== c.id) { S.ot.tipoMant = sug; S.ot.tipoMantCliente = c ? c.id : ''; }
+    h += `<div class="ancho2"><label>Tipo de mantenimiento</label><div class="segmentado" id="ot-tipo-mant">
+      ${['PROFUNDO', 'EXPRESS'].map(k => `<button type="button" data-t="${k}" class="${S.ot.tipoMant === k ? 'activo' : ''}" onclick="elegirTipoMant('${k}')">${k === 'PROFUNDO' ? 'Profundo' : 'Express'}</button>`).join('')}</div>
+      <p class="ayuda" style="margin:6px 0 0">${m ? 'Según el esquema le toca <strong>' + (m.tipoMant === 'EXPRESS' ? 'Express' : 'Profundo') + '</strong> (mes ' + m.mesEsquema + ').' : 'Elegí el cliente para ver qué le toca.'}</p></div>`;
   }
   if (cfg.falla) h += `<div class="ancho2"><label for="ot-falla">Falla</label><input id="ot-falla" list="lista-fallas" value="${esc(prev.falla)}"></div>`;
   if (cfg.alta) {
@@ -1087,10 +1098,13 @@ function reglasCo2(t) { return CO2_EN_OT[t] || null; }
 function esHielogic(c) { return /hielogic/i.test(String((c && c.tipoCliente) || '')); }
 function seriesCo2EnLote(campo) { return S.lote.flatMap(o => ((o.datos.co2 || {})[campo]) || []); }
 function cilindrosDelCliente(c) { return hayCo2() && c && c.id ? (S.ini.co2.enCliente[c.id] || []) : []; }
+function provDePlaza(p) { return ((S.ini.co2 || {}).proveedorPlaza || {})[p] || 'LINDE'; }
+function nomProvCo2(id) { const x = ((S.ini.co2 || {}).proveedores || {})[id]; return x ? x.nombre : id; }
 /* Para entregar: llenos del depósito de la plaza del cliente. Para retirar: los que tiene hoy. Sin los ya elegidos en esta OT o en la lista. */
 function disponiblesCo2(campo, c) {
   const usadas = seriesCo2EnLote(campo).concat(S.ot.co2[campo]);
-  const base = campo === 'entregadas' ? (hayCo2() && c && c.plaza ? (S.ini.co2.llenos[depDePlaza(c.plaza)] || []) : []) : cilindrosDelCliente(c);
+  // v2.1: para entregar, solo los del proveedor de la plaza del cliente (AMBA: CABA con LINDE, GBA con Gases Nordelta).
+  const base = campo === 'entregadas' ? (hayCo2() && c && c.plaza ? (S.ini.co2.llenos[depDePlaza(c.plaza)] || []).filter(x => (x.proveedor || 'LINDE') === provDePlaza(c.plaza)) : []) : cilindrosDelCliente(c);
   return base.filter(x => !usadas.includes(x.serie));
 }
 function textoCilindro(x) { return x.serie + (x.pesoKg ? ' · ' + x.pesoKg + ' kg' : '') + (x.desde ? ' · desde ' + fechaTxt(x.desde) : ''); }
@@ -1146,7 +1160,7 @@ function pintarCo2OT() {
       <p class="ayuda">Obligatorio si se entrega. Solo la emergencia con costo va a cobranzas.</p>`;
   }
   const bloques = [];
-  if (puedeEntregar) bloques.push(pickerCo2('entregadas', 'Entregados (llenos del ' + esc(nomDep(depDePlaza(c.plaza))) + ')'));
+  if (puedeEntregar) bloques.push(pickerCo2('entregadas', 'Entregados (llenos de ' + esc(nomProvCo2(provDePlaza(c.plaza))) + ' del ' + esc(nomDep(depDePlaza(c.plaza))) + ')'));
   if (r.retiro) {
     const tiene = cilindrosDelCliente(c).length;
     bloques.push(tiene || S.ot.co2.retiradas.length ? pickerCo2('retiradas', 'Retirados (vuelven vacíos al depósito)') : '<div class="ancho2"><label>Retirados</label><p class="vacio" style="margin:6px 0">El cliente no tiene cilindros.</p></div>');
@@ -1157,6 +1171,10 @@ function pintarCo2OT() {
   $('ot-co2').innerHTML = h + (notas.length ? `<div class="nota info">${notas.join('<br>')}</div>` : '') + `<div class="fila">${bloques.join('')}</div>`;
 }
 
+function elegirTipoMant(k) {
+  S.ot.tipoMant = k;
+  document.querySelectorAll('#ot-tipo-mant button').forEach(b => b.classList.toggle('activo', b.dataset.t === k));
+}
 function datosOT() {
   const t = S.ot.tipo, cfg = CAMPOS[t], c = clienteDeLaOT();
   const v = id => ($(id) ? $(id).value.trim() : '');
@@ -1171,6 +1189,7 @@ function datosOT() {
     else { const m = S.ini.maquinas.find(x => x.serie === d.serieInstalada); if (m && depDeMaq(m) !== dep) d.traerMaquina = true; }
   }
   if (cfg.falla) d.falla = v('ot-falla');
+  if (t === 'MANTENIMIENTO') d.tipoMant = S.ot.tipoMant || 'PROFUNDO';
   if (cfg.alta) {
     d.estadoInicial = v('ot-estado-ini') || 'ACTIVO';
     if (v('ot-f-inst')) d.fechaInstalacion = v('ot-f-inst');
@@ -1196,7 +1215,7 @@ function datosOT() {
   }
   if (c && c.nuevo) {
     d.clienteNuevo = { id: c.id, nombre: c.nombre, razon: v('nc-razon'), sector: v('nc-sector'), tipoCliente: v('nc-tipo'), modalidad: v('nc-modalidad'),
-      zonaId: c.zonaId, frecuencia: v('nc-frec') === '' ? '' : Number(v('nc-frec')), comentarios: v('nc-coment') };
+      zonaId: c.zonaId, comentarios: v('nc-coment') };
   }
   return { d, c };
 }
@@ -1838,7 +1857,8 @@ async function verCliente(id) {
         ${dato('Desinstalación', fechaTxt(v.fechaDesinstalacion))}${dato('Última visita', v.ultimaVisita ? fechaTxt(v.ultimaVisita) + ' · ' + v.tipoUltimaVisita : '')}
         ${dato('Sistema / prefiltro', [v.sistema, v.prefiltro].filter(Boolean).join(' · '))}${dato('En comodato', v.comodato)}${dato('Adicionales (del cliente)', v.adicionales)}
         ${(f.cilindros || []).length ? dato('Cilindros de CO₂', f.cilindros.map(x => x.serie + (x.desde ? ' (desde ' + fechaTxt(x.desde) + ')' : '')).join(', ')) : ''}
-        ${dato('Próximo mantenimiento', m ? fechaTxt(m.proximo) + ' · ' + m.semaforo + ' (cada ' + m.frecuencia + ' días)' : '')}${dato('Trabajos a realizar', m ? m.trabajos : '')}
+        ${dato('Próximo mantenimiento', m ? fechaTxt(m.proximo) + ' · ' + (m.tipoMantTexto || '') + ' · ' + m.semaforo : '')}
+        ${dato('Esquema de mantenimiento', m ? textoEsquema(m.esquema) + (m.esquemaPropio ? ' (propio del cliente)' : ' (el de Configuración)') + (m.ultimoTipoMant ? ' · último: ' + m.ultimoTipoMant : '') : '')}${dato('Trabajos a realizar', m ? m.trabajos : '')}
         ${dato('Comentarios', c.comentarios)}</div>
       ${v.aRetirar ? `<div class="nota info"><strong>A retirar en una desinstalación:</strong> ${esc(v.aRetirar)}</div>` : ''}
       ${v.comentarioDesinstalacion ? `<div class="nota adv">${esc(v.comentarioDesinstalacion)}</div>` : ''}
@@ -1882,7 +1902,10 @@ function abrirFormCliente(id) {
   const set = (k, v) => { $(k).value = v == null ? '' : v; };
   set('cf-nombre', c.nombre); set('cf-razon', c.razon); set('cf-sector', c.sector); set('cf-tipo', c.tipoCliente); set('cf-modalidad', c.modalidad);
   set('cf-plaza', c.plaza); zonasFormCliente(c.zonaId);
-  set('cf-frecuencia', c.frecuenciaPropia); set('cf-coment', c.comentarios);
+  set('cf-coment', c.comentarios);
+  $('cf-esq-propio').checked = !!c.esquemaPropio;
+  $('cf-esquema-caja').innerHTML = htmlEsquema('cf-esquema', c.esquemaPropio || S.ini.esquemaMant);
+  $('cf-esquema-caja').style.display = c.esquemaPropio ? '' : 'none';
   $('cli-form').style.display = 'block';
   $('cli-form').scrollIntoView && $('cli-form').scrollIntoView({ behavior: 'smooth' });
 }
@@ -1890,7 +1913,8 @@ async function guardarCliente() {
   if (!S.cfEditando) return;
   const d = { id: S.cfEditando, nombre: $('cf-nombre').value.trim(), razon: $('cf-razon').value.trim(), sector: $('cf-sector').value.trim(),
     tipoCliente: $('cf-tipo').value, modalidad: $('cf-modalidad').value, zonaId: $('cf-zona').value,
-    frecuencia: $('cf-frecuencia').value === '' ? '' : Number($('cf-frecuencia').value), comentarios: $('cf-coment').value.trim() };
+    esquemaMant: $('cf-esq-propio').checked ? leerEsquemaHtml('cf-esquema') : '', comentarios: $('cf-coment').value.trim() };
+  if (d.esquemaMant && !/[PE]/.test(d.esquemaMant)) return aviso('El esquema propio necesita al menos un mes con Profundo o Express.', 'err');
   if (!d.zonaId) return aviso('Elegí la zona.', 'err');
   ocupado('Guardando cliente…');
   try {

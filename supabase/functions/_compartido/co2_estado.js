@@ -9,7 +9,7 @@
 // =============================================================================
 import {
   co2_simularLote, co2_normalizarSerie, co2_normalizarNroRemito, co2_esFechaValida, co2_MOV, co2_UBIC,
-  co2_reconstruirSerie, co2_validarAnulacion, co2_detectarAlertas
+  co2_reconstruirSerie, co2_validarAnulacion, co2_detectarAlertas, co2_PROVEEDOR_DEFECTO
 } from './co2_motor.js';
 import { cilindrosDeOT_, normalizarTipoOT, TIPO_OT, TIPO_OT_TEXTO, MODALIDAD_CO2 } from './motor.js';
 import { BLOQUEO, iso, nulo, ErrorDeUsuario, exigirRol, insertar, contadores, anotar, hoyArgentina, fechaHora } from './base.js';
@@ -29,7 +29,9 @@ export function rutaArchivo(d) {
 }
 /** Enlace para abrir un archivo guardado (la página archivo.html pide un enlace temporal con el login del usuario). */
 export const urlArchivo = (ruta) => (ruta ? 'archivo.html?r=' + encodeURIComponent(ruta) : '');
-export const cilindroParaApp = (c) => ({ serie: c.serie, estado: c.estado, ubicTipo: c.ubicTipo, ubicId: c.ubicId, depOrigen: c.depOrigen, ultimaFecha: c.ultimaFecha, pesoKg: c.pesoKg });
+export const cilindroParaApp = (c) => ({ serie: c.serie, estado: c.estado, ubicTipo: c.ubicTipo, ubicId: c.ubicId, depOrigen: c.depOrigen, ultimaFecha: c.ultimaFecha, pesoKg: c.pesoKg,
+  proveedor: c.proveedor || co2_PROVEEDOR_DEFECTO });
+const provDe = (v) => String(v || co2_PROVEEDOR_DEFECTO).toUpperCase();
 
 /* ---------------------------------------------------------------------------
  *  Filas ↔ motor
@@ -37,16 +39,17 @@ export const cilindroParaApp = (c) => ({ serie: c.serie, estado: c.estado, ubicT
 const pesoDe = (v) => (v === '' || v == null ? '' : Number(v));
 const estadoDeFila = (r) => ({
   serie: r.serie, estado: r.estado, ubicTipo: r.ubicacion_tipo, ubicId: r.ubicacion_id || '', depOrigen: r.deposito_origen_id || '',
-  idCircuito: r.circuito_id || '', pesoKg: pesoDe(r.peso_kg), ultimaFecha: iso(r.fecha_ultimo_mov), fechaAlta: iso(r.fecha_alta)
+  idCircuito: r.circuito_id || '', pesoKg: pesoDe(r.peso_kg), ultimaFecha: iso(r.fecha_ultimo_mov), fechaAlta: iso(r.fecha_alta), proveedor: r.proveedor || co2_PROVEEDOR_DEFECTO
 });
 const filaDeEstado = (s, fechaAlta) => ({
   serie: s.serie, peso_kg: s.pesoKg === '' || s.pesoKg == null ? null : Number(s.pesoKg), estado: s.estado, ubicacion_tipo: s.ubicTipo, ubicacion_id: s.ubicId || '',
-  deposito_origen_id: s.depOrigen || '', circuito_id: s.idCircuito || '', fecha_alta: nulo(fechaAlta || s.fechaAlta || s.ultimaFecha), fecha_ultimo_mov: nulo(s.ultimaFecha)
+  deposito_origen_id: s.depOrigen || '', circuito_id: s.idCircuito || '', fecha_alta: nulo(fechaAlta || s.fechaAlta || s.ultimaFecha), fecha_ultimo_mov: nulo(s.ultimaFecha),
+  proveedor: s.proveedor || co2_PROVEEDOR_DEFECTO
 });
 const movDeFila = (r) => ({
   idMov: r.movimiento_id, orden: Number(r.orden) || 0, fecha: iso(r.fecha), serie: r.serie, tipoMov: r.tipo, origenTipo: r.origen_tipo, origenId: r.origen_id || '',
   destinoTipo: r.destino_tipo, destinoId: r.destino_id || '', estadoAnterior: r.estado_anterior, estadoNuevo: r.estado_nuevo, idCircuito: r.circuito_id || '',
-  depOrigen: r.deposito_origen_id || '', zonaId: r.zona_id || '', refTipo: r.ref_tipo, refId: r.ref_id || '', pesoKg: pesoDe(r.peso_kg), anulado: r.anulado === true
+  depOrigen: r.deposito_origen_id || '', zonaId: r.zona_id || '', refTipo: r.ref_tipo, refId: r.ref_id || '', pesoKg: pesoDe(r.peso_kg), anulado: r.anulado === true, proveedor: r.proveedor || ''
 });
 const filaCircuito = (c) => ({
   circuito_id: c.idCircuito, serie: c.serie, deposito_origen_id: c.depOrigen, fecha_inicio: c.fechaInicio, ref_entrada: c.refEntrada || '',
@@ -55,7 +58,7 @@ const filaCircuito = (c) => ({
 
 async function upsertCilindros(sql, filas) {
   for (let i = 0; i < filas.length; i += 500) {
-    await sql`insert into co2_cilindros ${sql(filas.slice(i, i + 500))} on conflict (serie) do update set peso_kg = excluded.peso_kg, estado = excluded.estado,
+    await sql`insert into co2_cilindros ${sql(filas.slice(i, i + 500))} on conflict (serie) do update set peso_kg = excluded.peso_kg, proveedor = excluded.proveedor, estado = excluded.estado,
       ubicacion_tipo = excluded.ubicacion_tipo, ubicacion_id = excluded.ubicacion_id, deposito_origen_id = excluded.deposito_origen_id,
       circuito_id = excluded.circuito_id, fecha_alta = excluded.fecha_alta, fecha_ultimo_mov = excluded.fecha_ultimo_mov, updated_at = now()`;
   }
@@ -64,10 +67,14 @@ async function upsertCilindros(sql, filas) {
 /* ---------------------------------------------------------------------------
  *  Contexto
  * ------------------------------------------------------------------------ */
+/** "2,5; 5; 10" → [2.5, 5, 10] (separadas por punto y coma; decimales con coma o punto). */
+export function leerCargas(v) {
+  return [...new Set(String(v == null || v === '' ? '5;10' : v).split(/[;\s]+/).map((x) => Number(x.replace(',', '.'))).filter((x) => x > 0))].sort((a, b) => a - b);
+}
 export { estadoDeFila, movDeFila };
 
 export async function co2Contexto(sql) {
-  const [config, deps, co2deps, plazas, zonas, regiones, clientes, cil, rem] = await Promise.all([
+  const [config, deps, co2deps, plazas, zonas, regiones, clientes, cil, rem, provs] = await Promise.all([
     sql`select clave, valor from co2_config`,
     sql`select * from depositos`,
     sql`select * from co2_depositos`,
@@ -76,8 +83,11 @@ export async function co2Contexto(sql) {
     sql`select region_id from regiones`,
     sql`select cliente_id, nombre_fantasia, sector, zona_id, tipo_cliente from clientes`,
     sql`select * from co2_cilindros`,
-    sql`select remito_id, nro_remito, nro_normalizado, deposito_id, archivo_hash, estado from co2_remitos where estado in ('CONFIRMADO', 'BORRADOR', 'CON_ERROR', 'PENDIENTE_APROBACION')`
+    sql`select remito_id, nro_remito, nro_normalizado, deposito_id, archivo_hash, estado, proveedor from co2_remitos where estado in ('CONFIRMADO', 'BORRADOR', 'CON_ERROR', 'PENDIENTE_APROBACION')`,
+    sql`select * from co2_proveedores order by proveedor_id`
   ]);
+  const proveedores = {};
+  provs.forEach((p) => { proveedores[p.proveedor_id] = { id: p.proveedor_id, nombre: p.nombre, lectorPdf: p.lector_pdf, activo: p.activo }; });
   const cfg = {};
   config.forEach((r) => { cfg[r.clave] = r.valor; });
   const extra = {}, depositos = {};
@@ -88,21 +98,21 @@ export async function co2Contexto(sql) {
   });
   const P = {}, Z = {}, R = {};
   regiones.forEach((r) => { R[r.region_id] = { id: r.region_id, nombre: r.region_id }; });
-  plazas.forEach((p) => { P[p.plaza_id] = { id: p.plaza_id, nombre: p.plaza_id, regionId: p.region_id, depositoId: p.deposito_id }; });
+  plazas.forEach((p) => { P[p.plaza_id] = { id: p.plaza_id, nombre: p.plaza_id, regionId: p.region_id, depositoId: p.deposito_id, proveedor: p.proveedor_co2 || co2_PROVEEDOR_DEFECTO }; });
   zonas.forEach((z) => { Z[z.zona_id] = { id: z.zona_id, nombre: z.zona_id, plazaId: z.plaza_id }; });
   const C = {};
   clientes.forEach((c) => {
     const z = Z[c.zona_id], p = z ? P[z.plazaId] : null;
     C[c.cliente_id] = { id: c.cliente_id, nombre: c.nombre_fantasia + (c.sector ? ' · ' + c.sector : ''), zonaId: c.zona_id, plazaId: p ? p.id : '', regionId: p ? p.regionId : '',
-      depositoId: p ? p.depositoId : '', tipoCliente: c.tipo_cliente, activo: true };
+      depositoId: p ? p.depositoId : '', proveedor: p ? p.proveedor : co2_PROVEEDOR_DEFECTO, tipoCliente: c.tipo_cliente, activo: true };
   });
   const cilindros = {}, fechaAlta = {};
   cil.forEach((r) => { cilindros[r.serie] = estadoDeFila(r); fechaAlta[r.serie] = iso(r.fecha_alta); });
   let n = 0;
   return {
-    hoy: hoyArgentina(), regiones: R, plazas: P, zonas: Z, depositos, clientes: C, cilindros, fechaAlta, config: cfg,
-    remitos: rem.map((r) => ({ idRemito: r.remito_id, nro: r.nro_remito, nroNorm: r.nro_normalizado, idDeposito: r.deposito_id, hash: r.archivo_hash, estado: r.estado })),
-    cargasValidas: String(cfg.CARGAS_KG || '5;10').split(/[,;\s]+/).map(Number).filter((x) => x > 0),
+    hoy: hoyArgentina(), regiones: R, plazas: P, zonas: Z, depositos, clientes: C, cilindros, fechaAlta, config: cfg, proveedores,
+    remitos: rem.map((r) => ({ idRemito: r.remito_id, nro: r.nro_remito, nroNorm: r.nro_normalizado, idDeposito: r.deposito_id, hash: r.archivo_hash, estado: r.estado, proveedor: r.proveedor })),
+    cargasValidas: leerCargas(cfg.CARGAS_KG),
     nuevoIdCircuito: () => 'NUEVO-' + (++n) // provisorio; se reemplaza al guardar
   };
 }
@@ -181,7 +191,7 @@ export async function co2Escribir(sql, ops, sim, ctx, usuario, opts = {}) {
       filas.co2_movimientos.push({ movimiento_id: idMov, fecha: m.fecha, serie: m.serie, peso_kg: m.pesoKg === '' || m.pesoKg == null ? null : Number(m.pesoKg), tipo: m.tipoMov,
         origen_tipo: m.origenTipo || '', origen_id: m.origenId || '', destino_tipo: m.destinoTipo || '', destino_id: m.destinoId || '',
         estado_anterior: m.estadoAnterior || '', estado_nuevo: m.estadoNuevo, circuito_id: idCirc || '', deposito_origen_id: m.depOrigen || '', zona_id: m.zonaId || '',
-        ref_tipo: refTipo, ref_id: refId, created_by: usuario.email });
+        ref_tipo: refTipo, ref_id: refId, proveedor: m.proveedor || '', created_by: usuario.email });
       if (m.circuitoNuevo) circuitosNuevos[idCirc] = { circuito_id: idCirc, serie: m.serie, deposito_origen_id: m.depOrigen, fecha_inicio: m.fecha, ref_entrada: refId, fecha_cierre: null, ref_salida: '', estado: 'ABIERTO' };
       if (m.tipoMov === co2_MOV.RETIRO_LINDE) {
         const nuevo = circuitosNuevos[idCirc];
@@ -190,7 +200,7 @@ export async function co2Escribir(sql, ops, sim, ctx, usuario, opts = {}) {
       }
     });
     if (op.clase === 'REMITO') {
-      filas.co2_remitos.push({ remito_id: refId, nro_remito: String(d.nroRemito), nro_normalizado: co2_normalizarNroRemito(d.nroRemito), fecha: d.fecha, deposito_id: d.idDeposito,
+      filas.co2_remitos.push({ remito_id: refId, nro_remito: String(d.nroRemito), nro_normalizado: co2_normalizarNroRemito(d.nroRemito), fecha: d.fecha, deposito_id: d.idDeposito, proveedor: provDe(d.proveedor),
         tipo_copia: d.tipoCopia || '', plaza_texto: d.plazaTexto || '', origen_carga: d.origenCarga || 'MANUAL', archivo_ruta: rutaArchivo(d), archivo_hash: d.archivoHash || '',
         observaciones: d.observaciones || '', estado: 'CONFIRMADO', errores: '', created_by: usuario.email, confirmado_at: new Date() });
       (d.lineas || []).forEach((l) => {
@@ -212,7 +222,7 @@ export async function co2Escribir(sql, ops, sim, ctx, usuario, opts = {}) {
     } else {
       filas.co2_altas.push({ alta_id: refId, fecha: d.fecha, serie: co2_normalizarSerie(d.serie), peso_kg: Number(d.pesoKg) || null, deposito_origen_id: d.idDepositoOrigen,
         ubicacion: String(d.ubicacion).toUpperCase(), cliente_id: d.idCliente || null, estado_cilindro: d.estado || '', observaciones: d.observaciones || '',
-        estado: 'CONFIRMADO', created_by: usuario.email });
+        proveedor: (res.movimientos[0] && res.movimientos[0].proveedor) || provDe(d.proveedor), estado: 'CONFIRMADO', created_by: usuario.email });
     }
     res.advertencias.forEach((a) => {
       if (CODIGOS_A_REVISION.indexOf(a.codigo) < 0) return;
@@ -298,7 +308,7 @@ export async function co2EnviarAprobacion(sql, usuario, d) {
     }
     const C = await contadores(tx);
     if (!id) id = C.siguiente('REM');
-    await insertar(tx, 'co2_remitos', [{ remito_id: id, nro_remito: String(d.nroRemito), nro_normalizado: co2_normalizarNroRemito(d.nroRemito), fecha: d.fecha, deposito_id: d.idDeposito,
+    await insertar(tx, 'co2_remitos', [{ remito_id: id, nro_remito: String(d.nroRemito), nro_normalizado: co2_normalizarNroRemito(d.nroRemito), fecha: d.fecha, deposito_id: d.idDeposito, proveedor: provDe(d.proveedor),
       tipo_copia: d.tipoCopia || '', plaza_texto: d.plazaTexto || '', origen_carga: d.origenCarga || 'MANUAL', archivo_ruta: rutaArchivo(d), archivo_hash: d.archivoHash || '',
       observaciones: d.observaciones || '', estado: 'PENDIENTE_APROBACION', errores: dudosas.length + ' serie(s) dudosa(s)',
       created_by: creado ? creado.created_by : usuario.email, created_at: creado ? creado.created_at : new Date() }]);
@@ -342,7 +352,7 @@ const textoComposicion = (c) => Object.keys(c || {}).map(Number).sort((a, b) => 
 const fechaTexto = (f) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(f || '')); return m ? m[3] + '/' + m[2] + '/' + m[1] : String(f || ''); };
 
 async function facturacion(sql) {
-  const facs = await sql`select factura_id, nro_factura, nro_normalizado, fecha, estado from co2_facturas where estado <> 'ANULADA'`;
+  const facs = await sql`select factura_id, nro_factura, nro_normalizado, fecha, estado, proveedor from co2_facturas where estado <> 'ANULADA'`;
   const facturas = {}, porRemito = {};
   facs.forEach((f) => { facturas[f.factura_id] = f; });
   const lineas = await sql`select factura_id, remito_id, resultado, kg_factura from co2_factura_lineas where remito_id is not null`;
@@ -354,20 +364,22 @@ async function facturacion(sql) {
   return { facturas, porRemito };
 }
 
-/** d = { nroFactura, fecha, lineas: [{ nroRemito, fechaRemito, kg }], idFactura? } */
+/** d = { proveedor, nroFactura, fecha, lineas: [{ nroRemito, fechaRemito, kg }], idFactura? } (cada factura es de un proveedor y mira sus remitos) */
 export async function co2ValidarFactura(sql, d) {
   d = d || {};
   const errores = [];
+  const prov = provDe(d.proveedor);
+  if (!(await sql`select 1 from co2_proveedores where proveedor_id = ${prov}`).length) errores.push('El proveedor "' + prov + '" no existe.');
   const nroNorm = co2_normalizarNroRemito(d.nroFactura);
   if (!nroNorm) errores.push('Falta el número de la factura.');
   if (!co2_esFechaValida(d.fecha)) errores.push('La fecha de la factura no es válida.');
   const fac = await facturacion(sql);
   Object.keys(fac.facturas).forEach((id) => {
     const f = fac.facturas[id];
-    if (nroNorm && f.nro_normalizado === nroNorm && id !== String(d.idFactura || '')) errores.push('La factura ' + d.nroFactura + ' ya está cargada (' + id + ', ' + f.estado + ').');
+    if (nroNorm && f.nro_normalizado === nroNorm && provDe(f.proveedor) === prov && id !== String(d.idFactura || '')) errores.push('La factura ' + d.nroFactura + ' ya está cargada (' + id + ', ' + f.estado + ').');
   });
   const remitos = {};
-  (await sql`select remito_id, nro_remito, nro_normalizado, fecha, deposito_id, estado from co2_remitos where estado <> 'ANULADO'`).forEach((r) => {
+  (await sql`select remito_id, nro_remito, nro_normalizado, fecha, deposito_id, estado from co2_remitos where estado <> 'ANULADO' and proveedor = ${prov}`).forEach((r) => {
     const k = r.nro_normalizado || co2_normalizarNroRemito(r.nro_remito);
     if (!remitos[k] || r.estado === 'CONFIRMADO') remitos[k] = r;
   });
@@ -386,7 +398,7 @@ export async function co2ValidarFactura(sql, d) {
     const r = remitos[co2_normalizarNroRemito(x.nroRemito)];
     if (x.kg !== '') res.kgFactura += x.kg;
     x.avisos = [];
-    if (!r) { x.resultado = 'NO_ENCONTRADO'; x.detalle = 'El remito no está cargado en el sistema.'; res.noEncontrados++; return; }
+    if (!r) { x.resultado = 'NO_ENCONTRADO'; x.detalle = 'El remito no está cargado en el sistema (entre los de este proveedor).'; res.noEncontrados++; return; }
     x.remitoId = r.remito_id; x.deposito = r.deposito_id; x.fechaSistema = iso(r.fecha);
     if (r.estado !== 'CONFIRMADO') { x.resultado = 'NO_CONFIRMADO'; x.detalle = 'El remito está cargado pero no confirmado (' + r.estado + ').'; res.noEncontrados++; return; }
     const info = kgs[r.remito_id] || { entregas: 0, kg: 0, composicion: {} };
@@ -417,7 +429,7 @@ export async function co2GuardarFactura(sql, usuario, d) {
     const C = await contadores(tx);
     const id = C.siguiente('FAC');
     const r = v.resumen, estado = v.todoValidado ? 'VALIDADA' : 'CON_DIFERENCIAS';
-    await insertar(tx, 'co2_facturas', [{ factura_id: id, nro_factura: String(d.nroFactura).trim(), nro_normalizado: co2_normalizarNroRemito(d.nroFactura), fecha: d.fecha,
+    await insertar(tx, 'co2_facturas', [{ factura_id: id, nro_factura: String(d.nroFactura).trim(), nro_normalizado: co2_normalizarNroRemito(d.nroFactura), fecha: d.fecha, proveedor: provDe(d.proveedor),
       total_kg: r.kgFactura, archivo_ruta: rutaArchivo(d), archivo_hash: d.archivoHash || '', observaciones: d.observaciones || '', estado,
       resumen: r.validados + ' de ' + v.lineas.length + ' remitos validados (' + r.kgValidados + ' de ' + r.kgFactura + ' kg)', created_by: usuario.email }]);
     await insertar(tx, 'co2_factura_lineas', v.lineas.map((x) => ({ linea_id: C.siguiente('FDT', 7), factura_id: id, nro_remito: x.nroRemito, nro_normalizado: co2_normalizarNroRemito(x.nroRemito),
@@ -513,7 +525,8 @@ export async function co2Auditar(sql, usuario) {
       const a = cilindros[s], b = cctx.cilindros[s];
       if (!a || !b) return true;
       return a.estado !== b.estado || a.ubicTipo !== b.ubicTipo || String(a.ubicId) !== String(b.ubicId) || String(a.depOrigen) !== String(b.depOrigen) ||
-        String(a.idCircuito) !== String(b.idCircuito) || String(a.pesoKg || '') !== String(b.pesoKg || '') || a.ultimaFecha !== b.ultimaFecha;
+        String(a.idCircuito) !== String(b.idCircuito) || String(a.pesoKg || '') !== String(b.pesoKg || '') || a.ultimaFecha !== b.ultimaFecha ||
+        provDe(a.proveedor) !== provDe(b.proveedor);
     });
     const [{ n: nCirc }] = await tx`select count(*)::int n from co2_circuitos`;
     if (dif.length || nCirc !== circuitos.length) {
@@ -529,7 +542,7 @@ export async function co2Auditar(sql, usuario) {
     const nuevas = incoh.filter((i) => !abiertas.has(i.codigo + '|' + i.serie + '|' + i.mensaje)).map((i) => ({ codigo: i.codigo, serie: i.serie || '', ref_id: '', detalle: i.mensaje, usuario: usuario.email }));
     if (dif.length) nuevas.push({ codigo: 'ESTADO_CORREGIDO', serie: dif.slice(0, 20).join(', '), ref_id: '', usuario: usuario.email,
       detalle: 'El estado guardado de ' + dif.length + ' cilindro(s) no coincidía con el historial y se corrigió desde co2_movimientos.' });
-    const alertas = co2_detectarAlertas(cctx.cilindros, { hoy: cctx.hoy, clientes: cctx.clientes, depositos: cctx.depositos,
+    const alertas = co2_detectarAlertas(cctx.cilindros, { hoy: cctx.hoy, clientes: cctx.clientes, depositos: cctx.depositos, proveedores: cctx.proveedores,
       diasCliente: Number(cctx.config.DIAS_INMOVILIZADO_CLIENTE || 60) || 0, diasVacio: Number(cctx.config.DIAS_VACIO_SIN_DEVOLVER || 30) || 0 })
       .filter((a) => !yaAlertadas.has(a.codigo + '|' + a.serie + '|' + a.idCircuito))
       .map((a) => ({ codigo: a.codigo, serie: a.serie, ref_id: a.idCircuito || '', detalle: a.mensaje, usuario: usuario.email }));

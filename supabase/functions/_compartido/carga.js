@@ -6,6 +6,7 @@
 // =============================================================================
 /* eslint-disable */
 import {
+  leerEsquemaMant,
   CAT,
   EST_MAQ,
   MODALIDAD_CO2,
@@ -104,12 +105,12 @@ function aplicarReglasDeCarga_(ops, ctx) {
       if (!z) err(i, 'ZONA_INEXISTENTE', 'Elegí la zona del cliente nuevo (de ahí salen su plaza y su región).');
       else if (!z.activa) err(i, 'ZONA_INACTIVA', 'La zona ' + z.nombre + ' está inactiva.');
       else if (!ctx.plazas[z.plaza]) err(i, 'PLAZA_INEXISTENTE', 'La zona ' + z.nombre + ' apunta a la plaza "' + z.plaza + '", que no existe.');
-      if (cn.frecuencia !== '' && cn.frecuencia != null && !(Number(cn.frecuencia) > 0)) err(i, 'FRECUENCIA_INVALIDA', 'La frecuencia de mantenimiento debe ser un número de días mayor que cero, o quedar vacía.');
+      if (cn.esquemaMant != null && cn.esquemaMant !== '' && !leerEsquemaMant(cn.esquemaMant)) err(i, 'ESQUEMA_MANT_INVALIDO', 'El esquema de mantenimiento son 6 meses separados por ";": P (Profundo), E (Express) o - (nada). Ej.: -;-;E;-;-;P. Vacío = el de Configuración.');
       if (!errores[i]) {
         var p = ctx.plazas[z.plaza];
         ctx.clientes[id] = { id: id, nombre: String(cn.nombre).trim(), razon: String(cn.razon || ''), sector: String(cn.sector || ''), tipoCliente: String(cn.tipoCliente || ''),
           modalidad: String(cn.modalidad || ''), zonaId: z.id, zona: z.nombre, plaza: p.plaza, region: p.region,
-          frecuencia: cn.frecuencia === '' || cn.frecuencia == null ? '' : Number(cn.frecuencia), comentarios: String(cn.comentarios || ''), _nuevo: true };
+          esquemaMant: cn.esquemaMant ? String(cn.esquemaMant).trim().toUpperCase() : '', comentarios: String(cn.comentarios || ''), _nuevo: true };
       }
     }
     if (tipo === TIPO_OT.INSTALACION && !String(d.sistema || '').trim()) err(i, 'FALTA_SISTEMA', 'Indicá el sistema de purificación que se instala.');

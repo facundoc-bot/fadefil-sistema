@@ -10,7 +10,7 @@
 import {
   estadoInicial, simularLote, reconstruir, validarAnulacion, construirSistemas_, detectarAlertas,
   fijarDepositoCentral, depositoCentral, normalizarSerie, normalizarCodigo, defSistema_, cilindrosDeOT_,
-  SLOTS_SIS, EST_CLI, SALDO, TIPOS_AJUSTE, RES_ITEM, DIAS_ANTICIPO_FILTROS_DEFECTO, co2VaACobranza_
+  SLOTS_SIS, EST_CLI, SALDO, leerEsquemaMant, textoEsquemaMant, normalizarTipoMant, TIPOS_AJUSTE, RES_ITEM, DIAS_ANTICIPO_FILTROS_DEFECTO, co2VaACobranza_
 } from './motor.js';
 import { PREFIJO_OP, detalleOperacion_, textoPlanSistema_, simularLotePreparado_, lineasDeOT_ } from './carga.js';
 
@@ -64,7 +64,7 @@ export async function contexto(sql) {
     const z = zonas[r.zona_id] || null, p = z ? plazas[z.plaza] : null;
     clientes[r.cliente_id] = { id: r.cliente_id, nombre: r.nombre_fantasia || r.cliente_id, razon: r.razon_social_cuit, sector: r.sector, tipoCliente: r.tipo_cliente,
       modalidad: r.modalidad, zonaId: r.zona_id, zona: z ? z.nombre : '', plaza: p ? p.plaza : '', region: p ? p.region : '',
-      frecuencia: r.frecuencia_mant_dias == null ? '' : Number(r.frecuencia_mant_dias), comentarios: r.comentarios };
+      esquemaMant: r.esquema_mant || '', comentarios: r.comentarios };
   });
   maquinasF.forEach((r) => { maquinas[r.serie] = { serie: r.serie, modelo: r.modelo || '', fechaAlta: iso(r.fecha_alta), depositoInicial: r.deposito_inicial_id }; });
   modelosF.forEach((r) => { modelos[r.modelo] = { modelo: r.modelo, linea: r.linea }; });
@@ -79,7 +79,7 @@ export async function contexto(sql) {
     reglas: Object.keys(reglas).length ? reglas : null, sistemas: sis.sistemas, sistemasIncompletos: sis.incompletos,
     regionesTecnicoObligatorio: conf('REGIONES_TECNICO_OBLIGATORIO', 'AMBA').split(/[,;]/).map((x) => x.trim().toUpperCase()).filter(String),
     diasRetrabajo: Number(conf('DIAS_RETRABAJO', '30')) || 30,
-    diasMantenimiento: Number(conf('DIAS_MANTENIMIENTO', '90')) || 90,
+    esquemaMant: conf('ESQUEMA_MANTENIMIENTO', '-;-;E;-;-;P'),
     diasAviso: Number(conf('DIAS_AVISO_MANTENIMIENTO', '15')) || 15,
     diasAnticipoFiltros: anticipo !== '' && Number(anticipo) >= 0 ? Number(anticipo) : DIAS_ANTICIPO_FILTROS_DEFECTO,
     depositoCentral: depositoCentral(), config: cfg, listas
@@ -93,7 +93,7 @@ const SALDOS_CLIENTE = { COMODATO: 'comodato', ADICIONALES: 'adicionales', FALTA
 
 function clienteVacio(id) {
   return { id, estado: EST_CLI.SIN_DATOS, serie: '', tieneOT: false, fechaInstalacion: '', fechaCambio: '', fechaDesinstalacion: '', ultimaVisita: '',
-    tipoUltimaVisita: '', ultimaFechaOT: '', fechaBase: '', ultimoMantenimiento: '', pendiente: '', sistema: '', prefiltro: '',
+    tipoUltimaVisita: '', ultimaFechaOT: '', fechaBase: '', ultimoMantenimiento: '', mantMes: 0, tipoUltimoMant: '', pendiente: '', sistema: '', prefiltro: '',
     comodato: {}, adicionales: {}, faltante: {}, devueltoDeMas: {}, comentarioDesinstalacion: '', sis: { SISTEMA: null, PREFILTRO: null } };
 }
 
@@ -101,6 +101,7 @@ function clienteVacio(id) {
 function filasCliente(c) {
   const estado = { cliente_id: c.id, estado: c.estado, serie_instalada: c.serie || '', fecha_instalacion: nulo(c.fechaInstalacion), fecha_cambio: nulo(c.fechaCambio),
     fecha_desinstalacion: nulo(c.fechaDesinstalacion), fecha_base: nulo(c.fechaBase), ultimo_mantenimiento: nulo(c.ultimoMantenimiento),
+    mant_mes: Number(c.mantMes) || 0, tipo_ultimo_mant: c.tipoUltimoMant || '',
     ultima_visita: nulo(c.ultimaVisita), tipo_ultima_visita: c.tipoUltimaVisita || '', fecha_ultima_ot: nulo(c.ultimaFechaOT), pendiente: c.pendiente || '',
     comentario_desinstalacion: c.comentarioDesinstalacion || '' };
   const items = [];
@@ -135,6 +136,7 @@ function clientesDesdeFilas(W, f) {
     const c = W.clientes[r.cliente_id] = clienteVacio(r.cliente_id);
     c.estado = r.estado; c.serie = r.serie_instalada; c.fechaInstalacion = iso(r.fecha_instalacion); c.fechaCambio = iso(r.fecha_cambio);
     c.fechaDesinstalacion = iso(r.fecha_desinstalacion); c.fechaBase = iso(r.fecha_base); c.ultimoMantenimiento = iso(r.ultimo_mantenimiento);
+    c.mantMes = Number(r.mant_mes) || 0; c.tipoUltimoMant = r.tipo_ultimo_mant || '';
     c.ultimaVisita = iso(r.ultima_visita); c.tipoUltimaVisita = r.tipo_ultima_visita; c.ultimaFechaOT = iso(r.fecha_ultima_ot);
     c.tieneOT = !!c.ultimaFechaOT; c.pendiente = r.pendiente; c.comentarioDesinstalacion = r.comentario_desinstalacion;
   });
@@ -245,6 +247,7 @@ async function escribirCliente(sql, f, reemplazar) {
   await sql`insert into clientes_estado ${sql(f.estado)} on conflict (cliente_id) do update set
     estado = excluded.estado, serie_instalada = excluded.serie_instalada, fecha_instalacion = excluded.fecha_instalacion, fecha_cambio = excluded.fecha_cambio,
     fecha_desinstalacion = excluded.fecha_desinstalacion, fecha_base = excluded.fecha_base, ultimo_mantenimiento = excluded.ultimo_mantenimiento,
+    mant_mes = excluded.mant_mes, tipo_ultimo_mant = excluded.tipo_ultimo_mant,
     ultima_visita = excluded.ultima_visita, tipo_ultima_visita = excluded.tipo_ultima_visita, fecha_ultima_ot = excluded.fecha_ultima_ot,
     pendiente = excluded.pendiente, comentario_desinstalacion = excluded.comentario_desinstalacion, updated_at = now()`;
   if (reemplazar) {
@@ -428,13 +431,14 @@ export async function guardarLote(sql, usuario, opsPedido, aceptarAdvertencias) 
           const cn = d.clienteNuevo;
           clientesNuevos.push({ cliente_id: cn.id, nombre_fantasia: String(cn.nombre || '').trim(), razon_social_cuit: String(cn.razon || '').trim(), sector: String(cn.sector || '').trim(),
             tipo_cliente: String(cn.tipoCliente || '').trim(), modalidad: String(cn.modalidad || '').trim(), zona_id: String(cn.zonaId || '').trim(),
-            frecuencia_mant_dias: cn.frecuencia === '' || cn.frecuencia == null ? null : Number(cn.frecuencia), comentarios: String(cn.comentarios || '').trim() });
+            esquema_mant: leerEsquemaMant(cn.esquemaMant) ? textoEsquemaMant(leerEsquemaMant(cn.esquemaMant)) : '', comentarios: String(cn.comentarios || '').trim() });
         }
         const cm = ctx.clientes[ef.idCliente];
         reg.ot.push({ ot_id: id, fecha: d.fecha, cliente_id: ef.idCliente, zona_id: cm.zonaId, tipo: ef.tipo, tecnico: d.tecnico || '', tecnico_2: d.tecnico2 || '',
           serie_retirada: ef.serieOut || '', serie_instalada: ef.serieIn || '', falla: d.falla || '',
           sistema: textoPlanSistema_(ef.plan, 'SISTEMA', d.sistema, ctx), prefiltro: textoPlanSistema_(ef.plan, 'PREFILTRO', d.prefiltro, ctx),
-          comentarios: d.comentarios || '', pendiente: d.pendiente || '', ot_persat: d.nOtPersat || '', modalidad_co2: d.modalidadCo2 || '', estado: 'VIGENTE', created_by: usuario.email });
+          comentarios: d.comentarios || '', pendiente: d.pendiente || '', ot_persat: d.nOtPersat || '', modalidad_co2: d.modalidadCo2 || '',
+          tipo_mantenimiento: ef.tipo === 'MANTENIMIENTO' ? normalizarTipoMant(d.tipoMant) || 'PROFUNDO' : '', estado: 'VIGENTE', created_by: usuario.email });
         const lineas = lineasDeOT_(id, ef, d, ctx);
         // Cilindros de CO₂: una línea por movimiento (código CO2); las series quedan en co2_trabajo_lineas (trabajo = esta OT).
         const cil = cilindrosDeOT_(d), cob = co2VaACobranza_(ef.tipo, String(d.modalidadCo2 || '').toUpperCase());

@@ -8,14 +8,14 @@ import {
   TIPO_OT, TIPO_OT_TEXTO, EST_CLI, EST_CLI_TEXTO, EST_MAQ_TEXTO, UBIC, SALDO, TIPOS_AJUSTE, MODALIDAD_CO2, RES_TALLER_TEXTO,
   vistaClientes, vistaMantenimiento, vistaTaller, vistaLotesRevision, vistaStock, vistaStockMaquinas, vistaKardex,
   componentesCliente_, categoriasPermitidas_, nombreItem_, describirUbicacion_, normalizarSerie, normalizarCodigo, normalizarTipoOT,
-  esFechaValida, sumarDias, diasEntre, cant_, depositoCentral
+  esFechaValida, sumarDias, diasEntre, cant_, depositoCentral, leerEsquemaMant, textoEsquemaMant, TIPO_MANT_TEXTO
 } from './motor.js';
 import { co2_ESTADO, co2_UBIC } from './co2_motor.js';
 import { contexto, cargarEstado, validarLote, guardarLote, anularOperacion, auditar } from './estado.js';
 import { co2Contexto } from './co2_estado.js';
 import { ErrorDeUsuario, exigirRol, iso, insertar, anotar, BLOQUEO, hoyArgentina } from './base.js';
 
-export const VERSION_SISTEMA = '2.0';
+export const VERSION_SISTEMA = '2.1';
 
 const CLAVES_LISTAS = { TIPO_CLIENTE: 'tipoCliente', MODALIDAD: 'modalidad', PREFILTRO: 'prefiltro', TIPO_FALLA: 'falla', TRANSPORTE: 'transporte' };
 function leerListas(ctx) {
@@ -64,11 +64,13 @@ async function co2ParaApp(sql) {
   const cctx = await co2Contexto(sql);
   const llenos = {}, enCliente = {};
   Object.keys(cctx.cilindros).sort().forEach((sr) => {
-    const c = cctx.cilindros[sr], x = { serie: sr, pesoKg: c.pesoKg || '', desde: c.ultimaFecha || '' };
+    const c = cctx.cilindros[sr], x = { serie: sr, pesoKg: c.pesoKg || '', desde: c.ultimaFecha || '', proveedor: c.proveedor || 'LINDE' };
     if (c.estado === co2_ESTADO.LLENO && c.ubicTipo === co2_UBIC.DEPOSITO) (llenos[c.ubicId] = llenos[c.ubicId] || []).push(x);
     else if (c.estado === co2_ESTADO.EN_USO && c.ubicTipo === co2_UBIC.CLIENTE) (enCliente[c.ubicId] = enCliente[c.ubicId] || []).push(x);
   });
-  return { llenos, enCliente, cargas: cctx.cargasValidas };
+  const proveedorPlaza = {};
+  Object.values(cctx.plazas).forEach((p) => { proveedorPlaza[p.id] = p.proveedor; });
+  return { llenos, enCliente, cargas: cctx.cargasValidas, proveedorPlaza, proveedores: cctx.proveedores };
 }
 
 /** Todo lo que la app necesita para arrancar. Los filtros de región, plaza y zona se aplican en la app. */
@@ -92,7 +94,7 @@ async function datosInicio(sql, u) {
       estado: c.estado || EST_CLI.SIN_DATOS, serie: c.serie || '', modelo: m.modelo || '', comodato: ordenado(c.comodato), adicionales: ordenado(c.adicionales),
       faltante: ordenado(c.faltante), pendiente: c.pendiente || '', ultimaVisita: c.ultimaVisita || '', tipoUltimaVisita: c.tipoUltimaVisita || '', ultimaFechaOT: c.ultimaFechaOT || '',
       sistema: c.sistema || '', prefiltro: c.prefiltro || '', fechaInstalacion: c.fechaInstalacion || '',
-      frecuencia: Number(cm.frecuencia) > 0 ? Number(cm.frecuencia) : ctx.diasMantenimiento, frecuenciaPropia: Number(cm.frecuencia) > 0 ? Number(cm.frecuencia) : '',
+      esquemaPropio: leerEsquemaMant(cm.esquemaMant) ? textoEsquemaMant(leerEsquemaMant(cm.esquemaMant)) : '', mantMes: Number(c.mantMes) || 0, tipoUltimoMant: c.tipoUltimoMant || '',
       filtros: componentesCliente_(c, ctx).map((x) => ({ slot: x.slot, codigo: x.codigo, descripcion: x.descripcion, rol: x.rol, unidades: x.unidades, ultimo: x.ultimo, vence: x.vence })) };
   }).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)) || String(a.id).localeCompare(String(b.id)));
   const maquinas = Object.keys(W.maquinas).sort().map((s) => {
@@ -108,7 +110,8 @@ async function datosInicio(sql, u) {
     catalogo: Object.values(ctx.catalogo).filter((c) => c.categoria !== 'CO2').sort((a, b) => String(a.descripcion).localeCompare(String(b.descripcion))),
     modelos: Object.keys(ctx.modelos).sort(),
     listas: leerListas(ctx), reglas, tipos: TIPO_OT_TEXTO, estadosCliente: EST_CLI_TEXTO, estadosMaquina: EST_MAQ_TEXTO,
-    mantenimiento: vistaMantenimiento(W, ctx, { hoy: ctx.hoy, diasPorDefecto: ctx.diasMantenimiento, diasAviso: ctx.diasAviso }),
+    mantenimiento: vistaMantenimiento(W, ctx, { hoy: ctx.hoy, diasAviso: ctx.diasAviso }),
+    esquemaMant: textoEsquemaMant(leerEsquemaMant(ctx.esquemaMant) || leerEsquemaMant('-;-;E;-;-;P')), tiposMant: TIPO_MANT_TEXTO,
     taller: vistaTaller(W, ctx).map((t) => { t.plaza = plazaDeDeposito(ctx, t.deposito); return t; }),
     revisionPendiente: vistaLotesRevision(W, ctx),
     stock: vistaStock(W, ctx).map((f) => { ['ingresos30', 'ingresosTotal', 'salidas30', 'salidasTotal'].forEach((k) => delete f[k]); return f; }),
@@ -175,7 +178,7 @@ async function fichaCliente(sql, idCliente) {
     sistema: r.sistema || '', prefiltro: r.prefiltro || '', comentarios: r.comentarios, pendiente: r.pendiente, estado: r.estado, otPersat: r.ot_persat || '',
     items: porOT[r.ot_id] || [], adicionales: [] }))
     .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || String(b.nOt).localeCompare(String(a.nOt)));
-  const mant = vistaMantenimiento(W, ctxUno, { hoy: ctx.hoy, diasPorDefecto: ctx.diasMantenimiento, diasAviso: ctx.diasAviso })[0] || null;
+  const mant = vistaMantenimiento(W, ctxUno, { hoy: ctx.hoy, diasAviso: ctx.diasAviso })[0] || null;
   const datos = {};
   Object.keys(cm).forEach((k) => { if (k.charAt(0) !== '_') datos[k] = cm[k]; });
   const movs = await sql`select * from movimientos_stock where cliente_id = ${id} order by fecha, orden`;
@@ -272,14 +275,15 @@ async function guardarCliente(sql, u, datos) {
   const ctx = await contexto(sql);
   const z = ctx.zonas[String(d.zonaId || '').trim()];
   if (!z) throw new ErrorDeUsuario('Elegí una zona de la lista.');
-  if (d.frecuencia !== '' && d.frecuencia != null && !(Number(d.frecuencia) > 0)) throw new ErrorDeUsuario('La frecuencia de mantenimiento debe ser un número de días mayor que cero, o quedar vacía.');
+  const esq = d.esquemaMant == null || d.esquemaMant === '' ? '' : leerEsquemaMant(d.esquemaMant);
+  if (esq === null) throw new ErrorDeUsuario('El esquema de mantenimiento tiene que tener al menos un mes con Profundo o Express (o quedar el de Configuración).');
   const actual = ctx.clientes[id];
   if (!actual) throw new ErrorDeUsuario('El cliente ' + id + ' no existe. Los clientes nuevos se dan de alta en la OT de instalación.');
   const regNueva = (ctx.plazas[z.plaza] || {}).region;
   if (actual.region && regNueva && regNueva !== actual.region) throw new ErrorDeUsuario('La zona ' + z.nombre + ' es de otra región (' + regNueva + '). Un cliente no se pasa de región desde la ficha: pedíselo a un administrador.');
   await sql`update clientes set nombre_fantasia = ${String(d.nombre).trim()}, razon_social_cuit = ${String(d.razon || '').trim()}, sector = ${String(d.sector || '').trim()},
     tipo_cliente = ${String(d.tipoCliente || '').trim()}, modalidad = ${String(d.modalidad || '').trim()}, zona_id = ${z.id},
-    frecuencia_mant_dias = ${d.frecuencia === '' || d.frecuencia == null ? null : Number(d.frecuencia)}, comentarios = ${String(d.comentarios || '').trim()} where cliente_id = ${id}`;
+    esquema_mant = ${esq ? textoEsquemaMant(esq) : ''}, comentarios = ${String(d.comentarios || '').trim()} where cliente_id = ${id}`;
   await anotar(sql, u.email, 'EDITAR_CLIENTE', id + ' — ' + d.nombre);
   return { id };
 }

@@ -77,7 +77,9 @@ do $$ begin
   insert into modelos (modelo) values ('Ion 3000');
   insert into maquinas (serie, modelo, fecha_alta, deposito_inicial_id) values ('AQ1001', 'Ion 3000', '2026-01-10', 'Depósito Córdoba');
   insert into co2_depositos (deposito_id, plaza_linde) values ('Depósito Córdoba', '23081740');
-  update config set valor = '120' where clave = 'DIAS_MANTENIMIENTO';
+  update config set valor = '-;E;-;E;-;P' where clave = 'ESQUEMA_MANTENIMIENTO';
+  begin update config set valor = '-;-;-;-;-;-' where clave = 'ESQUEMA_MANTENIMIENTO'; raise exception 'FALLA: se guardó un esquema sin mantenimientos';
+  exception when check_violation then null; end;
   raise notice 'OK: el ADMIN carga depósitos, regiones, plazas, zonas, técnicos, modelos, máquinas y configuración';
 end $$;
 commit;
@@ -166,7 +168,9 @@ begin;
 set local role authenticated;
 set local request.jwt.claims = '{"email":"carga@empresa.com"}';
 do $$ declare n int; begin
-  update clientes set sector = 'Gastronomía', frecuencia_mant_dias = 60 where cliente_id = '50001'; get diagnostics n = row_count;
+  update clientes set sector = 'Gastronomía', esquema_mant = 'P;-;-;-;-;-' where cliente_id = '50001'; get diagnostics n = row_count;
+  begin update clientes set esquema_mant = 'P;E' where cliente_id = '50001'; raise exception 'FALLA: se guardó un esquema de cliente inválido';
+  exception when check_violation then null; end;
   if n <> 1 then raise exception 'FALLA: CARGA edita los datos de un cliente'; end if;
   begin update clientes set cliente_id = '99' where cliente_id = '50001'; raise exception 'FALLA: CARGA cambió el ID de un cliente';
   exception when insufficient_privilege then null; end;
@@ -267,4 +271,15 @@ do $$ begin
   if has_function_privilege('anon', 'hook_antes_de_crear_usuario(jsonb)', 'execute') or has_function_privilege('authenticated', 'hook_antes_de_crear_usuario(jsonb)', 'execute')
     or not has_function_privilege('supabase_auth_admin', 'hook_antes_de_crear_usuario(jsonb)', 'execute') then raise exception 'FALLA: permisos de la función de ingreso'; end if;
   raise notice 'OK: solo se crean cuentas de mails activos en Usuarios (los demás, rechazados con 403)';
+end $$;
+
+-- ---------------------------------------------------------------- v2.1: esquema de mantenimientos y proveedores de CO₂
+do $$ begin
+  if (select valor from config where clave = 'ESQUEMA_MANTENIMIENTO') is null or exists (select 1 from config where clave = 'DIAS_MANTENIMIENTO') then
+    raise exception 'FALLA: el esquema de mantenimientos reemplaza a los días entre mantenimientos'; end if;
+  if (select proveedor_co2 from plazas where plaza_id = 'GBA') <> 'GN' or (select proveedor_co2 from plazas where plaza_id = 'CABA') <> 'LINDE' then
+    raise exception 'FALLA: GBA trabaja con Gases Nordelta y CABA con LINDE'; end if;
+  if (select string_agg(proveedor_id || ':' || lector_pdf, ',' order by proveedor_id) from co2_proveedores) <> 'GN:false,LINDE:true' then
+    raise exception 'FALLA: proveedores iniciales'; end if;
+  raise notice 'OK: esquema de mantenimientos en Configuración; CO₂ con LINDE (CABA y resto) y Gases Nordelta (GBA)';
 end $$;

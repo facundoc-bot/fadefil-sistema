@@ -227,7 +227,7 @@ const MENU = [
     { pag: 'index', panel: 'p-stock', t: 'Stock', i: 'boxes' },
     { pag: 'index', panel: 'p-tecnicos', t: 'Técnicos', i: 'hard-hat' }] },
   { grupo: 'CO₂', items: [
-    { pag: 'co2', panel: 'p-remito', t: 'Remito LINDE', i: 'file-text', rol: 'carga' },
+    { pag: 'co2', panel: 'p-remito', t: 'Remito de CO₂', i: 'file-text', rol: 'carga' },
     { pag: 'co2', panel: 'p-facturas', t: 'Remitos y facturas', i: 'receipt' },
     { pag: 'co2', panel: 'p-consulta', t: 'Cilindros', i: 'cylinder' },
     { pag: 'co2', panel: 'p-recambios', t: 'Recambios', i: 'repeat' },
@@ -405,3 +405,21 @@ function mejorarSelectores(raiz) {
   });
 }
 document.addEventListener('DOMContentLoaded', () => mejorarSelectores());
+
+/* ---------------------------------------------------------------------------
+ *  Esquema de mantenimientos: 6 meses, cada uno Profundo (P), Express (E) o nada (-).
+ *  Se usa en Datos → Configuración (el de todos) y en la ficha del cliente (el propio).
+ * ------------------------------------------------------------------------ */
+const OPCIONES_ESQ = [['-', 'Nada'], ['E', 'Express'], ['P', 'Profundo']];
+function htmlEsquema(id, valor) {
+  const v = String(valor || '-;-;-;-;-;-').split(';');
+  return `<div class="esquema" id="${id}">` + [0, 1, 2, 3, 4, 5].map((i) => {
+    const x = OPCIONES_ESQ.some((o) => o[0] === v[i]) ? v[i] : '-';
+    return `<label class="mes-esq" data-v="${x}"><span>Mes ${i + 1}</span><select aria-label="Mes ${i + 1}" onchange="this.parentNode.dataset.v=this.value">${OPCIONES_ESQ.map((o) => `<option value="${o[0]}"${o[0] === x ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></label>`;
+  }).join('') + '</div>';
+}
+function leerEsquemaHtml(id) { return [...document.querySelectorAll('#' + id + ' select')].map((s) => s.value).join(';'); }
+/** "-;-;E;-;-;P" → "Mes 3 Express · Mes 6 Profundo". */
+function textoEsquema(v) {
+  return String(v || '').split(';').map((x, i) => (x === 'P' ? 'Mes ' + (i + 1) + ' Profundo' : x === 'E' ? 'Mes ' + (i + 1) + ' Express' : '')).filter(String).join(' · ');
+}

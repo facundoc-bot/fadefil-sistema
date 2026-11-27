@@ -270,3 +270,13 @@ th::first-letter { text-transform: uppercase; }
 .accesos.admin { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 18px; }
 .accesos.admin .acceso { background: #fafaf7; }
 @media (max-width: 1200px) { .accesos.admin { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Esquema de mantenimientos: 6 casilleros, uno por mes */
+.esquema { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin: 8px 0 4px; }
+.mes-esq { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 10px; border: 1px solid var(--linea-2); border-radius: 14px; background: #fff; font-size: 12.5px; font-weight: 600; color: var(--suave); }
+.mes-esq select { padding: 8px 28px 8px 10px; font-weight: 600; border-radius: 10px; background-color: transparent; }
+.mes-esq[data-v="P"] { background: var(--negro); border-color: var(--negro); color: #bdbdbd; }
+.mes-esq[data-v="P"] select { color: var(--lima); border-color: #3a3a3a; }
+.mes-esq[data-v="E"] { background: #f4fbc6; border-color: #dfe98a; }
+@media (max-width: 700px) { .esquema { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.insignia.prof { background: var(--negro); color: var(--lima); } .insignia.expr { background: #eef7b5; color: #4a5200; }
+label.check { display: flex; align-items: center; gap: 10px; font-weight: 500; margin: 4px 0 8px; cursor: pointer; } label.check input { width: auto; margin: 0; }

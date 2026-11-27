@@ -18,7 +18,7 @@ import { ErrorDeUsuario, exigirRol, insertar, anotar, BLOQUEO, hoyArgentina } fr
 
 export const HOJAS_IMPORTACION = {
   maquinas: ['serie', 'modelo', 'fecha_ingreso'],
-  clientes: ['cliente_id', 'nombre_fantasia', 'razon_social_cuit', 'sector', 'tipo_cliente', 'modalidad', 'plaza', 'zona', 'frecuencia_mant_dias', 'comentarios',
+  clientes: ['cliente_id', 'nombre_fantasia', 'razon_social_cuit', 'sector', 'tipo_cliente', 'modalidad', 'plaza', 'zona', 'esquema_mant', 'comentarios',
     'estado', 'serie', 'modelo', 'fecha_instalacion', 'ultimo_mantenimiento', 'ultima_visita', 'fecha_desinstalacion', 'sistema', 'prefiltro'],
   comodato: ['cliente_id', 'codigo', 'cantidad'],
   componentes: ['cliente_id', 'codigo', 'ultimo_cambio'],
@@ -115,12 +115,12 @@ function armarClientes(hojas, ctx, hoy, seriesHoja) {
     else if (!ctx.zonas[zonaTxt]) errores.push('La zona "' + zonaTxt + '" no existe en Datos → Zonas.');
     if (plazaTxt && !ctx.plazas[plazaTxt]) errores.push('La plaza "' + plazaTxt + '" no existe en Datos → Plazas.');
     else if (plazaTxt && ctx.zonas[zonaTxt] && ctx.zonas[zonaTxt].plaza !== plazaTxt) errores.push('La zona "' + zonaTxt + '" es de la plaza ' + ctx.zonas[zonaTxt].plaza + ', no de ' + plazaTxt + '.');
-    const frec = texto(r.frecuencia_mant_dias);
+    const esquema = texto(r.esquema_mant).toUpperCase();
     const d = {
       fecha: hoy, tipo: 'ALTA_INICIAL', estadoInicial: estado || 'ACTIVO', serieInstalada: estado === 'ACTIVO' ? serie : '',
       sistema, prefiltro, fechasSistema, fechasPrefiltro, items, comentarios: 'Carga masiva (importación)',
       clienteNuevo: { id, nombre: texto(r.nombre_fantasia), razon: texto(r.razon_social_cuit), sector: texto(r.sector), tipoCliente: texto(r.tipo_cliente),
-        modalidad: texto(r.modalidad), zonaId: zonaTxt, frecuencia: frec === '' ? '' : Number(frec), comentarios: texto(r.comentarios) }
+        modalidad: texto(r.modalidad), zonaId: zonaTxt, esquemaMant: esquema, comentarios: texto(r.comentarios) }
     };
     if (estado !== 'ACTIVO' && serie) errores.push('Un cliente que no está activo no lleva serie instalada.');
     if (fechas.fechaInstalacion) d.fechaInstalacion = fechas.fechaInstalacion;

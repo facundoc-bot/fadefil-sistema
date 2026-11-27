@@ -114,10 +114,10 @@ await prueba('Errores: una OT inválida frena todo el lote (lo válido tampoco s
 await prueba('Alta inicial con cliente nuevo y máquina nueva desde CABA: envío, recepción y ajustes automáticos', async () => {
   const r = await guardarLote(sql, admin, [{ clase: 'OT', datos: { fecha: hace(60), tipo: 'ALTA_INICIAL', serieInstalada: 'm-9001', traerMaquina: true, maquinaNueva: { modelo: 'AQA 200' },
     fechaInstalacion: hace(400), sistema: 'PWG HP PRO', items: [{ codigo: 'BOT', cantidad: 2 }],
-    clienteNuevo: { id: '10003', nombre: 'Café Tres', zonaId: 'Mendoza Centro', frecuencia: 60 } } }], true);
+    clienteNuevo: { id: '10003', nombre: 'Café Tres', zonaId: 'Mendoza Centro', esquemaMant: 'e;-;-;-;-;p' } } }], true);
   igual(r.ok, true, 'se guarda: ' + JSON.stringify(r.resultados));
   igual(r.ids.length, 6, 'envío + recepción + 3 ajustes (botella, cartucho, cabezal) + la OT: ' + r.ids);
-  igual(await uno(sql`select nombre_fantasia, frecuencia_mant_dias from clientes where cliente_id = '10003'`), { nombre_fantasia: 'Café Tres', frecuencia_mant_dias: 60 }, 'cliente dado de alta');
+  igual(await uno(sql`select nombre_fantasia, esquema_mant from clientes where cliente_id = '10003'`), { nombre_fantasia: 'Café Tres', esquema_mant: 'E;-;-;-;-;P' }, 'cliente dado de alta con su esquema');
   igual(await uno(sql`select deposito_inicial_id from maquinas where serie = 'M-9001'`), { deposito_inicial_id: 'Depósito CABA' }, 'máquina dada de alta en el central');
   igual(await uno(sql`select ubicacion_tipo, ubicacion_id from maquinas_estado where serie = 'M-9001'`), { ubicacion_tipo: 'CLIENTE', ubicacion_id: '10003' }, 'máquina en el cliente');
   const ot = r.ids[r.ids.length - 1];
@@ -332,6 +332,25 @@ await prueba('Pantalla principal: datos de arranque, fichas, recientes, técnico
   igual(v.ok, true, 'validar desde la pantalla');
 });
 
+await prueba('Esquema de mantenimientos: Express guardado, ficha con lo que toca, esquema propio y auditoría', async () => {
+  const antes = (await api(sql, consulta, 'apiInicio', [])).mantenimiento.find((m) => m.id === '10002');
+  igual([antes.tipoMant, antes.mesEsquema], ['EXPRESS', 3], 'con el esquema por defecto le toca Express al mes 3');
+  const r = await api(sql, carga, 'apiConfirmar', [[{ clase: 'OT', datos: { fecha: hoy, idCliente: '10002', tipo: 'MANTENIMIENTO', tipoMant: 'EXPRESS', items: [] } }], true]);
+  igual(r.ok, true, 'se guarda el Express: ' + JSON.stringify(r.resultados && r.resultados.map((x) => x.errores)));
+  igual(await uno(sql`select tipo_mantenimiento from ot where ot_id = ${r.ids[0]}`), { tipo_mantenimiento: 'EXPRESS' }, 'la OT guarda el tipo');
+  igual(await uno(sql`select mant_mes, tipo_ultimo_mant from clientes_estado where cliente_id = '10002'`), { mant_mes: 3, tipo_ultimo_mant: 'EXPRESS' }, 'el cliente queda en el mes 3');
+  let m = (await api(sql, consulta, 'apiInicio', [])).mantenimiento.find((x) => x.id === '10002');
+  igual([m.tipoMant, m.proximo.slice(5) === hoy.slice(5) || m.proximo > hoy], ['PROFUNDO', true], 'ahora toca el Profundo del mes 6');
+  await api(sql, carga, 'apiGuardarCliente', [{ id: '10002', nombre: 'Resto Dos', zonaId: 'Mendoza Centro', esquemaMant: 'P;-;-;-;-;-' }]);
+  m = (await api(sql, consulta, 'apiInicio', [])).mantenimiento.find((x) => x.id === '10002');
+  igual([m.esquema, m.esquemaPropio, m.tipoMant, m.mesEsquema], ['P;-;-;-;-;-', true, 'PROFUNDO', 1], 'esquema propio desde la ficha');
+  let error = '';
+  try { await api(sql, carga, 'apiGuardarCliente', [{ id: '10002', nombre: 'Resto Dos', zonaId: 'Mendoza Centro', esquemaMant: '-;-;-;-;-;-' }]); } catch (e) { error = e.message; }
+  si(/al menos un mes/.test(error), 'un esquema sin mantenimientos no se guarda');
+  await api(sql, carga, 'apiGuardarCliente', [{ id: '10002', nombre: 'Resto Dos', zonaId: 'Mendoza Centro', esquemaMant: '' }]);
+  igual((await auditar(sql, admin)).corregidas, [], 'la auditoría rearma el mismo mes del esquema desde el historial');
+});
+
 await prueba('Pantalla de CO₂: arranque, ficha de serie, recientes, resumen de remitos, saldo con LINDE, recambios y alertas', async () => {
   const ini = await co2Api(sql, consulta, 'apiInicio', []);
   si(ini.cilindros.length >= 3 && ini.depositos.length >= 2 && ini.cargas.join() === '5,10', 'arranque');
@@ -398,6 +417,37 @@ await prueba('Carga masiva: valida máquinas, clientes, comodato, componentes, c
   const v2 = await importarValidar(sql, admin, hojas);
   igual(v2.filas.find((x) => x.hoja === 'clientes' && x.fila === 2).resultado, 'YA CARGADO', 'al validar de nuevo, lo importado se saltea');
   igual((await auditar(sql, admin)).corregidas, [], 'todo coincide con el historial');
+});
+
+await prueba('CO₂ con dos proveedores: Gases Nordelta en GBA (mismo depósito que CABA), cargas fijas por serie, facturas y saldo', async () => {
+  await sql`insert into zonas (zona_id, plaza_id) values ('Tigre', 'GBA')`;
+  await sql`insert into clientes (cliente_id, nombre_fantasia, zona_id) values ('40001', 'Kiosco Tigre', 'Tigre')`;
+  await sql`update co2_config set valor = '2,5; 5; 10; 25' where clave = 'CARGAS_KG'`;
+  const rem = (nro, prov, series, kg, extra = {}) => ({ clase: 'REMITO', datos: { nroRemito: nro, fecha: hace(3), idDeposito: 'Depósito CABA', proveedor: prov, origenCarga: 'MANUAL',
+    lineas: series.map((x) => ({ tipo: 'ENTREGA', serie: x, pesoKg: kg })), ...extra } });
+  let r = await co2Guardar(sql, carga, [rem('0001-00000101', 'GN', ['GN0001', 'GN0002'], 25), rem('0001-00000777', 'LINDE', ['L0000001'], 2.5)]);
+  igual(r.ok, true, 'remitos de GN (con un número que LINDE ya usó) y de LINDE (2,5 kg): ' + JSON.stringify(r.resultados && r.resultados.map((x) => x.errores)));
+  igual(await uno(sql`select proveedor, peso_kg from co2_cilindros where serie = 'GN0001'`), { proveedor: 'GN', peso_kg: 25 }, 'la serie queda de GN con 25 kg');
+  igual(await uno(sql`select proveedor from co2_remitos where remito_id = ${r.ids[0]}`), { proveedor: 'GN' }, 'el remito guarda su proveedor');
+  const v = await co2Validar(sql, carga, [rem('0001-00000101', 'GN', ['GN0009'], 25)]);
+  si(codigos(v).includes('REMITO_DUPLICADO'), 'dentro de GN el número no se repite: ' + codigos(v));
+  const v2 = await co2Validar(sql, carga, [rem('0001-00000900', 'GN', ['GN0010'], 7)]);
+  si(codigos(v2).includes('CARGA_INVALIDA'), 'una carga que no está en la configuración: ' + codigos(v2));
+  const alta = (serie, prov) => ({ clase: 'ALTA', datos: { fecha: hace(3), serie, pesoKg: 5, idDepositoOrigen: 'Depósito CABA', ubicacion: 'CLIENTE', idCliente: '40001', estado: 'EN_USO', ...(prov ? { proveedor: prov } : {}) } });
+  const v3 = await co2Validar(sql, admin, [alta('X0001', 'LINDE')]);
+  si(codigos(v3).includes('PROVEEDOR_NO_CORRESPONDE'), 'a un cliente de GBA no va un cilindro de LINDE: ' + codigos(v3));
+  r = await co2Guardar(sql, admin, [alta('X0001')]);
+  igual(r.ok, true, 'inventario inicial en el cliente de GBA: ' + JSON.stringify(r.resultados && r.resultados.map((x) => x.errores)));
+  igual(await uno(sql`select proveedor from co2_altas where serie = 'X0001'`), { proveedor: 'GN' }, 'toma el proveedor de la plaza del cliente');
+  const ot = await validarLote(sql, carga, [{ clase: 'OT', datos: { fecha: hace(2), idCliente: '30001', tipo: 'ENTREGA_CO2', modalidadCo2: 'TRADICIONAL', co2: { entregadas: ['GN0001'] } } }]);
+  si(ot.resultados[0].errores.some((e) => /trabaja con LINDE/.test(e.mensaje)), 'a un cliente de CABA no se le entrega un cilindro de GN: ' + JSON.stringify(ot.resultados[0].errores.map((e) => e.mensaje)));
+  const f = await co2ValidarFactura(sql, { proveedor: 'GN', nroFactura: '0380-00012345', fecha: hace(1), lineas: [{ nroRemito: '0001-00000101', kg: 50 }] });
+  igual([f.ok, f.lineas[0].resultado, f.lineas[0].kgSistema], [true, 'VALIDADO', 50], 'factura de GN: mismo número que una de LINDE y mira solo sus remitos (2 × 25 kg)');
+  const sl = await co2Api(sql, consulta, 'apiSaldoLinde', [{}]);
+  si(sl.filas.some((x) => x.proveedor === 'GN' && Number(x.pesoKg) === 25 && x.enPoder === 2 && x.depositoId === 'Depósito CABA'), 'saldo con GN en el Depósito CABA');
+  const ini = await co2Api(sql, consulta, 'apiInicio', []);
+  igual([ini.cargas.join(), ini.proveedores.map((p) => p.id).join(), ini.plazas.find((p) => p.id === 'GBA').proveedor], ['2.5,5,10,25', 'GN,LINDE', 'GN'], 'la pantalla recibe cargas, proveedores y el de cada plaza');
+  igual((await co2Auditar(sql, admin)).corregidas, 0, 'la auditoría de CO₂ rearma el mismo proveedor');
 });
 
 await sql.end();

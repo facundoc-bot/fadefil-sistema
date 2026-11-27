@@ -25,8 +25,36 @@ var co2_ESTADO_TEXTO = {
   LLENO_DISPONIBLE: 'Lleno disponible',
   EN_USO: 'En uso',
   VACIO_DISPONIBLE: 'Vacío disponible',
-  ENTREGADO_LINDE: 'Entregado a LINDE'
+  ENTREGADO_LINDE: 'Devuelto al proveedor'
 };
+
+/* ---------------------------------------------------------------------------
+ *  Proveedores (v2.1, pedido 26/11/2026): LINDE y Gases Nordelta (GN).
+ *  ctx.proveedores = { LINDE: { id, nombre }, GN: {...} }; ctx.plazas[id].proveedor.
+ *  Un cilindro es de un proveedor para siempre (como su carga). Los movimientos y
+ *  el estado "*_LINDE" quieren decir "en el proveedor" (el de la serie).
+ *  Sin ctx.proveedores (como en las pruebas originales) todo es LINDE.
+ * ------------------------------------------------------------------------ */
+var co2_PROVEEDOR_DEFECTO = 'LINDE';
+function co2_provDe_(s) { return (s && s.proveedor) || co2_PROVEEDOR_DEFECTO; }
+function co2_nombreProveedor_(ctx, id) {
+  var p = ctx && ctx.proveedores && ctx.proveedores[id || co2_PROVEEDOR_DEFECTO];
+  return p ? p.nombre : (id || co2_PROVEEDOR_DEFECTO);
+}
+/** Proveedor con el que trabaja la plaza del cliente. */
+function co2_proveedorCliente_(cli, ctx) {
+  var p = cli && ctx.plazas && ctx.plazas[cli.plazaId];
+  return (p && p.proveedor) || co2_PROVEEDOR_DEFECTO;
+}
+/** El proveedor de una serie no cambia. */
+function co2_validarProveedor_(res, serie, prov, s, ctx) {
+  if (s && co2_provDe_(s) !== prov) {
+    co2_err_(res, 'PROVEEDOR_DISTINTO', 'La serie ' + serie + ' es de ' + co2_nombreProveedor_(ctx, co2_provDe_(s)) + ' y ahora figura como de ' + co2_nombreProveedor_(ctx, prov) +
+      '. Un cilindro no cambia de proveedor: revisá la serie o el proveedor.', serie);
+    return false;
+  }
+  return true;
+}
 
 var co2_UBIC = { DEPOSITO: 'DEPOSITO', CLIENTE: 'CLIENTE', LINDE: 'LINDE', INVENTARIO: 'INVENTARIO' };
 
@@ -77,7 +105,7 @@ function co2_clonarEstados_(cilindros) {
     var c = cilindros[k];
     copia[k] = {
       serie: c.serie, estado: c.estado, ubicTipo: c.ubicTipo, ubicId: c.ubicId,
-      idCircuito: c.idCircuito, depOrigen: c.depOrigen, ultimaFecha: c.ultimaFecha || '', pesoKg: c.pesoKg || ''
+      idCircuito: c.idCircuito, depOrigen: c.depOrigen, ultimaFecha: c.ultimaFecha || '', pesoKg: c.pesoKg || '', proveedor: c.proveedor || ''
     };
   });
   return copia;
@@ -98,7 +126,7 @@ function co2_describirUbicacion_(s, ctx) {
     var c = ctx.clientes[s.ubicId];
     return 'cliente ' + (c ? c.nombre + ' (' + c.id + ')' : s.ubicId);
   }
-  if (s.ubicTipo === co2_UBIC.LINDE) return 'LINDE';
+  if (s.ubicTipo === co2_UBIC.LINDE) return co2_nombreProveedor_(ctx, s.proveedor || (s.ubicId !== 'LINDE' ? s.ubicId : ''));
   return s.ubicTipo || 'desconocida';
 }
 
@@ -146,6 +174,7 @@ function co2_aplicar_(W, mov) {
   s.depOrigen = mov.depOrigen;
   s.ultimaFecha = mov.fecha;
   if (mov.pesoKg) s.pesoKg = mov.pesoKg; // la carga se fija al entrar y acompaña a la serie
+  if (mov.proveedor) s.proveedor = mov.proveedor; // el proveedor también
   W[mov.serie] = s;
 }
 
@@ -156,7 +185,8 @@ function co2_movimiento_(base) {
     destinoTipo: base.destinoTipo, destinoId: base.destinoId || '',
     estadoAnterior: base.estadoAnterior || '', estadoNuevo: base.estadoNuevo,
     idCircuito: base.idCircuito || '', depOrigen: base.depOrigen || '',
-    circuitoNuevo: !!base.circuitoNuevo, circuitoCierra: !!base.circuitoCierra, pesoKg: base.pesoKg || '', zonaId: base.zonaId || ''
+    circuitoNuevo: !!base.circuitoNuevo, circuitoCierra: !!base.circuitoCierra, pesoKg: base.pesoKg || '', zonaId: base.zonaId || '',
+    proveedor: base.proveedor || ''
   };
 }
 
@@ -167,7 +197,8 @@ function co2_movimiento_(base) {
 function co2_validarCarga_(res, serie, pesoKg, s, ctx) {
   var peso = Number(pesoKg) || 0;
   if (ctx.cargasValidas && ctx.cargasValidas.indexOf(peso) < 0) {
-    co2_err_(res, 'CARGA_INVALIDA', 'Falta la carga de la serie ' + serie + ': elegí ' + ctx.cargasValidas.join(' o ') + ' kg.', serie);
+    co2_err_(res, 'CARGA_INVALIDA', (peso ? 'La carga de ' + peso + ' kg de la serie ' + serie + ' no está en Configuración CO₂ (CARGAS_KG)' : 'Falta la carga de la serie ' + serie) +
+      ': elegí ' + ctx.cargasValidas.join(', ').replace(/, ([^,]*)$/, ' o $1') + ' kg.', serie);
     return false;
   }
   if (s && s.pesoKg && peso && Number(s.pesoKg) !== peso) {
@@ -221,11 +252,16 @@ function co2_validarRemito_(r, W, ctx, lote) {
   var dep = ctx.depositos[r.idDeposito];
   if (!dep) co2_err_(res, 'DEPOSITO_INEXISTENTE', 'El depósito "' + (r.idDeposito || '') + '" no existe. Elegí el depósito que recibió el remito.');
   else if (!dep.activo) co2_err_(res, 'DEPOSITO_INACTIVO', 'El depósito ' + dep.nombre + ' está inactivo.');
+  var prov = String(r.proveedor || co2_PROVEEDOR_DEFECTO).toUpperCase(), nomProv = co2_nombreProveedor_(ctx, prov);
+  if (ctx.proveedores && !ctx.proveedores[prov]) co2_err_(res, 'PROVEEDOR_INEXISTENTE', 'El proveedor "' + prov + '" no existe. Elegí LINDE o Gases Nordelta.');
+  else if (dep && ctx.plazas && !Object.keys(ctx.plazas).some(function (k) { var p = ctx.plazas[k]; return p.depositoId === r.idDeposito && (p.proveedor || co2_PROVEEDOR_DEFECTO) === prov; })) {
+    co2_adv_(res, 'PROVEEDOR_NO_USADO', 'Ninguna plaza del ' + dep.nombre + ' trabaja con ' + nomProv + ' (Datos → Plazas). Revisá el proveedor o el depósito.');
+  }
 
   // Doble registro del mismo remito (validación 10). Copias duplicado/triplicado = mismo remito.
   if (nroNorm) {
     (ctx.remitos || []).concat(lote.remitos).forEach(function (x) {
-      if (x.estado === 'ANULADO' || x.nroNorm !== nroNorm) return;
+      if (x.estado === 'ANULADO' || x.nroNorm !== nroNorm || (x.proveedor || co2_PROVEEDOR_DEFECTO) !== prov) return; // cada proveedor numera los suyos
       if (r.idPendiente && x.idRemito === String(r.idPendiente)) return; // v2.3: el mismo remito, que estaba esperando aprobación
       if (x.idDeposito === r.idDeposito) {
         co2_err_(res, 'REMITO_DUPLICADO',
@@ -283,30 +319,34 @@ function co2_validarRemito_(r, W, ctx, lote) {
     var s = W[serie];
     if (!s) {
       co2_err_(res, 'RETIRO_LINDE_SERIE_INEXISTENTE',
-        'LINDE retira la serie ' + serie + ', que no figura en el sistema. Si el cilindro estaba antes de empezar a usar el sistema, cargalo primero con Inventario inicial.', serie);
+        nomProv + ' retira la serie ' + serie + ', que no figura en el sistema. Si el cilindro estaba antes de empezar a usar el sistema, cargalo primero con Inventario inicial.', serie);
       return;
     }
     if (s.estado === co2_ESTADO.LINDE) {
-      co2_err_(res, 'RETIRO_LINDE_CIRCUITO_CERRADO', 'La serie ' + serie + ' ya figura entregada a LINDE (circuito cerrado).', serie);
+      co2_err_(res, 'RETIRO_LINDE_CIRCUITO_CERRADO', 'La serie ' + serie + ' ya figura devuelta a ' + co2_nombreProveedor_(ctx, co2_provDe_(s)) + ' (circuito cerrado).', serie);
+      return;
+    }
+    if (co2_provDe_(s) !== prov) {
+      co2_err_(res, 'RETIRO_OTRO_PROVEEDOR', nomProv + ' retira la serie ' + serie + ', que es de ' + co2_nombreProveedor_(ctx, co2_provDe_(s)) + '. Revisá la serie o el proveedor del remito.', serie);
       return;
     }
     if (s.ubicTipo === co2_UBIC.CLIENTE) { // validación 6
       co2_err_(res, 'RETIRO_LINDE_EN_CLIENTE',
-        'LINDE retira la serie ' + serie + ', pero figura en el ' + co2_describirUbicacion_(s, ctx) + '. Registrá primero el retiro del cliente o revisá la serie.', serie);
+        nomProv + ' retira la serie ' + serie + ', pero figura en el ' + co2_describirUbicacion_(s, ctx) + '. Registrá primero el retiro del cliente o revisá la serie.', serie);
       return;
     }
     if (s.ubicTipo !== co2_UBIC.DEPOSITO || s.ubicId !== r.idDeposito) { // validación 7
       co2_err_(res, 'RETIRO_LINDE_OTRO_DEPOSITO',
-        'LINDE retira la serie ' + serie + ' en ' + dep.nombre + ', pero el cilindro figura en ' + co2_describirUbicacion_(s, ctx) + '.', serie);
+        nomProv + ' retira la serie ' + serie + ' en ' + dep.nombre + ', pero el cilindro figura en ' + co2_describirUbicacion_(s, ctx) + '.', serie);
       return;
     }
     if (!co2_validarCronologia_(res, s, r.fecha, serie)) return;
     if (s.estado === co2_ESTADO.LLENO) {
-      co2_adv_(res, 'RETIRO_LINDE_LLENO', 'LINDE retira la serie ' + serie + ', que figura llena (nunca se entregó a un cliente en este circuito). Queda registrada para revisión.', serie);
+      co2_adv_(res, 'RETIRO_LINDE_LLENO', nomProv + ' retira la serie ' + serie + ', que figura llena (nunca se entregó a un cliente en este circuito). Queda registrada para revisión.', serie);
     }
     var mov = co2_movimiento_({
       serie: serie, tipoMov: co2_MOV.RETIRO_LINDE, fecha: r.fecha,
-      origenTipo: co2_UBIC.DEPOSITO, origenId: r.idDeposito, destinoTipo: co2_UBIC.LINDE, destinoId: 'LINDE',
+      origenTipo: co2_UBIC.DEPOSITO, origenId: r.idDeposito, destinoTipo: co2_UBIC.LINDE, destinoId: prov,
       estadoAnterior: s.estado, estadoNuevo: co2_ESTADO.LINDE,
       idCircuito: s.idCircuito, depOrigen: s.depOrigen, circuitoCierra: true
     });
@@ -318,23 +358,24 @@ function co2_validarRemito_(r, W, ctx, lote) {
     var s = W[serie];
     if (s && s.estado !== co2_ESTADO.LINDE) { // validación 8
       co2_err_(res, 'CIRCUITO_ABIERTO',
-        'LINDE entrega la serie ' + serie + ', pero ese cilindro tiene un circuito abierto (' + co2_ESTADO_TEXTO[s.estado] + ', en ' + co2_describirUbicacion_(s, ctx) +
+        nomProv + ' entrega la serie ' + serie + ', pero ese cilindro tiene un circuito abierto (' + co2_ESTADO_TEXTO[s.estado] + ', en ' + co2_describirUbicacion_(s, ctx) +
         '). No se puede iniciar un circuito nuevo sin cerrar el anterior.', serie);
       return;
     }
     if (!co2_validarCronologia_(res, s, r.fecha, serie)) return;
     if (!co2_validarCarga_(res, serie, cargaDe[serie], s, ctx)) return;
+    if (!co2_validarProveedor_(res, serie, prov, s, ctx)) return;
     var mov = co2_movimiento_({
       serie: serie, tipoMov: co2_MOV.ENTREGA_LINDE, fecha: r.fecha,
-      origenTipo: co2_UBIC.LINDE, origenId: 'LINDE', destinoTipo: co2_UBIC.DEPOSITO, destinoId: r.idDeposito,
+      origenTipo: co2_UBIC.LINDE, origenId: prov, destinoTipo: co2_UBIC.DEPOSITO, destinoId: r.idDeposito,
       estadoAnterior: s ? s.estado : '', estadoNuevo: co2_ESTADO.LLENO,
-      idCircuito: ctx.nuevoIdCircuito(), depOrigen: r.idDeposito, circuitoNuevo: true, pesoKg: cargaDe[serie]
+      idCircuito: ctx.nuevoIdCircuito(), depOrigen: r.idDeposito, circuitoNuevo: true, pesoKg: cargaDe[serie], proveedor: prov
     });
     res.movimientos.push(mov);
     co2_aplicar_(W, mov);
   });
 
-  lote.remitos.push({ nroNorm: nroNorm, idDeposito: r.idDeposito, estado: 'PENDIENTE' });
+  lote.remitos.push({ nroNorm: nroNorm, idDeposito: r.idDeposito, estado: 'PENDIENTE', proveedor: prov });
   return res;
 }
 
@@ -403,7 +444,7 @@ function co2_validarTrabajo_(t, W, ctx) {
 
   entregadas.forEach(function (serie) {
     var s = W[serie];
-    if (!s) { co2_err_(res, 'SERIE_INEXISTENTE', 'La serie ' + serie + ' no existe en el sistema. Revisá el número o cargá el remito de LINDE.', serie); return; } // validación 2
+    if (!s) { co2_err_(res, 'SERIE_INEXISTENTE', 'La serie ' + serie + ' no existe en el sistema. Revisá el número o cargá el remito del proveedor.', serie); return; } // validación 2
     if (s.estado === co2_ESTADO.EN_USO) { // validación 4
       var mismo = s.ubicId === t.idCliente;
       co2_err_(res, 'ENTREGA_YA_EN_CLIENTE',
@@ -415,7 +456,7 @@ function co2_validarTrabajo_(t, W, ctx) {
       return;
     }
     if (s.estado === co2_ESTADO.LINDE) { // validación 12
-      co2_err_(res, 'ENTREGA_FUERA_DE_CIRCUITO', 'La serie ' + serie + ' figura entregada a LINDE. No está disponible en ningún depósito.', serie);
+      co2_err_(res, 'ENTREGA_FUERA_DE_CIRCUITO', 'La serie ' + serie + ' figura devuelta a ' + co2_nombreProveedor_(ctx, co2_provDe_(s)) + '. No está disponible en ningún depósito.', serie);
       return;
     }
     if (s.ubicTipo !== co2_UBIC.DEPOSITO || !ctx.depositos[s.ubicId]) { // validación 13
@@ -431,7 +472,13 @@ function co2_validarTrabajo_(t, W, ctx) {
     if (cli.depositoId !== s.ubicId) {
       co2_err_(res, 'CAMBIO_DEPOSITO_SIN_LINDE',
         'La serie ' + serie + ' está en el depósito ' + dep.nombre + ' y el cliente se abastece del depósito ' + co2_nombreDeposito_(ctx, cli.depositoId) +
-        '. Un cilindro solo cambia de depósito mediante LINDE.', serie);
+        '. Un cilindro solo cambia de depósito mediante el proveedor.', serie);
+      return;
+    }
+    var provCli = co2_proveedorCliente_(cli, ctx);
+    if (co2_provDe_(s) !== provCli) { // v2.1: cada plaza trabaja con un proveedor (AMBA: CABA con LINDE, GBA con Gases Nordelta)
+      co2_err_(res, 'PROVEEDOR_NO_CORRESPONDE', 'La serie ' + serie + ' es de ' + co2_nombreProveedor_(ctx, co2_provDe_(s)) + ' y ' + cli.nombre +
+        ' trabaja con ' + co2_nombreProveedor_(ctx, provCli) + ' (su plaza, en Datos → Plazas). Entregale un cilindro de ' + co2_nombreProveedor_(ctx, provCli) + '.', serie);
       return;
     }
     if (!co2_validarCronologia_(res, s, t.fecha, serie)) return;
@@ -463,12 +510,16 @@ function co2_validarAltaInicial_(a, W, ctx) {
   var ubic = String(a.ubicacion || '').toUpperCase();
   var estado = String(a.estado || '').toUpperCase();
   var cli = null;
+  var prov = String(a.proveedor || (ubic === co2_UBIC.CLIENTE && ctx.clientes[a.idCliente] ? co2_proveedorCliente_(ctx.clientes[a.idCliente], ctx) : co2_PROVEEDOR_DEFECTO)).toUpperCase();
+  if (ctx.proveedores && !ctx.proveedores[prov]) co2_err_(res, 'PROVEEDOR_INEXISTENTE', 'El proveedor "' + prov + '" no existe. Elegí LINDE o Gases Nordelta.');
   if (ubic === co2_UBIC.CLIENTE) {
     cli = ctx.clientes[a.idCliente];
     if (!cli) co2_err_(res, 'CLIENTE_INEXISTENTE', 'Elegí el cliente donde está el cilindro.');
     else if (dep && cli.depositoId !== a.idDepositoOrigen)
       co2_err_(res, 'CAMBIO_DEPOSITO_SIN_LINDE', 'El cliente se abastece del depósito ' + co2_nombreDeposito_(ctx, cli.depositoId) + ' y el depósito de origen elegido es ' + dep.nombre + '.', serie);
     if (estado !== co2_ESTADO.EN_USO) co2_err_(res, 'ESTADO_INVALIDO', 'Un cilindro en cliente se registra En uso.', serie);
+    if (cli && co2_proveedorCliente_(cli, ctx) !== prov) co2_err_(res, 'PROVEEDOR_NO_CORRESPONDE', 'El cliente ' + cli.nombre + ' trabaja con ' + co2_nombreProveedor_(ctx, co2_proveedorCliente_(cli, ctx)) +
+      ' y el cilindro es de ' + co2_nombreProveedor_(ctx, prov) + '.', serie);
   } else if (ubic === co2_UBIC.DEPOSITO) {
     if (estado !== co2_ESTADO.LLENO && estado !== co2_ESTADO.VACIO) co2_err_(res, 'ESTADO_INVALIDO', 'Un cilindro en depósito se registra Lleno disponible o Vacío disponible.', serie);
   } else {
@@ -484,7 +535,8 @@ function co2_validarAltaInicial_(a, W, ctx) {
   }
   if (!co2_validarCronologia_(res, s, a.fecha, serie)) return res;
   if (!co2_validarCarga_(res, serie, a.pesoKg, s, ctx)) return res;
-  co2_adv_(res, 'ALTA_SIN_REMITO', 'La serie ' + serie + ' entra al sistema sin remito de LINDE (inventario inicial).', serie);
+  if (!co2_validarProveedor_(res, serie, prov, s, ctx)) return res;
+  co2_adv_(res, 'ALTA_SIN_REMITO', 'La serie ' + serie + ' entra al sistema sin remito de ' + co2_nombreProveedor_(ctx, prov) + ' (inventario inicial).', serie);
 
   var mov = co2_movimiento_({
     serie: serie, tipoMov: co2_MOV.ALTA_INICIAL, fecha: a.fecha,
@@ -492,7 +544,7 @@ function co2_validarAltaInicial_(a, W, ctx) {
     destinoTipo: ubic, destinoId: ubic === co2_UBIC.CLIENTE ? a.idCliente : a.idDepositoOrigen,
     estadoAnterior: s ? s.estado : '', estadoNuevo: estado,
     idCircuito: ctx.nuevoIdCircuito(), depOrigen: a.idDepositoOrigen, circuitoNuevo: true, pesoKg: Number(a.pesoKg) || '',
-    zonaId: cli ? cli.zonaId : ''
+    zonaId: cli ? cli.zonaId : '', proveedor: prov
   });
   res.movimientos.push(mov);
   co2_aplicar_(W, mov);
@@ -528,7 +580,7 @@ function co2_simularLote(ops, ctx) {
  *  Devuelve { estado, circuitos, inconsistencias }
  * ------------------------------------------------------------------------ */
 function co2_reconstruirSerie(serie, movs) {
-  var estado = null, circuitos = {}, inconsistencias = [], peso = '';
+  var estado = null, circuitos = {}, inconsistencias = [], peso = '', prov = '';
   movs.forEach(function (m) {
     var anterior = estado ? estado.estado : '';
     if ((m.estadoAnterior || '') !== anterior) {
@@ -550,8 +602,9 @@ function co2_reconstruirSerie(serie, movs) {
       circuitos[m.idCircuito].estado = 'CERRADO';
     }
     if (m.pesoKg) peso = Number(m.pesoKg);
+    if (m.proveedor) prov = m.proveedor;
     estado = {
-      serie: serie, estado: m.estadoNuevo, ubicTipo: m.destinoTipo, ubicId: m.destinoId, pesoKg: peso,
+      serie: serie, estado: m.estadoNuevo, ubicTipo: m.destinoTipo, ubicId: m.destinoId, pesoKg: peso, proveedor: prov || co2_PROVEEDOR_DEFECTO,
       idCircuito: m.idCircuito, depOrigen: m.depOrigen, ultimaFecha: m.fecha
     };
   });
@@ -621,7 +674,7 @@ function co2_detectarAlertas(estados, op) {
         codigo: 'VACIO_SIN_DEVOLVER', serie: serie, idCircuito: s.idCircuito, dias: dias,
         ubicacion: co2_describirUbicacion_(s, ctx), ubicId: s.ubicId, desde: s.ultimaFecha,
         mensaje: 'La serie ' + serie + ' está vacía en el ' + co2_describirUbicacion_(s, ctx) + ' desde el ' + co2_fechaTexto(s.ultimaFecha) +
-          ' (' + dias + ' días, límite ' + op.diasVacio + '). Pedir el retiro a LINDE o verificar si ya se lo llevó sin remito cargado.'
+          ' (' + dias + ' días, límite ' + op.diasVacio + '). Pedir el retiro a ' + co2_nombreProveedor_(op, co2_provDe_(s)) + ' o verificar si ya se lo llevó sin remito cargado.'
       });
     }
   });
@@ -838,6 +891,10 @@ function co2_simularCargaInicial(borradores, ctx, opDe) {
 
 
 export {
+  co2_PROVEEDOR_DEFECTO,
+  co2_provDe_,
+  co2_nombreProveedor_,
+  co2_proveedorCliente_,
   co2_ESTADO,
   co2_ESTADO_TEXTO,
   co2_MOV,

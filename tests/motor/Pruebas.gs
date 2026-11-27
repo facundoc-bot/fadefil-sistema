@@ -185,23 +185,49 @@ function casosDePrueba_() {
         var ctx = ctxConC1Activo_();
         confirmarP_(ctx, [otP_('2026-05-10', 'C1', 'MANTENIMIENTO', { items: [{ codigo: 'FSED', cantidad: 1 }] })]);
         t.igual(ctx.estado.clientes.C1.fechaBase, '2026-05-10', 'nueva fecha base');
-        var v = vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-07-20', diasPorDefecto: 90, diasAviso: 15 });
-        t.igual(v[0].proximo, '2026-08-08', 'próximo = 10/05 + 90 días');
-        t.igual(v[0].dias, 19, 'faltan 19 días');
+        // Sin tipo (como los anteriores al esquema) cuenta como Profundo; esquema por defecto: Express al mes 3, Profundo al 6.
+        t.igual(ctx.estado.clientes.C1.mantMes, 0, 'reinicia el esquema');
+        var v = vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-07-20', diasAviso: 15 });
+        t.igual(v[0].proximo, '2026-08-10', 'próximo = 10/05 + 3 meses');
+        t.igual(v[0].tipoMant, 'EXPRESS', 'le toca Express');
+        t.igual(v[0].dias, 21, 'faltan 21 días');
         t.igual(v[0].semaforo, 'Al día', 'al día');
-        t.igual(vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-07-28', diasPorDefecto: 90, diasAviso: 15 })[0].semaforo, 'Próximo', 'a 11 días: próximo');
-        t.igual(vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-08-09', diasPorDefecto: 90, diasAviso: 15 })[0].semaforo, 'Vencido', 'pasada la fecha: vencido');
+        t.igual(vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-07-28', diasAviso: 15 })[0].semaforo, 'Próximo', 'a 13 días: próximo');
+        t.igual(vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-08-11', diasAviso: 15 })[0].semaforo, 'Vencido', 'pasada la fecha: vencido');
         t.igual(ctx.estado.stock['Depósito Mendoza'].FSED.DISPONIBLE, -1, 'el filtro sale del stock (queda negativo: no había)');
       }
     },
     {
-      nombre: 'Mantenimiento: frecuencia propia del cliente (60 días)',
+      nombre: 'Esquema de mantenimientos: Express y Profundo, atrasos, Profundo pendiente y reinicios',
       fn: function (t) {
         var ctx = ctxPrueba_();
-        confirmarP_(ctx, [otP_('2026-03-01', 'C2', 'INSTALACION', { serieInstalada: 'S2' })]);
-        var v = vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-03-02', diasPorDefecto: 90, diasAviso: 15 });
-        t.igual(v[0].frecuencia, 60, 'usa 60');
-        t.igual(v[0].proximo, '2026-04-30', '01/03 + 60 días');
+        ctx.esquemaMant = '-;E;-;E;-;P'; // Configuración: Express en los meses 2 y 4, Profundo en el 6
+        var prox = function () { var v = vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-01-01' }).filter(function (x) { return x.id === 'C2'; })[0]; return v.proximo + ' ' + v.tipoMant; };
+        confirmarP_(ctx, [otP_('2026-01-10', 'C2', 'INSTALACION', { serieInstalada: 'S2' })]);
+        t.igual(prox(), '2026-03-10 EXPRESS', 'la instalación arranca el esquema: Express al mes 2');
+        t.contiene(erroresP_(simularLote([otP_('2026-03-25', 'C2', 'MANTENIMIENTO', { tipoMant: 'X' })], ctx)), 'TIPO_MANT_INVALIDO', 'tipo inválido');
+        confirmarP_(ctx, [otP_('2026-03-25', 'C2', 'MANTENIMIENTO', { tipoMant: 'EXPRESS' })]);
+        t.igual(prox(), '2026-05-25 EXPRESS', 'se hizo tarde: el siguiente se cuenta desde el 25/03 (Express del mes 4)');
+        confirmarP_(ctx, [otP_('2026-05-25', 'C2', 'MANTENIMIENTO', { tipoMant: 'EXPRESS' })]);
+        t.igual(prox(), '2026-07-25 PROFUNDO', 'después del mes 4 toca el Profundo del mes 6');
+        confirmarP_(ctx, [otP_('2026-07-25', 'C2', 'MANTENIMIENTO', { tipoMant: 'EXPRESS' })]);
+        t.igual(prox(), '2026-09-25 PROFUNDO', 'tocaba Profundo y se hizo Express: el Profundo sigue pendiente');
+        confirmarP_(ctx, [otP_('2026-08-20', 'C2', 'MANTENIMIENTO', { tipoMant: 'PROFUNDO' })]);
+        t.igual(ctx.estado.clientes.C2.tipoUltimoMant, 'PROFUNDO', 'queda el tipo del último');
+        t.igual(prox(), '2026-10-20 EXPRESS', 'un Profundo (aunque sea antes) reinicia el esquema');
+        confirmarP_(ctx, [otP_('2026-09-05', 'C2', 'MANTENIMIENTO', { tipoMant: 'EXPRESS' }), otP_('2026-09-15', 'C2', 'REPARACION', { falla: 'Gotea' })]);
+        t.igual(prox(), '2026-11-05 EXPRESS', 'una reparación común no cambia el esquema (sigue contando desde el Express del 05/09)');
+        confirmarP_(ctx, [otP_('2026-10-01', 'C2', 'REPARACION_BACKUP', { serieRetirada: 'S2', serieInstalada: 'S3', falla: 'No enfría' })]);
+        t.igual(prox(), '2026-12-01 EXPRESS', 'la reparación con backup reinicia el esquema');
+        ctx.clientes.C2.esquemaMant = 'P;-;-;-;-;-';
+        t.igual(prox(), '2026-11-01 PROFUNDO', 'esquema propio del cliente: Profundo todos los meses');
+        ctx.clientes.C2.esquemaMant = '-;-;-;-;-;E';
+        confirmarP_(ctx, [otP_('2026-10-10', 'C2', 'MANTENIMIENTO', { tipoMant: 'EXPRESS' })]);
+        t.igual(prox(), '2027-04-10 EXPRESS', 'pasado el mes 6 el esquema vuelve a empezar');
+        t.igual(leerEsquemaMant('-;e;-;Express;nada;P').join(','), ',EXPRESS,,EXPRESS,,PROFUNDO', 'lee códigos y nombres');
+        t.igual(leerEsquemaMant('P;E;-'), null, 'tienen que ser 6 meses');
+        t.igual(leerEsquemaMant('-;-;-;-;-;-'), null, 'al menos un mes con mantenimiento');
+        t.igual(textoEsquemaMant(leerEsquemaMant('-;E;-;E;-;P')), '-;E;-;E;-;P', 'se guarda igual que se lee');
       }
     },
     {
@@ -990,8 +1016,8 @@ function casosDePrueba_() {
         t.igual([v.SED1, v.CGRA, v.CBLO, v.MIN, v.P10, v.P20].join(), '2026-05-01,2026-08-01,2026-08-01,2027-02-01,2026-05-01,2026-05-01', 'vencimientos: 3, 6, 6 y 12 meses; prefiltro 3 meses');
         t.igual(v.POLI, 'ult 2026-02-01', 'el polifosfato no vence');
         t.igual(W.clientes.C1.sistema + ' / ' + W.clientes.C1.prefiltro, '4 Etapas / Prefiltro 10 y 20 + Polifosfato', 'sistema y prefiltro del cliente');
-        var m = vistaMantenimiento(W, ctx, { hoy: '2026-04-20', diasPorDefecto: 90 })[0];
-        t.igual(m.proximo, '2026-05-02', 'próximo mantenimiento 02/05');
+        var m = vistaMantenimiento(W, ctx, { hoy: '2026-04-20' })[0];
+        t.igual(m.proximo, '2026-05-01', 'próximo mantenimiento 01/05 (3 meses: Express del esquema por defecto)');
         t.igual(m.trabajos, 'Cambiar: Sedimento 1 micrón (vence 01/05/2026), Cartucho 10 micrones (vence 01/05/2026), Cartucho 20 micrones (vence 01/05/2026) · Revisar nivel de polifosfato',
           'trabajos a realizar: lo que vence antes de la visita siguiente, y el polifosfato');
         t.igual(m.proximoVencFiltros, '2026-05-01', 'próximo vencimiento de filtros');
@@ -1008,12 +1034,12 @@ function casosDePrueba_() {
         var v = venc_(ctx, 'C1');
         t.igual([v.SED1, v.P10, v.CGRA].join(), '2026-08-02,2026-08-02,2026-08-01', 'sedimento y prefiltro vuelven a contar desde el 02/05; el carbón sigue igual');
         t.igual(saldo_(ctx.estado, 'Depósito Mendoza', 'SED1').DISPONIBLE, 9, 'el recambio sale del stock');
-        var m = vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-07-20', diasPorDefecto: 90 })[0];
-        t.igual(m.trabajos.indexOf('Carbón granular (vence 01/08/2026)') > 0 && m.trabajos.indexOf('Carbón en bloque') > 0 && m.trabajos.indexOf('Mineralizador') < 0, true, 'en la visita del 31/07 se cambian también los carbones (vencen el 01/08, dentro de los 20 días)');
-        var vv = vistaVencimientos(ctx.estado, ctx, { hoy: '2026-07-20', diasPorDefecto: 90 });
+        var m = vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-07-20' })[0];
+        t.igual(m.trabajos.indexOf('Carbón granular (vence 01/08/2026)') > 0 && m.trabajos.indexOf('Carbón en bloque') > 0 && m.trabajos.indexOf('Mineralizador') < 0, true, 'en la visita del 02/08 se cambian también los carbones (vencen el 01/08)');
+        var vv = vistaVencimientos(ctx.estado, ctx, { hoy: '2026-07-20' });
         var min = vv.filter(function (x) { return x.codigo === 'MIN'; })[0], sed = vv.filter(function (x) { return x.codigo === 'SED1'; })[0];
         t.igual(min.estado + '|' + min.cambiar, 'Al día|false', 'el mineralizador está al día');
-        t.igual(sed.estado + '|' + sed.cambiar + '|' + sed.proximo, 'Cambiar en el próximo mantenimiento|true|2026-07-31', 'el sedimento se cambia en la próxima visita');
+        t.igual(sed.estado + '|' + sed.cambiar + '|' + sed.proximo, 'Cambiar en el próximo mantenimiento|true|2026-08-02', 'el sedimento se cambia en la próxima visita');
         t.igual(vv.filter(function (x) { return x.codigo === 'POLI'; })[0].estado, 'Revisar nivel', 'polifosfato: revisar nivel');
         var noEs = simularLote([otP_('2026-07-31', 'C1', 'MANTENIMIENTO', { items: [{ codigo: 'MEMG', cantidad: 1 }] })], ctx);
         t.contiene(advertenciasP_(noEs), 'NO_ES_DEL_SISTEMA', 'un recambio que no es del sistema del cliente avisa');
@@ -1029,10 +1055,10 @@ function casosDePrueba_() {
         t.igual(aCambiarEnVisita_(comps, '2026-10-20', 0).map(function (x) { return x.codigo; }).join(), 'D', 'con 0 días de anticipo, solo lo vencido');
         var ctx = ctxSisC1_();
         ctx.diasAnticipoFiltros = 20;
-        // Instalado el 01/02: sedimento y prefiltro vencen el 01/05, carbones el 01/08. Próximo mantenimiento: 02/05.
-        var m = vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-04-20', diasPorDefecto: 90 })[0];
-        t.igual(/Carbón/.test(m.trabajos), false, 'en la visita del 02/05 no se anticipan los carbones (vencen 3 meses después)');
-        var vencido = vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-07-20', diasPorDefecto: 90 })[0];
+        // Instalado el 01/02: sedimento y prefiltro vencen el 01/05, carbones el 01/08. Próximo mantenimiento: 01/05.
+        var m = vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-04-20' })[0];
+        t.igual(/Carbón/.test(m.trabajos), false, 'en la visita del 01/05 no se anticipan los carbones (vencen 3 meses después)');
+        var vencido = vistaMantenimiento(ctx.estado, ctx, { hoy: '2026-07-20' })[0];
         t.igual(/Carbón granular \(vence 01\/08\/2026\)/.test(vencido.trabajos), true, 'con el mantenimiento vencido se calcula desde hoy (20/07): el carbón del 01/08 entra');
       }
     },

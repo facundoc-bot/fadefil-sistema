@@ -49,8 +49,11 @@ const MAESTROS = [
     cols: [{ c: 'deposito_id', titulo: 'depósito', req: true }, { c: 'direccion', titulo: 'dirección' }, { c: 'controla_stock', t: 'bool', def: true }, { c: 'activo', t: 'bool', def: true }] },
   { t: 'co2_depositos', titulo: 'Depósitos CO₂', clave: ['deposito_id'], orden: 'deposito_id', ayuda: 'Cómo reconoce "Leer PDF" a cada depósito: el CODIGO de LINDE que figura en el remito (si son varios, separados por ";"). También permite desactivar un depósito solo para CO₂.',
     cols: [{ c: 'deposito_id', titulo: 'depósito', t: 'lista', o: opc('depositos', 'deposito_id'), req: true }, { c: 'plaza_linde', titulo: 'código LINDE' }, { c: 'activo', t: 'bool', def: true }] },
-  { t: 'plazas', titulo: 'Plazas', clave: ['plaza_id'], orden: 'plaza_id', ayuda: 'Cada plaza pertenece a una región y trabaja con un depósito.',
+  { t: 'co2_proveedores', titulo: 'Proveedores CO₂', clave: ['proveedor_id'], orden: 'proveedor_id', noBorrar: true, ayuda: 'Con quién se trabaja el CO₂. Cada plaza elige el suyo (Plazas → proveedor de CO₂): a sus clientes solo se les entregan cilindros de ese proveedor. "Lector PDF": si Leer PDF sabe leer sus remitos y facturas (hoy, solo LINDE).',
+    cols: [{ c: 'proveedor_id', titulo: 'código', req: true, mayus: true, fijaAlEditar: true }, { c: 'nombre', req: true }, { c: 'lector_pdf', titulo: 'lector PDF', t: 'bool', def: false, fija: true }, { c: 'activo', t: 'bool', def: true }] },
+  { t: 'plazas', titulo: 'Plazas', clave: ['plaza_id'], orden: 'plaza_id', ayuda: 'Cada plaza pertenece a una región, trabaja con un depósito y con un proveedor de CO₂ (AMBA: CABA con LINDE, GBA con Gases Nordelta).',
     cols: [{ c: 'plaza_id', titulo: 'plaza', req: true }, { c: 'region_id', titulo: 'región', t: 'lista', o: opc('regiones', 'region_id'), req: true }, { c: 'deposito_id', titulo: 'depósito', t: 'lista', o: opc('depositos', 'deposito_id'), req: true },
+      { c: 'proveedor_co2', titulo: 'proveedor de CO₂', t: 'lista', o: opc('co2_proveedores', 'proveedor_id'), req: true, def: 'LINDE' },
       { c: 'provincia' }, { c: 'responsable' }, { c: 'activa', t: 'bool', def: true }] },
   { t: 'zonas', titulo: 'Zonas', clave: ['zona_id'], orden: 'zona_id', ayuda: 'La zona de un cliente define su plaza, su región y su depósito.',
     cols: [{ c: 'zona_id', titulo: 'zona', req: true }, { c: 'plaza_id', titulo: 'plaza', t: 'lista', o: opc('plazas', 'plaza_id'), req: true }, { c: 'activa', t: 'bool', def: true }] },
@@ -72,8 +75,8 @@ const MAESTROS = [
       { c: 'deposito_inicial_id', titulo: 'depósito inicial', t: 'lista', o: opc('depositos', 'deposito_id'), req: true }, { c: 'comentarios' }] },
   { t: 'clientes', titulo: 'Clientes', clave: ['cliente_id'], orden: 'nombre_fantasia', soloLeer: true, ayuda: 'Los clientes se dan de alta con su OT de instalación (o la carga masiva) y se editan desde su ficha en la app. Acá se pueden ver y descargar.',
     cols: [{ c: 'cliente_id', titulo: 'ID' }, { c: 'nombre_fantasia', titulo: 'nombre' }, { c: 'razon_social_cuit', titulo: 'razón social / CUIT' }, { c: 'sector' }, { c: 'tipo_cliente', titulo: 'tipo' }, { c: 'modalidad' },
-      { c: 'zona_id', titulo: 'zona' }, { c: 'frecuencia_mant_dias', titulo: 'frecuencia', t: 'numero' }, { c: 'comentarios' }] },
-  { t: 'config', titulo: 'Configuración', clave: ['clave'], orden: 'clave', soloEditar: true, cols: [{ c: 'clave', fija: true }, { c: 'valor' }, { c: 'descripcion', titulo: 'descripción', fija: true }] },
+      { c: 'zona_id', titulo: 'zona' }, { c: 'esquema_mant', titulo: 'esquema de mantenimiento' }, { c: 'comentarios' }] },
+  { t: 'config', titulo: 'Configuración', clave: ['clave'], orden: 'clave', soloEditar: true, filtro: (r) => r.clave !== 'ESQUEMA_MANTENIMIENTO', cols: [{ c: 'clave', fija: true }, { c: 'valor' }, { c: 'descripcion', titulo: 'descripción', fija: true }] },
   { t: 'co2_config', titulo: 'Configuración CO₂', clave: ['clave'], orden: 'clave', soloEditar: true, cols: [{ c: 'clave', fija: true }, { c: 'valor' }, { c: 'descripcion', titulo: 'descripción', fija: true }] }
 ];
 const S = { pestana: 'usuarios', editando: null, nuevo: null, imp: null };
@@ -87,6 +90,7 @@ async function leer(t) {
     todos = todos.concat(data); if (data.length < 1000) break; desde += 1000;
   }
   D[t] = m && m.filtro ? todos.filter(m.filtro) : todos;
+  if (t === 'config') S.esqConfig = (todos.find((r) => r.clave === 'ESQUEMA_MANTENIMIENTO') || {}).valor || '-;-;E;-;-;P';
   return D[t];
 }
 async function leerTodo() { for (const m of MAESTROS) await leer(m.t); }
@@ -143,8 +147,27 @@ function pintar() {
       <input class="buscar-tabla" placeholder="Buscar en ${esc(m.titulo.toLowerCase())}…" oninput="S.buscar=this.value;pintarFilas()" value="${esc(S.buscar || '')}"></div>
     <div id="msg"></div>
     <div class="tabla-scroll"><table><thead><tr>${m.cols.map((c) => `<th>${esc(c.titulo || c.c.replace(/_/g, ' '))}</th>`).join('')}${editar ? '<th></th>' : ''}</tr></thead><tbody id="filas"></tbody></table></div></div>`;
+  if (m.t === 'config') html = tarjetaEsquema() + html;
   $('contenido').innerHTML = html;
   pintarFilas();
+}
+/* Configuración: el esquema de mantenimientos de todos los clientes, en 6 casilleros. */
+function tarjetaEsquema() {
+  return `<div class="tarjeta"><h2>Esquema de mantenimientos</h2>
+    <p class="ayuda">Qué le toca a cada cliente en los 6 meses que siguen a su último Profundo. El próximo se cuenta desde el último mantenimiento hecho: si uno se atrasa, corre lo que sigue.
+    Un Profundo, una Reparación con backup, una Instalación o un Cambio de modelo vuelven al mes 0. Pasado el mes 6, el esquema empieza de nuevo. Cada cliente puede tener el suyo desde su ficha.</p>
+    ${htmlEsquema('esq-config', S.esqConfig)}
+    <div class="acciones"><button class="primario" onclick="guardarEsquemaConfig()">Guardar esquema</button><span class="gris" id="esq-texto">${esc(textoEsquema(S.esqConfig))}</span></div>
+    <div id="msg-esq"></div></div>`;
+}
+async function guardarEsquemaConfig() {
+  const v = leerEsquemaHtml('esq-config');
+  if (!/[PE]/.test(v)) { $('msg-esq').innerHTML = '<div class="nota err">Elegí al menos un mes con Profundo o Express.</div>'; return; }
+  const { error } = await sb.from('config').update({ valor: v }).eq('clave', 'ESQUEMA_MANTENIMIENTO');
+  if (error) { $('msg-esq').innerHTML = `<div class="nota err">${esc(error.message)}</div>`; return; }
+  S.esqConfig = v;
+  $('esq-texto').textContent = textoEsquema(v);
+  $('msg-esq').innerHTML = '<div class="nota ok">Esquema guardado. Se aplica desde ahora a todos los clientes sin esquema propio.</div>';
 }
 function pintarFilas() {
   const m = MAESTROS.find((x) => x.t === S.pestana);
@@ -265,7 +288,7 @@ async function cargarExcelTabla(t, input) {
  * ------------------------------------------------------------------------ */
 const HOJAS = {
   maquinas: ['serie', 'modelo', 'fecha_ingreso'],
-  clientes: ['cliente_id', 'nombre_fantasia', 'razon_social_cuit', 'sector', 'tipo_cliente', 'modalidad', 'plaza', 'zona', 'frecuencia_mant_dias', 'comentarios',
+  clientes: ['cliente_id', 'nombre_fantasia', 'razon_social_cuit', 'sector', 'tipo_cliente', 'modalidad', 'plaza', 'zona', 'esquema_mant', 'comentarios',
     'estado', 'serie', 'modelo', 'fecha_instalacion', 'ultimo_mantenimiento', 'ultima_visita', 'fecha_desinstalacion', 'sistema', 'prefiltro'],
   comodato: ['cliente_id', 'codigo', 'cantidad'],
   componentes: ['cliente_id', 'codigo', 'ultimo_cambio'],

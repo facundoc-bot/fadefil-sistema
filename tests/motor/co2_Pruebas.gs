@@ -500,6 +500,49 @@ function co2_casosDePrueba_() {
         t.igual(co2_validarAnulacion('REM-1', movs).ok, false, 'no se anula el remito si después hubo una entrega');
         t.igual(co2_validarAnulacion('TRB-1', movs).ok, true, 'sí se anula la última operación');
       }
+    },
+    {
+      nombre: 'v2.1 — Dos proveedores en el mismo depósito: CABA con LINDE y GBA con Gases Nordelta',
+      fn: function (t) {
+        var ctx = co2_ctxPrueba_();
+        ctx.proveedores = { LINDE: { id: 'LINDE', nombre: 'LINDE' }, GN: { id: 'GN', nombre: 'Gases Nordelta' } };
+        ctx.plazas = { CABA: { id: 'CABA', depositoId: 'DEP-CBA', proveedor: 'LINDE' }, GBA: { id: 'GBA', depositoId: 'DEP-CBA', proveedor: 'GN' } };
+        ctx.clientes['CLI-1'].plazaId = 'CABA'; ctx.clientes['CLI-4'].plazaId = 'GBA';
+        ctx.cargasValidas = [2.5, 5, 10, 25];
+        var rem = function (nro, prov, entregas, retiros, kg, fecha) {
+          return { clase: 'REMITO', datos: { nroRemito: nro, fecha: fecha || '2026-03-01', idDeposito: 'DEP-CBA', proveedor: prov,
+            lineas: (entregas || []).map(function (x) { return { tipo: 'ENTREGA', serie: x, pesoKg: kg || 10 }; }).concat((retiros || []).map(function (x) { return { tipo: 'RETIRO', serie: x }; })) } };
+        };
+        var sim = co2_simularLote([rem('100', 'GN', ['G1', 'G2'], [], 25), rem('100', 'LINDE', ['L1'], [], 2.5)], ctx);
+        t.igual(sim.ok, true, 'el mismo número de remito puede venir de los dos proveedores');
+        t.igual(sim.estadosFinales.G1.proveedor + '/' + sim.estadosFinales.G1.pesoKg + ' · ' + sim.estadosFinales.L1.proveedor + '/' + sim.estadosFinales.L1.pesoKg,
+          'GN/25 · LINDE/2.5', 'cada serie queda con su proveedor y su carga');
+        co2_confirmarEnCtx_(ctx, sim, [{ nroNorm: co2_normalizarNroRemito('100'), idDeposito: 'DEP-CBA', estado: 'CONFIRMADO', proveedor: 'GN' }]);
+        t.contiene(co2_codigos_(co2_simularLote([rem('100', 'GN', ['G9'])], ctx)), 'REMITO_DUPLICADO', 'dentro de un proveedor el número no se repite');
+        t.contiene(co2_codigos_(co2_simularLote([rem('101', 'GN', ['G9'], [], 7)], ctx)), 'CARGA_INVALIDA', 'una carga que no está en la configuración');
+        t.contiene(co2_codigos_(co2_simularLote([rem('102', 'XX', ['G9'])], ctx)), 'PROVEEDOR_INEXISTENTE', 'proveedor que no existe');
+        t.contiene(co2_codigos_(co2_simularLote([co2_trabajoOp_('2026-03-02', 'ENTREGA', 'CLI-4', ['L1'])], ctx)), 'PROVEEDOR_NO_CORRESPONDE', 'a un cliente de GBA no se le entrega LINDE');
+        t.contiene(co2_codigos_(co2_simularLote([co2_trabajoOp_('2026-03-02', 'ENTREGA', 'CLI-1', ['G1'])], ctx)), 'PROVEEDOR_NO_CORRESPONDE', 'a un cliente de CABA no se le entrega GN');
+        sim = co2_simularLote([co2_trabajoOp_('2026-03-02', 'ENTREGA', 'CLI-4', ['G1']), co2_trabajoOp_('2026-03-02', 'ENTREGA', 'CLI-1', ['L1']),
+          co2_trabajoOp_('2026-03-10', 'RETIRO', 'CLI-4', [], ['G1'])], ctx);
+        t.igual(sim.ok, true, 'cada cliente recibe de su proveedor y el retiro de un cliente no mira el proveedor');
+        co2_confirmarEnCtx_(ctx, sim);
+        t.contiene(co2_codigos_(co2_simularLote([rem('500', 'LINDE', [], ['G1'], 0, '2026-03-15')], ctx)), 'RETIRO_OTRO_PROVEEDOR', 'LINDE no se lleva un vacío de GN');
+        sim = co2_simularLote([rem('103', 'GN', [], ['G1'], 0, '2026-03-15')], ctx);
+        t.igual(sim.ok, true, 'GN retira su vacío');
+        t.igual(co2_describirUbicacion_(sim.estadosFinales.G1, ctx), 'Gases Nordelta', 'queda en el proveedor');
+        co2_confirmarEnCtx_(ctx, sim, [{ nroNorm: co2_normalizarNroRemito('103'), idDeposito: 'DEP-CBA', estado: 'CONFIRMADO', proveedor: 'GN' }]);
+        t.contiene(co2_codigos_(co2_simularLote([rem('501', 'LINDE', ['G1'], [], 25, '2026-03-20')], ctx)), 'PROVEEDOR_DISTINTO', 'una serie no cambia de proveedor');
+        t.contiene(co2_codigos_(co2_simularLote([rem('104', 'GN', ['G1'], [], 10, '2026-03-20')], ctx)), 'CARGA_DISTINTA', 'ni de carga');
+        var alta = function (extra) { var a = { fecha: '2026-03-01', serie: 'X1', idDepositoOrigen: 'DEP-CBA', ubicacion: 'CLIENTE', idCliente: 'CLI-4', estado: co2_ESTADO.EN_USO, pesoKg: 5 };
+          Object.keys(extra || {}).forEach(function (k) { a[k] = extra[k]; }); return { clase: 'ALTA', datos: a }; };
+        sim = co2_simularLote([alta()], ctx);
+        t.igual(sim.ok && sim.estadosFinales.X1.proveedor, 'GN', 'inventario inicial en un cliente de GBA: toma el proveedor de su plaza');
+        t.contiene(co2_codigos_(co2_simularLote([alta({ proveedor: 'LINDE' })], ctx)), 'PROVEEDOR_NO_CORRESPONDE', 'inventario de LINDE en un cliente de GBA');
+        var movs = [{ tipoMov: co2_MOV.ENTREGA_LINDE, estadoAnterior: '', estadoNuevo: co2_ESTADO.LLENO, destinoTipo: 'DEPOSITO', destinoId: 'DEP-CBA', pesoKg: 25, proveedor: 'GN', idCircuito: 'C1', fecha: '2026-03-01' },
+          { tipoMov: co2_MOV.ENTREGA_CLIENTE, estadoAnterior: co2_ESTADO.LLENO, estadoNuevo: co2_ESTADO.EN_USO, destinoTipo: 'CLIENTE', destinoId: 'CLI-4', idCircuito: 'C1', fecha: '2026-03-02' }];
+        t.igual(co2_reconstruirSerie('G7', movs).estado.proveedor, 'GN', 'el historial rearma el proveedor');
+      }
     }
   ];
 }
