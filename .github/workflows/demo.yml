@@ -5,7 +5,8 @@
 # - Cada publicación vuelve a crear la base de la demo desde cero: migraciones + supabase/demo/demo.sql
 #   + datos de ejemplo (scripts/demo/cargar_demo.mjs) + foto para "Salir de la demo".
 # - Se entra con "Entrar a la demo" (sesión anónima = ADMIN de la demo), sin Google.
-# La clave de la base de la demo se deriva de SUPABASE_DB_PASSWORD (no hace falta otro secreto).
+# El proyecto "fadefil-demo" se crea a mano en Supabase (la clave de acceso no puede crear proyectos)
+# y su contraseña de la base va en el secreto DEMO_DB_PASSWORD.
 name: Demo
 
 on:
@@ -26,7 +27,7 @@ jobs:
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF_REAL: ${{ secrets.SUPABASE_PROJECT_REF }}
-      CLAVE_BASE_REAL: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      CLAVE_BASE_DEMO: ${{ secrets.DEMO_DB_PASSWORD }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       PROYECTO_DEMO: fadefil-demo
@@ -44,7 +45,8 @@ jobs:
 
       - name: Proyecto de Supabase de la demo (se crea la primera vez)
         run: |
-          CLAVE=$(printf '%s' "$CLAVE_BASE_REAL:fadefil-demo" | sha256sum | cut -c1-32)
+          CLAVE="$CLAVE_BASE_DEMO"
+          [ -n "$CLAVE" ] || { echo "::error::Falta el secreto DEMO_DB_PASSWORD (la contraseña de la base del proyecto fadefil-demo)."; exit 1; }
           echo "::add-mask::$CLAVE"
           echo "SUPABASE_DB_PASSWORD=$CLAVE" >> $GITHUB_ENV
           H="Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
@@ -55,7 +57,10 @@ jobs:
             jq -n --arg n "$PROYECTO_DEMO" --arg o "$ORG" --arg p "$CLAVE" '{name: $n, organization_id: $o, region: "sa-east-1", db_pass: $p}' > p.json
             COD=$(curl -s -X POST -H "$H" -H "Content-Type: application/json" "$API/projects" -d @p.json -o r.json -w '%{http_code}')
             rm -f p.json
-            if [ "$COD" != "201" ] && [ "$COD" != "200" ]; then echo "Supabase no creó el proyecto ($COD):"; jq -r '.message // .' r.json; exit 1; fi
+            if [ "$COD" != "201" ] && [ "$COD" != "200" ]; then
+              echo "::error::No existe el proyecto $PROYECTO_DEMO y Supabase no deja crearlo desde acá ($COD $(jq -r '.message // empty' r.json)). Crealo a mano en supabase.com (misma organización, región São Paulo) y guardá su contraseña en el secreto DEMO_DB_PASSWORD."
+              exit 1
+            fi
             REF=$(jq -r '.id' r.json); rm -f r.json
           fi
           for i in $(seq 1 60); do
