@@ -107,12 +107,12 @@ var CAT_TEXTO = { INSUMO: 'insumo', ADICIONAL: 'adicional', REPUESTO: 'repuesto'
 var MOV_ITEM = { ENTREGADO: 'ENTREGADO', RETIRADO: 'RETIRADO', CAMBIO: 'CAMBIO', NO_DEVUELTO: 'NO_DEVUELTO' };
 
 /** Saldos de stock por depósito y código. */
-var SALDO = { DISPONIBLE: 'DISPONIBLE', A_REVISAR: 'A_REVISAR', PARA_CABA: 'PARA_CABA' };
+var SALDO = { DISPONIBLE: 'DISPONIBLE', A_REVISAR: 'A_REVISAR', PARA_CABA: 'PARA_CABA', RESERVADO: 'RESERVADO' }; // v2.2: RESERVADO = en un carrito de envío
 
 var RES_TALLER = { APTA: 'APTA', REPARADA: 'REPARADA', ENVIAR_CABA: 'ENVIAR_CABA', BAJA: 'BAJA' };
 var RES_TALLER_TEXTO = { APTA: 'Apta', REPARADA: 'Reparada', ENVIAR_CABA: 'Enviar a CABA', BAJA: 'Baja' };
 var RES_ITEM = { DISPONIBLE: 'DISPONIBLE', ENVIAR_CABA: 'ENVIAR_CABA', DESCARTE: 'DESCARTE' }; // v1.2.2: descarte (sale del stock)
-var SALDO_TEXTO = { DISPONIBLE: 'Disponible', A_REVISAR: 'A revisar', PARA_CABA: 'Para CABA' };
+var SALDO_TEXTO = { DISPONIBLE: 'Disponible', A_REVISAR: 'A revisar', PARA_CABA: 'Para CABA', RESERVADO: 'Reservado' };
 
 /** Tipos de ajuste de stock: el tipo define si suma (1), resta (-1) o puede ser cualquiera de los dos (0). */
 var TIPOS_AJUSTE = {
@@ -410,14 +410,14 @@ function cant_(n) { return Math.round(Number(n) * 1000) / 1000; }
 
 /** Estado de partida: cada máquina del maestro, Nueva en su depósito inicial. */
 function estadoInicial(ctx) {
-  var W = { clientes: {}, maquinas: {}, stock: {}, envios: {}, ingresos: {}, lotes: {}, movStock: [] };
+  var W = { clientes: {}, maquinas: {}, stock: {}, envios: {}, ingresos: {}, lotes: {}, movStock: [], carritos: {} };
   Object.keys(ctx.maquinas || {}).forEach(function (serie) {
     var m = ctx.maquinas[serie];
     var dep = String(m.depositoInicial || '').trim();
     W.maquinas[serie] = {
       serie: serie, estado: EST_MAQ.NUEVA,
       ubicTipo: UBIC.DEPOSITO, ubicId: dep, // v1.0: el depósito central es un depósito más (UBIC.CABA queda solo por compatibilidad)
-      ultimaFecha: m.fechaAlta || '', ingresoAbierto: '', paraCaba: false
+      ultimaFecha: m.fechaAlta || '', ingresoAbierto: '', paraCaba: false, carrito: ''
     };
   });
   return W;
@@ -441,13 +441,13 @@ function leerCliente_(W, id) {
 
 function saldo_(W, dep, codigo) {
   var d = W.stock[dep] || {};
-  return d[codigo] || { DISPONIBLE: 0, A_REVISAR: 0, PARA_CABA: 0 };
+  return d[codigo] || { DISPONIBLE: 0, A_REVISAR: 0, PARA_CABA: 0, RESERVADO: 0 };
 }
 
 function moverStock_(W, dep, codigo, bucket, delta, fecha, mov) {
   if (!dep || !delta) return; // v1.0: el depósito central también registra (sin avisar faltantes)
   W.stock[dep] = W.stock[dep] || {};
-  var s = W.stock[dep][codigo] = W.stock[dep][codigo] || { DISPONIBLE: 0, A_REVISAR: 0, PARA_CABA: 0 };
+  var s = W.stock[dep][codigo] = W.stock[dep][codigo] || { DISPONIBLE: 0, A_REVISAR: 0, PARA_CABA: 0, RESERVADO: 0 };
   s[bucket] = cant_(s[bucket] + delta);
   if (mov && fecha) registrarKardex_(W, dep, codigo, bucket, delta, fecha, mov);
   // v0.9.4: línea de tiempo del disponible, para avisar cuando algo se usa antes de haber llegado.
@@ -802,6 +802,7 @@ function validarOT_(d, W, ctx, idOp) {
     else if (tipo === TIPO_OT.ALTA_INICIAL) {
       if (mIn.ubicTipo === UBIC.CLIENTE) err_(res, 'MAQUINA_EN_OTRO_CLIENTE', 'La serie ' + serieIn + ' ya figura en el ' + describirUbicacion_(mIn, ctx) + '.');
       else if (mIn.estado === EST_MAQ.BAJA) err_(res, 'MAQUINA_BAJA', 'La serie ' + serieIn + ' está dada de baja.');
+      else if (mIn.carrito) err_(res, 'MAQUINA_EN_CARRITO', 'La serie ' + serieIn + ' está en el carrito de envío a ' + mIn.carrito + '. Sacala del carrito para instalarla.');
       // v0.9.1: también en la migración, la máquina tiene que estar en el depósito de la plaza del cliente.
       else if (mIn.ubicTipo !== UBIC.DEPOSITO || mIn.ubicId !== dep) {
         err_(res, 'MAQUINA_FUERA_DEL_DEPOSITO', 'La serie ' + serieIn + ' figura en ' + describirUbicacion_(mIn, ctx) + ', no en el ' + nombreDeposito_(dep) +
@@ -1227,6 +1228,10 @@ function aplicarCierre_(d, ef, W) {
   else if (ef.resultado === RES_TALLER.BAJA) { m.estado = EST_MAQ.BAJA; m.paraCaba = false; }
   else { m.estado = EST_MAQ.A_REVISAR; m.paraCaba = true; }
   usarItemsReparacion_(W, ef.deposito, ef.lineas, d.fecha, ef.idOp, ing, 'Cierre de revisión de la máquina');
+  // v2.2: en una plaza, lo que se revisa como Enviar a CABA entra solo al carrito hacia el depósito central.
+  if (m.paraCaba && !m.carrito && ef.deposito !== DEPOSITO_CABA && m.ubicTipo === UBIC.DEPOSITO && m.ubicId === ef.deposito) {
+    aplicarCarrito_({ fecha: d.fecha }, { accion: 'AGREGAR', origen: ef.deposito, destino: DEPOSITO_CABA, series: [ef.serie], lineas: [] }, W);
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -1333,6 +1338,10 @@ function aplicarRevisionItems_(d, ef, W) {
     moverStock_(W, ef.deposito, l.codigo, SALDO.A_REVISAR, -l.cantidad, d.fecha, movRev);
     // v1.2.2: lo descartado sale del stock (no pasa a ningún otro saldo).
     if (l.resultado !== RES_ITEM.DESCARTE) moverStock_(W, ef.deposito, l.codigo, l.resultado === RES_ITEM.DISPONIBLE ? SALDO.DISPONIBLE : SALDO.PARA_CABA, l.cantidad, d.fecha, movRev);
+    // v2.2: en una plaza, lo revisado Para CABA entra solo al carrito hacia el depósito central.
+    if (l.resultado === RES_ITEM.ENVIAR_CABA && ef.deposito !== DEPOSITO_CABA) {
+      aplicarCarrito_({ fecha: d.fecha }, { accion: 'AGREGAR', origen: ef.deposito, destino: DEPOSITO_CABA, series: [], lineas: [{ codigo: l.codigo, cantidad: l.cantidad, desde: SALDO.PARA_CABA }] }, W);
+    }
     if (l.resultado === RES_ITEM.DISPONIBLE) {
       var o = l.origenLote || {};
       registrarMov_(W, 'INGRESO', ef.deposito, l.codigo, l.cantidad, d.fecha, 'REVISION', ef.idOp, { idCliente: o.idCliente, detalle: o.origen ? 'Retirado en ' + o.origen : '' });
@@ -1353,9 +1362,12 @@ function validarEnvio_(d, W, ctx, idOp) {
   if (!esDeposito_(ctx, origen)) err_(res, 'DEPOSITO_INEXISTENTE', 'El origen "' + origen + '" no es un depósito.');
   if (!esDeposito_(ctx, destino)) err_(res, 'DEPOSITO_INEXISTENTE', 'El destino "' + destino + '" no es un depósito.');
   if (origen && origen === destino) err_(res, 'ORIGEN_IGUAL_DESTINO', 'El origen y el destino son el mismo depósito.');
-  var series = (d.series || []).map(normalizarSerie).filter(String);
-  var lineas = normalizarLineas_(d.items);
-  if (!series.length && !lineas.length) err_(res, 'ENVIO_VACIO', 'El envío no tiene ítems ni máquinas.');
+  // v2.2: despachar el carrito origen → destino (lo reservado sale en el envío).
+  var carro = d.desdeCarrito ? (W.carritos || {})[claveCarrito_(origen, destino)] : null;
+  if (d.desdeCarrito && carritoVacio_(carro)) err_(res, 'CARRITO_VACIO', 'El carrito hacia ' + destino + ' está vacío.');
+  var series = carro ? carro.series.slice() : (d.series || []).map(normalizarSerie).filter(String);
+  var lineas = carro ? Object.keys(carro.lineas).map(function (k) { var x = carro.lineas[k]; return { codigo: x.codigo, cantidad: x.cantidad, desde: SALDO.RESERVADO }; }) : normalizarLineas_(d.items);
+  if (!d.desdeCarrito && !series.length && !lineas.length) err_(res, 'ENVIO_VACIO', 'El envío no tiene ítems ni máquinas.');
   var vistas = {};
   series.forEach(function (s) { if (vistas[s]) err_(res, 'SERIE_DUPLICADA', 'La serie ' + s + ' está dos veces en el envío.'); vistas[s] = true; });
   if (res.errores.length || !fechaOk) return res;
@@ -1365,6 +1377,7 @@ function validarEnvio_(d, W, ctx, idOp) {
     if (!m) { err_(res, 'SERIE_INEXISTENTE', 'La serie ' + s + ' no existe en MÁQUINAS. Dala de alta primero.'); return; }
     var enOrigen = (m.ubicTipo === UBIC.DEPOSITO && m.ubicId === origen) || (origen === DEPOSITO_CABA && m.ubicTipo === UBIC.CABA);
     if (!enOrigen) { err_(res, 'MAQUINA_FUERA_DEL_DEPOSITO', 'La serie ' + s + ' figura en ' + describirUbicacion_(m, ctx) + ', no en ' + (origen === DEPOSITO_CABA ? 'CABA' : 'el ' + nombreDeposito_(origen)) + '.'); return; }
+    if (m.carrito && !carro) { err_(res, 'MAQUINA_EN_CARRITO', 'La serie ' + s + ' está en el carrito hacia ' + m.carrito + ': despachala con el carrito o sacala de ahí.'); return; }
     if (m.ingresoAbierto) { err_(res, 'MAQUINA_EN_REVISION', 'La serie ' + s + ' tiene la revisión abierta. Cerrala (por ejemplo, como Enviar a CABA) antes de despacharla.'); return; }
     if (m.estado === EST_MAQ.BAJA && destino !== DEPOSITO_CABA) { err_(res, 'MAQUINA_BAJA', 'La serie ' + s + ' está dada de baja: solo puede volver a CABA.'); return; }
     if (m.ultimaFecha && d.fecha < m.ultimaFecha) { err_(res, 'FECHA_ANTERIOR_A_HISTORIAL', 'La serie ' + s + ' tiene un movimiento del ' + fechaTexto(m.ultimaFecha) + '.'); return; }
@@ -1376,7 +1389,8 @@ function validarEnvio_(d, W, ctx, idOp) {
   lineas.forEach(function (l, i) {
     if (!validarCodigo_(res, ctx, l.codigo, l.cantidad, i + 1)) return;
     var desde = l.desde || SALDO.DISPONIBLE;
-    if (desde !== SALDO.DISPONIBLE && desde !== SALDO.PARA_CABA) { err_(res, 'SALDO_INVALIDO', nombreItem_(ctx, l.codigo) + ': sale del stock Disponible o de lo revisado Para CABA.'); return; }
+    if (desde === SALDO.RESERVADO && !carro) { err_(res, 'SALDO_INVALIDO', nombreItem_(ctx, l.codigo) + ': lo reservado sale solo con su carrito.'); return; }
+    if (desde !== SALDO.DISPONIBLE && desde !== SALDO.PARA_CABA && desde !== SALDO.RESERVADO) { err_(res, 'SALDO_INVALIDO', nombreItem_(ctx, l.codigo) + ': sale del stock Disponible o de lo revisado Para CABA.'); return; }
     if (desde === SALDO.PARA_CABA && origen === DEPOSITO_CABA) { err_(res, 'SALDO_INVALIDO', 'Desde CABA no se envía stock Para CABA.'); return; }
     l.desde = desde;
     uso[l.codigo + '|' + desde] = cant_((uso[l.codigo + '|' + desde] || 0) + l.cantidad);
@@ -1394,19 +1408,121 @@ function validarEnvio_(d, W, ctx, idOp) {
     Object.keys(uso).forEach(function (k) { var p = k.split('|'); if (p[1] === SALDO.DISPONIBLE) usoDisp[p[0]] = uso[k]; });
     avisarStockEnFecha_(res, W, ctx, origen, usoDisp, d.fecha);
   }
-  res.efectos = { clase: 'ENVIO', origen: origen, destino: destino, series: series, lineas: lineasOk, idOp: idOp };
+  res.efectos = { clase: 'ENVIO', origen: origen, destino: destino, series: series, lineas: lineasOk, idOp: idOp, desdeCarrito: !!carro };
   return res;
 }
 
 function aplicarEnvio_(d, ef, W) {
   ef.series.forEach(function (s) {
     var m = W.maquinas[s];
-    m.ubicTipo = UBIC.TRANSITO; m.ubicId = ef.idOp; m.ultimaFecha = d.fecha;
+    m.ubicTipo = UBIC.TRANSITO; m.ubicId = ef.idOp; m.ultimaFecha = d.fecha; m.carrito = '';
   });
+  if (ef.desdeCarrito) delete W.carritos[claveCarrito_(ef.origen, ef.destino)];
   ef.lineas.forEach(function (l) { moverStock_(W, ef.origen, l.codigo, l.desde, -l.cantidad, d.fecha, { texto: 'Envío a ' + ef.destino, detalle: 'Envío ' + ef.idOp }); });
   W.envios[ef.idOp] = { id: ef.idOp, fecha: d.fecha, origen: ef.origen, destino: ef.destino, series: ef.series.slice(),
     lineas: ef.lineas.map(function (l) { return { codigo: l.codigo, cantidad: l.cantidad, desde: l.desde }; }),
     estado: 'EN_TRANSITO', fechaRecepcion: '', idRecepcion: '' };
+}
+
+/* ---------------------------------------------------------------------------
+ *  Carrito de envíos (v2.2, pedido 26/11/2026). Uno abierto por origen → destino.
+ *  Lo que entra queda RESERVADO en el origen (sale del disponible o de lo revisado
+ *  Para CABA); lo que se saca vuelve a donde estaba. Se despacha con un ENVIO con
+ *  desdeCarrito. En las plazas, la revisión "Enviar a CABA" agrega sola (cierre de
+ *  máquina y revisión de ítems).
+ *  d = { fecha, origen, destino, accion: AGREGAR | QUITAR, items: [{ codigo, cantidad, desde }], series: [] }
+ * ------------------------------------------------------------------------ */
+function claveCarrito_(origen, destino) { return origen + '|' + destino; }
+function carritoVacio_(c) {
+  return !c || (!c.series.length && !Object.keys(c.lineas).some(function (k) { return c.lineas[k].cantidad > 0; }));
+}
+
+function validarCarrito_(d, W, ctx, idOp) {
+  var res = nuevoResultado_();
+  validarFecha_(res, d.fecha, ctx);
+  var origen = String(d.origen || DEPOSITO_CABA).trim(), destino = String(d.destino || '').trim();
+  var accion = String(d.accion || 'AGREGAR').toUpperCase();
+  if (!esDeposito_(ctx, origen)) err_(res, 'DEPOSITO_INEXISTENTE', 'El origen "' + origen + '" no es un depósito.');
+  if (!esDeposito_(ctx, destino)) err_(res, 'DEPOSITO_INEXISTENTE', 'El destino "' + destino + '" no es un depósito.');
+  if (origen && origen === destino) err_(res, 'ORIGEN_IGUAL_DESTINO', 'El origen y el destino son el mismo depósito.');
+  if (accion !== 'AGREGAR' && accion !== 'QUITAR') err_(res, 'ACCION_INVALIDA', 'Al carrito se le agrega o se le quita.');
+  var series = (d.series || []).map(normalizarSerie).filter(String);
+  var lineas = normalizarLineas_(d.items);
+  if (!series.length && !lineas.length) err_(res, 'CARRITO_SIN_CAMBIOS', 'No hay ítems ni máquinas para ' + (accion === 'QUITAR' ? 'sacar del' : 'agregar al') + ' carrito.');
+  if (res.errores.length) return res;
+  var c = (W.carritos || {})[claveCarrito_(origen, destino)];
+  var lineasOk = [];
+  if (accion === 'AGREGAR') {
+    series.forEach(function (s) {
+      var m = W.maquinas[s];
+      if (!m) { err_(res, 'SERIE_INEXISTENTE', 'La serie ' + s + ' no existe en MÁQUINAS.'); return; }
+      if (m.carrito) { err_(res, 'MAQUINA_EN_CARRITO', 'La serie ' + s + ' ya está en el carrito hacia ' + m.carrito + '.'); return; }
+      if (!(m.ubicTipo === UBIC.DEPOSITO && m.ubicId === origen)) { err_(res, 'MAQUINA_FUERA_DEL_DEPOSITO', 'La serie ' + s + ' figura en ' + describirUbicacion_(m, ctx) + ', no en el ' + nombreDeposito_(origen) + '.'); return; }
+      if (m.ingresoAbierto) { err_(res, 'MAQUINA_EN_REVISION', 'La serie ' + s + ' tiene la revisión abierta. Cerrala antes de ponerla en el carrito.'); return; }
+      if (m.estado === EST_MAQ.BAJA && destino !== DEPOSITO_CABA) { err_(res, 'MAQUINA_BAJA', 'La serie ' + s + ' está dada de baja: solo puede volver a CABA.'); return; }
+      if (m.paraCaba && destino !== DEPOSITO_CABA) adv_(res, 'MAQUINA_PARA_CABA', 'La serie ' + s + ' se revisó como Enviar a CABA, pero el carrito va a ' + destino + '.');
+    });
+    var uso = {};
+    lineas.forEach(function (l, i) {
+      if (!validarCodigo_(res, ctx, l.codigo, l.cantidad, i + 1)) return;
+      var desde = l.desde || SALDO.DISPONIBLE;
+      if (desde !== SALDO.DISPONIBLE && desde !== SALDO.PARA_CABA) { err_(res, 'SALDO_INVALIDO', nombreItem_(ctx, l.codigo) + ': entra al carrito desde el stock Disponible o desde lo revisado Para CABA.'); return; }
+      if (desde === SALDO.PARA_CABA && origen === DEPOSITO_CABA) { err_(res, 'SALDO_INVALIDO', 'Desde CABA no se envía stock Para CABA.'); return; }
+      l.desde = desde;
+      uso[l.codigo + '|' + desde] = cant_((uso[l.codigo + '|' + desde] || 0) + l.cantidad);
+      lineasOk.push(l);
+    });
+    if (controlaStock_(ctx, origen) || origen === DEPOSITO_CABA) { // en el central también: lo reservado no puede ser más de lo que hay
+      Object.keys(uso).forEach(function (k) {
+        var p = k.split('|'), hay = saldo_(W, origen, p[0])[p[1]];
+        if (hay < uso[k]) adv_(res, 'STOCK_INSUFICIENTE', 'En el ' + nombreDeposito_(origen) + ' hay ' + hay + ' ' + nombreItem_(ctx, p[0]) +
+          (p[1] === SALDO.PARA_CABA ? ' revisados para CABA' : ' disponibles') + ' y se reservan ' + uso[k] + '.');
+      });
+    }
+  } else {
+    series.forEach(function (s) {
+      if (!c || c.series.indexOf(s) < 0) err_(res, 'NO_ESTA_EN_CARRITO', 'La serie ' + s + ' no está en el carrito hacia ' + destino + '.');
+    });
+    lineas.forEach(function (l) {
+      var desde = l.desde || SALDO.DISPONIBLE, x = c && c.lineas[l.codigo + '|' + desde];
+      if (!x || x.cantidad < l.cantidad) { err_(res, 'NO_ESTA_EN_CARRITO', 'En el carrito hacia ' + destino + ' hay ' + (x ? x.cantidad : 0) + ' ' + nombreItem_(ctx, l.codigo) + ' y se quieren sacar ' + l.cantidad + '.'); return; }
+      l.desde = desde;
+      lineasOk.push(l);
+    });
+  }
+  res.efectos = { clase: 'CARRITO', accion: accion, origen: origen, destino: destino, deposito: origen, series: series, lineas: lineasOk, idOp: idOp };
+  return res;
+}
+
+function aplicarCarrito_(d, ef, W) {
+  W.carritos = W.carritos || {};
+  var k = claveCarrito_(ef.origen, ef.destino), signo = ef.accion === 'QUITAR' ? -1 : 1;
+  var c = W.carritos[k] || (W.carritos[k] = { origen: ef.origen, destino: ef.destino, desde: d.fecha, lineas: {}, series: [] });
+  var mov = { texto: signo > 0 ? 'Reservado en el carrito' : 'Sale del carrito', detalle: 'Carrito ' + ef.origen + ' → ' + ef.destino };
+  ef.lineas.forEach(function (l) {
+    moverStock_(W, ef.origen, l.codigo, l.desde, -signo * l.cantidad, d.fecha, mov);
+    moverStock_(W, ef.origen, l.codigo, SALDO.RESERVADO, signo * l.cantidad, d.fecha, mov);
+    var kl = l.codigo + '|' + l.desde;
+    var x = c.lineas[kl] || (c.lineas[kl] = { codigo: l.codigo, desde: l.desde, cantidad: 0 });
+    x.cantidad = cant_(x.cantidad + signo * l.cantidad);
+    if (x.cantidad <= 0) delete c.lineas[kl];
+  });
+  ef.series.forEach(function (s) {
+    var m = W.maquinas[s];
+    if (signo > 0) { m.carrito = ef.destino; if (c.series.indexOf(s) < 0) c.series.push(s); }
+    else { m.carrito = ''; c.series = c.series.filter(function (x) { return x !== s; }); }
+  });
+  if (carritoVacio_(c)) delete W.carritos[k];
+}
+
+/** Carritos abiertos, para la pantalla. */
+function vistaCarritos(W, ctx) {
+  return Object.keys(W.carritos || {}).sort().map(function (k) {
+    var c = W.carritos[k];
+    return { origen: c.origen, destino: c.destino, desde: c.desde,
+      lineas: Object.keys(c.lineas).sort().map(function (kl) { var x = c.lineas[kl]; return { codigo: x.codigo, descripcion: nombreItem_(ctx, x.codigo), cantidad: x.cantidad, desde: x.desde }; }),
+      series: c.series.map(function (s) { var m = W.maquinas[s] || {}; return { serie: s, modelo: (ctx.maquinas[s] || {}).modelo || '', estado: EST_MAQ_TEXTO[m.estado] || m.estado || '', paraCaba: !!m.paraCaba }; }) };
+  });
 }
 
 /* ---------------------------------------------------------------------------
@@ -1494,7 +1610,8 @@ var VALIDADORES_ = {
   ENVIO: [validarEnvio_, aplicarEnvio_],
   RECEPCION: [validarRecepcion_, aplicarRecepcion_],
   AJUSTE: [validarAjuste_, aplicarAjuste_],
-  REPARACION_DEPOSITO: [validarReparacionDeposito_, aplicarReparacionDeposito_]
+  REPARACION_DEPOSITO: [validarReparacionDeposito_, aplicarReparacionDeposito_],
+  CARRITO: [validarCarrito_, aplicarCarrito_]
 };
 
 function clonarEstado(W) {
@@ -1783,7 +1900,7 @@ function vistaStock(W, ctx) {
     Object.keys(W.stock[dep]).forEach(function (cod) {
       var s = W.stock[dep][cod];
       var f = fila(dep, cod);
-      f.disponible = s.DISPONIBLE; f.aRevisar = s.A_REVISAR; f.paraCaba = s.PARA_CABA;
+      f.disponible = s.DISPONIBLE; f.aRevisar = s.A_REVISAR; f.paraCaba = s.PARA_CABA; f.reservado = s.RESERVADO || 0;
       f.registrado = true; // v1.0: el ítem tuvo movimientos en el depósito (aunque hoy esté en cero)
     });
   });
@@ -1828,17 +1945,17 @@ function vistaKardex(W, ctx, filtro) {
   var saldos = {}, inicial = {}, filas = [];
   lista.forEach(function (o) {
     var x = o.x, k = x.dep + '|' + x.cod;
-    var s = saldos[k] = saldos[k] || { DISPONIBLE: 0, A_REVISAR: 0, PARA_CABA: 0 };
+    var s = saldos[k] = saldos[k] || { DISPONIBLE: 0, A_REVISAR: 0, PARA_CABA: 0, RESERVADO: 0 };
     if (desde && x.f < desde) { Object.keys(x.d).forEach(function (b) { s[b] = cant_(s[b] + x.d[b]); }); return; }
-    if (!(k in inicial)) inicial[k] = { DISPONIBLE: s.DISPONIBLE, A_REVISAR: s.A_REVISAR, PARA_CABA: s.PARA_CABA };
+    if (!(k in inicial)) inicial[k] = { DISPONIBLE: s.DISPONIBLE, A_REVISAR: s.A_REVISAR, PARA_CABA: s.PARA_CABA, RESERVADO: s.RESERVADO || 0 };
     Object.keys(x.d).forEach(function (b) { s[b] = cant_(s[b] + x.d[b]); });
     if (x.f > hasta) return;
     if (filtro.idCliente && x.cli !== filtro.idCliente) return;
     var cli = x.cli ? ctx.clientes[x.cli] : null;
     filas.push({ fecha: x.f, deposito: x.dep, plaza: (ctx.depositos[x.dep] || {}).plaza || '', codigo: x.cod, descripcion: nombreItem_(ctx, x.cod),
       categoria: (ctx.catalogo[x.cod] || {}).categoria || '', movimiento: x.mov,
-      disponible: x.d.DISPONIBLE || 0, aRevisar: x.d.A_REVISAR || 0, paraCaba: x.d.PARA_CABA || 0,
-      saldoDisponible: s.DISPONIBLE, saldoARevisar: s.A_REVISAR, saldoParaCaba: s.PARA_CABA,
+      disponible: x.d.DISPONIBLE || 0, aRevisar: x.d.A_REVISAR || 0, paraCaba: x.d.PARA_CABA || 0, reservado: x.d.RESERVADO || 0,
+      saldoDisponible: s.DISPONIBLE, saldoARevisar: s.A_REVISAR, saldoParaCaba: s.PARA_CABA, saldoReservado: s.RESERVADO || 0,
       idCliente: x.cli, cliente: cli ? cli.nombre : x.cli, serie: x.serie, operacion: x.op, detalle: x.det });
   });
   return { filas: filas, inicial: inicial };
@@ -1942,6 +2059,9 @@ function fijarDepositoCentral(nombre) { DEPOSITO_CABA = String(nombre || 'Depós
 function depositoCentral() { return DEPOSITO_CABA; }
 
 export {
+  vistaCarritos,
+  claveCarrito_,
+  carritoVacio_,
   ACCION_SIS,
   CAT,
   CATEGORIAS,

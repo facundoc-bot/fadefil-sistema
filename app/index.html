@@ -197,8 +197,13 @@ document.addEventListener('mousedown', (e) => { const c = document.getElementByI
   <!-- ============================ ENVÍOS ============================ -->
   <section class="panel" id="p-envios">
     <div class="tarjeta">
-      <h2>Nuevo envío</h2>
-      <p class="ayuda">Los envíos salen del depósito central (CABA). Para devolver algo al central (retorno), elegí como origen el depósito de la plaza. El stock suma al destino recién cuando se confirma la recepción.</p>
+      <h2>Carritos <span class="insignia pend" id="env-carritos-n">0</span></h2>
+      <p class="ayuda">Un carrito por destino. Lo que está adentro queda <b>reservado</b> en el depósito de origen (ya no figura como disponible) hasta que se despacha. En las plazas, lo que se revisa como "Enviar a CABA" entra solo al carrito hacia el central.</p>
+      <div id="env-carritos"></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Armar un envío</h2>
+      <p class="ayuda">Elegí origen y destino, sumá ítems y máquinas, y tocá <b>Agregar al carrito</b> (se puede completar en varias veces y lo ve todo el equipo). Para un envío que sale ya, usá <b>Despachar ahora</b>. El stock suma al destino recién cuando se confirma la recepción.</p>
       <div class="fila">
         <div><label for="env-fecha">Fecha de despacho</label><input type="date" id="env-fecha"></div>
         <div><label for="env-origen">Origen</label><select id="env-origen" onchange="origenEnvioCambio()"></select></div>
@@ -221,8 +226,9 @@ document.addEventListener('mousedown', (e) => { const c = document.getElementByI
       <div class="fila"><div><label for="env-coment">Comentarios</label><textarea id="env-coment"></textarea></div></div>
       <div id="env-resultado"></div>
       <div class="acciones">
-        <button class="exito" onclick="guardarEnvio(false)">Guardar envío</button>
-        <button class="alerta" id="btn-env-adv" style="display:none" onclick="guardarEnvio(true)">Guardar igual (acepto los avisos)</button>
+        <button class="primario" onclick="agregarAlCarrito(false)">Agregar al carrito</button>
+        <button onclick="guardarEnvio(false)">Despachar ahora (sin carrito)</button>
+        <button class="alerta" id="btn-env-adv" style="display:none" onclick="S.envReintento && S.envReintento(true)">Guardar igual (acepto los avisos)</button>
         <button onclick="limpiarEnvio()">Vaciar</button>
       </div>
     </div>
@@ -241,7 +247,7 @@ document.addEventListener('mousedown', (e) => { const c = document.getElementByI
   <section class="panel" id="p-revision">
     <div class="tarjeta">
       <h2>Máquinas a revisar</h2>
-      <p class="ayuda">Toda máquina retirada de un cliente queda acá. Cerrala como Apta (pasa a Usada sin hacerle nada), Reparada (con los ítems usados), Enviar a CABA o Baja. También se cierra como Reparada desde la pestaña Reparación.</p>
+      <p class="ayuda">Toda máquina retirada de un cliente queda acá. Cerrala como Apta (pasa a Usada sin hacerle nada), Reparada (con los ítems usados), Enviar a CABA (entra sola al carrito de envío hacia el central) o Baja. También se cierra como Reparada desde la pestaña Reparación.</p>
       <div class="tabla-scroll"><table id="rev-maquinas"></table></div>
       <div id="cierre-form" style="display:none;margin-top:14px">
         <h3 id="cierre-titulo"></h3>
@@ -666,7 +672,7 @@ function cambiarFiltro(nivel) {
 function pintarTodo() {
   pintarInicio();
   pintarTiposOT(); filtrarClientesOT();
-  armarEnvio(); pintarTransito();
+  armarEnvio(); pintarCarritos(); pintarTransito();
   pintarRevision(); pintarReparacion();
   armarStock(); pintarStock();
   armarFormCliente(); pintarClientes();
@@ -795,7 +801,7 @@ function seriesParaInstalar(c, tipo) {
   const dep = depDePlaza(c.plaza);
   // Alta inicial (migración): cualquier máquina sin instalar del depósito de la plaza del cliente.
   if (tipo === 'ALTA_INICIAL') return S.ini.maquinas.filter(m => depDeMaq(m) === dep && m.estado !== 'BAJA' && !m.ingresoAbierto && !usadas.includes(m.serie));
-  return S.ini.maquinas.filter(m => depDeMaq(m) === dep && (m.estado === 'NUEVA' || m.estado === 'USADA') && !m.ingresoAbierto && !usadas.includes(m.serie));
+  return S.ini.maquinas.filter(m => depDeMaq(m) === dep && (m.estado === 'NUEVA' || m.estado === 'USADA') && !m.ingresoAbierto && !m.carrito && !usadas.includes(m.serie));
 }
 /* Alta inicial (migración): máquinas sin instalar de otros depósitos (o del central); al elegirlas se registra el envío. */
 function seriesDeOtrosLugares(c) {
@@ -1479,7 +1485,7 @@ function origenEnvioCambio(sinVaciar) {
 function envioCambio() { $('env-resultado').innerHTML = ''; $('btn-env-adv').style.display = 'none'; }
 function maquinasEnOrigen() {
   const o = $('env-origen').value;
-  return S.ini.maquinas.filter(m => depDeMaq(m) === o && !m.ingresoAbierto && !S.envio.series.includes(m.serie));
+  return S.ini.maquinas.filter(m => depDeMaq(m) === o && !m.ingresoAbierto && !m.carrito && !S.envio.series.includes(m.serie));
 }
 function pintarSeriesEnvio() {
   const lista = maquinasEnOrigen();
@@ -1508,12 +1514,78 @@ function pintarCarrito() {
 }
 function limpiarEnvio() { S.envio = { lineas: [], series: [] }; ['env-guia', 'env-coment'].forEach(id => $(id).value = ''); pintarSeriesEnvio(); pintarCarrito(); envioCambio(); }
 async function guardarEnvio(aceptar) {
+  S.envReintento = guardarEnvio;
   const d = { fecha: $('env-fecha').value, origen: $('env-origen').value, destino: $('env-destino').value, transporte: $('env-transporte').value.trim(),
     guia: $('env-guia').value.trim(), comentarios: $('env-coment').value.trim(), items: S.envio.lineas.slice(), series: S.envio.series.slice() };
   if (!d.destino) return aviso('Elegí el destino.', 'err');
   if (!d.items.length && !d.series.length) return aviso('El envío está vacío.', 'err');
   const r = await confirmarOps([{ clase: 'ENVIO', datos: d }], aceptar, 'env-resultado', 'btn-env-adv');
   if (r) limpiarEnvio();
+}
+/* ======================================================================
+ *  Carritos de envío (v2.2): uno abierto por origen → destino, compartido.
+ * ==================================================================== */
+async function agregarAlCarrito(aceptar) {
+  S.envReintento = agregarAlCarrito;
+  const d = { fecha: $('env-fecha').value || S.ini.hoy, origen: $('env-origen').value, destino: $('env-destino').value, accion: 'AGREGAR',
+    items: S.envio.lineas.slice(), series: S.envio.series.slice() };
+  if (!d.destino) return aviso('Elegí el destino.', 'err');
+  if (!d.items.length && !d.series.length) return aviso('Sumá al menos un ítem o una máquina.', 'err');
+  const r = await confirmarOps([{ clase: 'CARRITO', datos: d }], aceptar, 'env-resultado', 'btn-env-adv');
+  if (r) { limpiarEnvio(); aviso('Agregado al carrito hacia ' + d.destino + ' (queda reservado).'); }
+}
+function carritosVisibles() { return (S.ini.carritos || []).filter(c => enDep(c.origen) || enDep(c.destino)); }
+function pintarCarritos() {
+  const lista = carritosVisibles();
+  $('env-carritos-n').textContent = lista.length;
+  const saleDe = (c, l) => c.origen === depCentral() ? 'Disponible' : (l.desde === 'PARA_CABA' ? 'Revisado para CABA' : 'Disponible');
+  $('env-carritos').innerHTML = !lista.length ? '<p class="vacio">No hay carritos abiertos. Armá un envío abajo y tocá "Agregar al carrito".</p>' : lista.map((c, i) => {
+    const n = c.lineas.reduce((a, l) => a + l.cantidad, 0);
+    return `<div class="carrito">
+      <div class="carrito-cab"><div><strong>${esc(nomDep(c.origen))} → ${esc(nomDep(c.destino))}</strong>
+        <span class="ayuda" style="margin:0;display:block">Abierto desde el ${fechaTxt(c.desde)} · ${n} ítem${n === 1 ? '' : 's'} · ${c.series.length} máquina${c.series.length === 1 ? '' : 's'}</span></div>
+        <span class="insignia adv">Reservado</span></div>
+      <div class="tabla-scroll"><table><thead><tr><th>Contenido</th><th class="num">Cant.</th><th>Sale de</th><th class="solo-carga"></th></tr></thead><tbody>
+      ${c.lineas.map((l, j) => `<tr><td>${esc(l.descripcion || nombreItem(l.codigo))}</td><td class="num">${l.cantidad}</td><td>${esc(saleDe(c, l))}</td>
+        <td class="solo-carga" style="white-space:nowrap"><input type="number" id="cq-${i}-${j}" min="1" max="${l.cantidad}" value="${l.cantidad}" style="width:72px" aria-label="Cantidad a sacar"> <button class="chico" onclick="sacarDelCarrito(${i}, 'linea', ${j})">Sacar</button></td></tr>`).join('')}
+      ${c.series.map((m, j) => `<tr><td>Máquina <span class="mono">${esc(m.serie)}</span> · ${esc(m.modelo)} · ${esc(m.estado)}${m.paraCaba ? ' · revisada para CABA' : ''}</td><td class="num">1</td><td></td>
+        <td class="solo-carga"><button class="chico" onclick="sacarDelCarrito(${i}, 'serie', ${j})">Sacar</button></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="solo-carga"><div class="fila" style="margin-top:10px">
+        <div><label for="cd-fecha-${i}">Fecha de despacho</label><input type="date" id="cd-fecha-${i}" value="${esc(S.ini.hoy)}" max="${esc(S.ini.hoy)}"></div>
+        <div><label for="cd-transp-${i}">Transporte</label><input id="cd-transp-${i}" list="lista-transportes"></div>
+        <div><label for="cd-guia-${i}">N° de guía o remito</label><input id="cd-guia-${i}"></div>
+      </div>
+      <div id="cd-res-${i}"></div>
+      <div class="acciones"><button class="exito" onclick="despacharCarrito(${i})">Despachar</button>
+        <button onclick="sumarAlCarrito(${i})">Agregar más</button></div></div>
+    </div>`;
+  }).join('');
+}
+/* "Agregar más": el formulario de abajo queda apuntando a este carrito. */
+function sumarAlCarrito(i) {
+  const c = carritosVisibles()[i];
+  $('env-origen').value = c.origen; origenEnvioCambio(); pintarDestinos(c.destino); $('env-destino').value = c.destino;
+  if ($('env-item').scrollIntoView) $('env-item').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+async function sacarDelCarrito(i, tipo, j) {
+  const c = carritosVisibles()[i];
+  const d = { fecha: S.ini.hoy, origen: c.origen, destino: c.destino, accion: 'QUITAR', items: [], series: [] };
+  if (tipo === 'serie') d.series.push(c.series[j].serie);
+  else {
+    const l = c.lineas[j], n = Number($('cq-' + i + '-' + j).value);
+    if (!(n > 0) || n > l.cantidad) return aviso('Indicá cuántos sacar (de 1 a ' + l.cantidad + ').', 'err');
+    d.items.push({ codigo: l.codigo, cantidad: n, desde: l.desde });
+  }
+  await confirmarOps([{ clase: 'CARRITO', datos: d }], true, 'cd-res-' + i);
+}
+async function despacharCarrito(i) {
+  const c = carritosVisibles()[i];
+  const d = { fecha: $('cd-fecha-' + i).value, origen: c.origen, destino: c.destino, desdeCarrito: true,
+    transporte: $('cd-transp-' + i).value.trim(), guia: $('cd-guia-' + i).value.trim(), comentarios: '' };
+  if (!d.fecha) return aviso('Indicá la fecha de despacho.', 'err');
+  const r = await confirmarOps([{ clase: 'ENVIO', datos: d }], true, 'cd-res-' + i);
+  if (r) aviso('Carrito despachado: queda en camino hasta que ' + nomDep(c.destino) + ' lo reciba.');
 }
 function pintarTransito() {
   const tr = S.ini.envios.filter(e => e.estado === 'EN_TRANSITO' && enEnvio(e));
@@ -1736,15 +1808,15 @@ function pintarMovItem() {
   const desde = $('stk-desde').value;
   const iniciales = desde ? Object.keys(r.inicial).filter(k => enDep(k.split('|')[0])).map(k => {
     const s = r.inicial[k];
-    return `<tr class="gris"><td>${fechaTxt(desde)}</td><td>${esc(k.split('|')[0])}</td><td><i>Saldo al inicio del período</i></td><td class="num">${s.DISPONIBLE}</td><td class="num">${s.A_REVISAR}</td><td class="num">${s.PARA_CABA}</td><td></td><td></td><td></td></tr>`;
+    return `<tr class="gris"><td>${fechaTxt(desde)}</td><td>${esc(k.split('|')[0])}</td><td><i>Saldo al inicio del período</i></td><td class="num">${s.DISPONIBLE}</td><td class="num">${s.A_REVISAR}</td><td class="num">${s.PARA_CABA}</td><td class="num">${s.RESERVADO || 0}</td><td></td><td></td><td></td></tr>`;
   }).join('') : '';
   const fin = {}; filas.forEach(x => fin[x.deposito] = x);
-  const resumen = Object.keys(fin).sort().map(d => `${esc(d)}: <b>${fin[d].saldoDisponible}</b> disponible${fin[d].saldoARevisar ? ', ' + fin[d].saldoARevisar + ' a revisar' : ''}${fin[d].saldoParaCaba ? ', ' + fin[d].saldoParaCaba + ' para CABA' : ''}`).join(' · ');
+  const resumen = Object.keys(fin).sort().map(d => `${esc(d)}: <b>${fin[d].saldoDisponible}</b> disponible${fin[d].saldoARevisar ? ', ' + fin[d].saldoARevisar + ' a revisar' : ''}${fin[d].saldoParaCaba ? ', ' + fin[d].saldoParaCaba + ' para CABA' : ''}${fin[d].saldoReservado ? ', ' + fin[d].saldoReservado + ' reservado' : ''}`).join(' · ');
   $('mov-item-res').innerHTML = `<h3>${esc(r.descripcion)} <span class="mono ayuda" style="margin:0">${esc(r.codigo)}</span></h3>` +
     (filas.length ? `<p class="ayuda">${filas.length} movimiento(s). Saldo al final del período: ${resumen}.</p>` : '') +
-    (filas.length || iniciales ? `<div class="tabla-scroll"><table id="mov-item-tabla"><thead><tr><th>Fecha</th><th>Depósito</th><th>Movimiento</th><th class="num">Disponible</th><th class="num">A revisar</th><th class="num">Para CABA</th><th>Cliente / serie</th><th>Operación</th><th>Detalle</th></tr></thead><tbody>${iniciales}` +
+    (filas.length || iniciales ? `<div class="tabla-scroll"><table id="mov-item-tabla"><thead><tr><th>Fecha</th><th>Depósito</th><th>Movimiento</th><th class="num">Disponible</th><th class="num">A revisar</th><th class="num">Para CABA</th><th class="num">Reservado</th><th>Cliente / serie</th><th>Operación</th><th>Detalle</th></tr></thead><tbody>${iniciales}` +
       filas.map(x => `<tr><td style="white-space:nowrap">${fechaTxt(x.fecha)}</td><td style="white-space:nowrap">${esc(x.deposito)}</td><td>${esc(x.movimiento)}</td>
-        <td class="num">${celda(x.disponible, x.saldoDisponible)}</td><td class="num">${celda(x.aRevisar, x.saldoARevisar)}</td><td class="num">${celda(x.paraCaba, x.saldoParaCaba)}</td>
+        <td class="num">${celda(x.disponible, x.saldoDisponible)}</td><td class="num">${celda(x.aRevisar, x.saldoARevisar)}</td><td class="num">${celda(x.paraCaba, x.saldoParaCaba)}</td><td class="num">${celda(x.reservado, x.saldoReservado)}</td>
         <td>${esc([x.cliente ? x.cliente + (x.idCliente ? ' (' + x.idCliente + ')' : '') : '', x.serie ? 'Serie ' + x.serie : ''].filter(Boolean).join(' · '))}</td>
         <td class="mono" style="white-space:nowrap">${esc(x.operacion)}</td><td style="font-size:13px">${esc(x.detalle)}</td></tr>`).join('') + '</tbody></table></div>'
       : '<p class="vacio">Sin movimientos en el período para los filtros elegidos.</p>');
@@ -1801,9 +1873,9 @@ function pintarStock() {
   const periodo = hist ? 'Histórico (desde el inicio)' : `Del ${fechaTxt($('stk-desde').value) || 'inicio'} al ${fechaTxt($('stk-hasta').value) || 'hoy'}`;
   $('stk-salidas-resumen').innerHTML = cargando ? `<p class="ayuda">${periodo}: calculando ingresos y salidas…</p>` : `<p class="ayuda">${periodo}: <b>${suma(tot.INGRESO)}</b> ingresos${suma(tot.INGRESO) ? ' (' + desglose(tot.INGRESO, 'INGRESO') + ')' : ''} y <b>${suma(tot.SALIDA)}</b> salidas${suma(tot.SALIDA) ? ' (' + desglose(tot.SALIDA, 'SALIDA') + ')' : ''}.</p>`;
   const celda = (s, sentido) => { const o = movDe(s, sentido), n = suma(o); return n ? `${n}<div class="ayuda" style="margin:0">${desglose(o, sentido)}</div>` : ''; };
-  $('stk-items').innerHTML = st.length ? '<thead><tr><th>Depósito</th><th>Categoría</th><th>Ítem</th><th class="num">Disponible</th><th class="num">A revisar</th><th class="num">Para CABA</th><th class="num">En camino</th><th class="num">Ingresos</th><th class="num">Salidas</th></tr></thead><tbody>' +
+  $('stk-items').innerHTML = st.length ? '<thead><tr><th>Depósito</th><th>Categoría</th><th>Ítem</th><th class="num">Disponible</th><th class="num">A revisar</th><th class="num">Para CABA</th><th class="num">Reservado</th><th class="num">En camino</th><th class="num">Ingresos</th><th class="num">Salidas</th></tr></thead><tbody>' +
     st.map(s => `<tr class="${s.disponible < 0 ? 'neg' : ''}"><td>${esc(s.deposito)}</td><td>${esc(CAT_TXT[s.categoria] || s.categoria)}</td><td><button class="link" title="Ver movimientos" onclick="verMovItem('${esc(s.codigo)}')">${esc(s.descripcion)}</button></td>
-      <td class="num n">${s.disponible}</td><td class="num">${s.aRevisar || ''}</td><td class="num">${s.paraCaba || ''}</td><td class="num">${s.enCamino || ''}</td>
+      <td class="num n">${s.disponible}</td><td class="num">${s.aRevisar || ''}</td><td class="num">${s.paraCaba || ''}</td><td class="num">${s.reservado || ''}</td><td class="num">${s.enCamino || ''}</td>
       <td class="num" data-col="ingresos">${celda(s, 'INGRESO')}</td><td class="num" data-col="salidas">${celda(s, 'SALIDA')}</td></tr>`).join('') + '</tbody>'
     : '<tbody><tr><td class="vacio">Sin stock registrado.</td></tr></tbody>';
   const sm = S.ini.stockMaquinas.filter(s => enDep(s.deposito));

@@ -6,7 +6,7 @@
 // =============================================================================
 import {
   TIPO_OT, TIPO_OT_TEXTO, EST_CLI, EST_CLI_TEXTO, EST_MAQ_TEXTO, UBIC, SALDO, TIPOS_AJUSTE, MODALIDAD_CO2, RES_TALLER_TEXTO,
-  vistaClientes, vistaMantenimiento, vistaTaller, vistaLotesRevision, vistaStock, vistaStockMaquinas, vistaKardex,
+  vistaClientes, vistaMantenimiento, vistaCarritos, vistaTaller, vistaLotesRevision, vistaStock, vistaStockMaquinas, vistaKardex,
   componentesCliente_, categoriasPermitidas_, nombreItem_, describirUbicacion_, normalizarSerie, normalizarCodigo, normalizarTipoOT,
   esFechaValida, sumarDias, diasEntre, cant_, depositoCentral, leerEsquemaMant, textoEsquemaMant, TIPO_MANT_TEXTO
 } from './motor.js';
@@ -15,7 +15,7 @@ import { contexto, cargarEstado, validarLote, guardarLote, anularOperacion, audi
 import { co2Contexto } from './co2_estado.js';
 import { ErrorDeUsuario, exigirRol, iso, insertar, anotar, BLOQUEO, hoyArgentina } from './base.js';
 
-export const VERSION_SISTEMA = '2.1';
+export const VERSION_SISTEMA = '2.2';
 
 const CLAVES_LISTAS = { TIPO_CLIENTE: 'tipoCliente', MODALIDAD: 'modalidad', PREFILTRO: 'prefiltro', TIPO_FALLA: 'falla', TRANSPORTE: 'transporte' };
 function leerListas(ctx) {
@@ -100,7 +100,7 @@ async function datosInicio(sql, u) {
   const maquinas = Object.keys(W.maquinas).sort().map((s) => {
     const m = W.maquinas[s];
     return { serie: s, modelo: (ctx.maquinas[s] || {}).modelo || '', estado: m.estado, ubicTipo: m.ubicTipo, ubicId: m.ubicId,
-      plaza: plazaDeMaquina(m, W, ctx), ultimaFecha: m.ultimaFecha, ingresoAbierto: m.ingresoAbierto, paraCaba: !!m.paraCaba };
+      plaza: plazaDeMaquina(m, W, ctx), ultimaFecha: m.ultimaFecha, ingresoAbierto: m.ingresoAbierto, paraCaba: !!m.paraCaba, carrito: m.carrito || '' };
   });
   const reglas = {};
   Object.keys(TIPO_OT_TEXTO).forEach((t) => { reglas[t] = categoriasPermitidas_(ctx, t); });
@@ -114,6 +114,7 @@ async function datosInicio(sql, u) {
     esquemaMant: textoEsquemaMant(leerEsquemaMant(ctx.esquemaMant) || leerEsquemaMant('-;-;E;-;-;P')), tiposMant: TIPO_MANT_TEXTO,
     taller: vistaTaller(W, ctx).map((t) => { t.plaza = plazaDeDeposito(ctx, t.deposito); return t; }),
     revisionPendiente: vistaLotesRevision(W, ctx),
+    carritos: vistaCarritos(W, ctx),
     stock: vistaStock(W, ctx).map((f) => { ['ingresos30', 'ingresosTotal', 'salidas30', 'salidasTotal'].forEach((k) => delete f[k]); return f; }),
     tiposAjuste: TIPOS_AJUSTE,
     stockMaquinas: vistaStockMaquinas(W, ctx).map((f) => { f.plaza = plazaDeDeposito(ctx, f.deposito); return f; }),
@@ -137,6 +138,7 @@ const kardexDesdeFilas = (filas) => filas.map((r) => {
   if (Number(r.disponible)) d.DISPONIBLE = Number(r.disponible);
   if (Number(r.a_revisar)) d.A_REVISAR = Number(r.a_revisar);
   if (Number(r.para_caba)) d.PARA_CABA = Number(r.para_caba);
+  if (Number(r.reservado)) d.RESERVADO = Number(r.reservado);
   return { f: iso(r.fecha), dep: r.deposito_id, cod: r.codigo, mov: r.movimiento, d, cli: r.cliente_id || '', serie: r.serie || '', det: r.detalle || '', op: r.op_id || '' };
 });
 

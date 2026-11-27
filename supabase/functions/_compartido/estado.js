@@ -121,12 +121,22 @@ function filasCliente(c) {
 }
 
 const maquinaAFila = (m) => ({ serie: m.serie, estado: m.estado, ubicacion_tipo: m.ubicTipo, ubicacion_id: m.ubicId || '', fecha_ultimo_mov: nulo(m.ultimaFecha),
-  revision_abierta_id: m.ingresoAbierto || '', enviar_a_caba: !!m.paraCaba });
+  revision_abierta_id: m.ingresoAbierto || '', enviar_a_caba: !!m.paraCaba, carrito_destino_id: m.carrito || null });
 const revisionAFila = (i) => ({ revision_id: i.id, serie: i.serie, deposito_id: i.deposito, fecha: i.fecha, origen_op_id: i.origen || '', falla: i.falla || '', estado: i.estado,
   resultado: i.resultado || '', fecha_cierre: nulo(i.fechaCierre), cierre_id: i.idCierre || '', diagnostico: i.diagnostico || '', tecnico: i.tecnico || '',
   cliente_id: i.idCliente || '', tipo_ot: i.tipoOT || '' });
 const loteAFila = (l) => ({ lote_id: l.id, deposito_id: l.deposito, codigo: l.codigo, cantidad: l.cantidad, fecha: l.fecha, cliente_id: l.idCliente || '', tipo_ot: l.tipoOT || '', op_id: l.origen || '' });
-const stockAFila = (dep, cod, s) => ({ deposito_id: dep, codigo: cod, disponible: s.DISPONIBLE, a_revisar: s.A_REVISAR, para_caba: s.PARA_CABA });
+const stockAFila = (dep, cod, s) => ({ deposito_id: dep, codigo: cod, disponible: s.DISPONIBLE, a_revisar: s.A_REVISAR, para_caba: s.PARA_CABA, reservado: s.RESERVADO || 0 });
+/** Carrito de envío (v2.2): cabecera y líneas en un orden fijo (las máquinas van en maquinas_estado.carrito_destino_id). */
+const carritoAFila = (c) => ({ origen_deposito_id: c.origen, destino_deposito_id: c.destino, desde: c.desde,
+  lineas: Object.keys(c.lineas).sort().filter((k) => c.lineas[k].cantidad > 0).map((k) => ({ origen_deposito_id: c.origen, destino_deposito_id: c.destino, codigo: c.lineas[k].codigo,
+    desde_saldo: c.lineas[k].desde, cantidad: c.lineas[k].cantidad })) });
+async function escribirCarrito(sql, f) {
+  await sql`insert into envio_carritos ${sql({ origen_deposito_id: f.origen_deposito_id, destino_deposito_id: f.destino_deposito_id, desde: f.desde })}
+    on conflict (origen_deposito_id, destino_deposito_id) do update set desde = excluded.desde`;
+  await sql`delete from envio_carrito_lineas where origen_deposito_id = ${f.origen_deposito_id} and destino_deposito_id = ${f.destino_deposito_id}`;
+  if (f.lineas.length) await insertar(sql, 'envio_carrito_lineas', f.lineas);
+}
 const envioAFila = (e) => ({ envio_id: e.id, estado: e.estado, fecha_recepcion: nulo(e.fechaRecepcion), recepcion_id: e.idRecepcion || '' });
 
 /** Arma los clientes de W a partir de sus filas. */
@@ -164,7 +174,7 @@ export async function cargarEstado(sql, ctx, { clientes = null, talleres = 'ABIE
   const ids = clientes == null ? null : [...new Set(clientes.filter(Boolean))];
   const porCliente = (t) => (ids == null ? sql`select * from ${sql(t)}` : ids.length ? sql`select * from ${sql(t)} where cliente_id = any(${ids})` : Promise.resolve([]));
   const cods = [...new Set(codigos.filter(Boolean))];
-  const [maq, env, envL, ce, ci, cs, cc, st, lo, ta, taL, mov] = await Promise.all([
+  const [maq, env, envL, ce, ci, cs, cc, st, lo, ta, taL, mov, car, carL] = await Promise.all([
     sql`select * from maquinas_estado`,
     sql`select * from envios where estado = 'EN_TRANSITO'`,
     sql`select l.* from envio_lineas l join envios e using (envio_id) where e.estado = 'EN_TRANSITO' order by l.linea_id`,
@@ -173,12 +183,17 @@ export async function cargarEstado(sql, ctx, { clientes = null, talleres = 'ABIE
     sql`select * from lotes_revision`,
     talleres === 'TODOS' ? sql`select * from taller` : sql`select * from taller where estado = 'ABIERTO'`,
     talleres === 'TODOS' ? sql`select * from taller_lineas order by linea_id` : sql`select l.* from taller_lineas l join taller t using (revision_id) where t.estado = 'ABIERTO' order by l.linea_id`,
-    cods.length ? sql`select fecha, deposito_id, codigo, disponible from movimientos_stock where codigo = any(${cods}) and disponible <> 0 order by orden` : Promise.resolve([])
+    cods.length ? sql`select fecha, deposito_id, codigo, disponible from movimientos_stock where codigo = any(${cods}) and disponible <> 0 order by orden` : Promise.resolve([]),
+    sql`select * from envio_carritos`,
+    sql`select * from envio_carrito_lineas`
   ]);
   maq.forEach((r) => {
     W.maquinas[r.serie] = { serie: r.serie, estado: r.estado, ubicTipo: r.ubicacion_tipo, ubicId: r.ubicacion_id, ultimaFecha: iso(r.fecha_ultimo_mov),
-      ingresoAbierto: r.revision_abierta_id, paraCaba: r.enviar_a_caba === true };
+      ingresoAbierto: r.revision_abierta_id, paraCaba: r.enviar_a_caba === true, carrito: r.carrito_destino_id || '' };
   });
+  car.forEach((r) => { W.carritos[r.origen_deposito_id + '|' + r.destino_deposito_id] = { origen: r.origen_deposito_id, destino: r.destino_deposito_id, desde: iso(r.desde), lineas: {}, series: [] }; });
+  carL.forEach((r) => { const c = W.carritos[r.origen_deposito_id + '|' + r.destino_deposito_id]; if (c) c.lineas[r.codigo + '|' + r.desde_saldo] = { codigo: r.codigo, desde: r.desde_saldo, cantidad: num(r.cantidad) }; });
+  maq.slice().sort((a, b) => (a.serie < b.serie ? -1 : 1)).forEach((r) => { const c = r.carrito_destino_id && W.carritos[r.ubicacion_id + '|' + r.carrito_destino_id]; if (c) c.series.push(r.serie); });
   env.forEach((e) => {
     const ls = envL.filter((l) => l.envio_id === e.envio_id);
     W.envios[e.envio_id] = { id: e.envio_id, fecha: iso(e.fecha), origen: e.origen_deposito_id, destino: e.destino_deposito_id, estado: e.estado,
@@ -187,7 +202,7 @@ export async function cargarEstado(sql, ctx, { clientes = null, talleres = 'ABIE
       lineas: ls.filter((l) => !l.serie).map((l) => ({ codigo: l.codigo, cantidad: num(l.cantidad), desde: l.desde_saldo || SALDO.DISPONIBLE })) };
   });
   clientesDesdeFilas(W, { estado: ce, items: ci, sistemas: cs, componentes: cc });
-  st.forEach((r) => { (W.stock[r.deposito_id] = W.stock[r.deposito_id] || {})[r.codigo] = { DISPONIBLE: num(r.disponible), A_REVISAR: num(r.a_revisar), PARA_CABA: num(r.para_caba) }; });
+  st.forEach((r) => { (W.stock[r.deposito_id] = W.stock[r.deposito_id] || {})[r.codigo] = { DISPONIBLE: num(r.disponible), A_REVISAR: num(r.a_revisar), PARA_CABA: num(r.para_caba), RESERVADO: num(r.reservado) }; });
   lo.forEach((r) => { if (num(r.cantidad) > 0) W.lotes[r.lote_id] = { id: r.lote_id, deposito: r.deposito_id, codigo: r.codigo, cantidad: num(r.cantidad), fecha: iso(r.fecha), idCliente: r.cliente_id, tipoOT: r.tipo_ot, origen: r.op_id }; });
   const itemsRev = {};
   taL.forEach((r) => { (itemsRev[r.revision_id] = itemsRev[r.revision_id] || []).push({ codigo: r.codigo, cantidad: num(r.cantidad) }); });
@@ -200,7 +215,8 @@ export async function cargarEstado(sql, ctx, { clientes = null, talleres = 'ABIE
   });
   mov.forEach((r) => { const k = r.deposito_id + '|' + r.codigo; (W.lineaDisp[k] = W.lineaDisp[k] || []).push([iso(r.fecha), num(r.disponible)]); });
 
-  const foto = { clientes: {}, maquinas: {}, stock: {}, lotes: {}, revisiones: {}, envios: {} };
+  const foto = { clientes: {}, maquinas: {}, stock: {}, lotes: {}, revisiones: {}, envios: {}, carritos: {} };
+  Object.keys(W.carritos).forEach((k) => { foto.carritos[k] = JSON.stringify(carritoAFila(W.carritos[k])); });
   Object.keys(W.clientes).forEach((id) => { foto.clientes[id] = JSON.stringify(filasCliente(W.clientes[id])); });
   Object.keys(W.maquinas).forEach((s) => { foto.maquinas[s] = maq.some((r) => r.serie === s) ? JSON.stringify(maquinaAFila(W.maquinas[s])) : ''; });
   Object.keys(W.stock).forEach((d) => Object.keys(W.stock[d]).forEach((c) => { foto.stock[d + '|' + c] = JSON.stringify(W.stock[d][c]); }));
@@ -233,7 +249,7 @@ function filasMovimientos(W) {
   const kardex = (W.kardex || []).map((x) => {
     nK[x.op] = (nK[x.op] || 0) + 1;
     return { movimiento_id: x.op + '-' + nK[x.op], fecha: x.f, deposito_id: x.dep, codigo: x.cod, movimiento: x.mov, disponible: x.d.DISPONIBLE || 0,
-      a_revisar: x.d.A_REVISAR || 0, para_caba: x.d.PARA_CABA || 0, cliente_id: x.cli || '', serie: x.serie || '', op_id: x.op || '', detalle: x.det || '' };
+      a_revisar: x.d.A_REVISAR || 0, para_caba: x.d.PARA_CABA || 0, reservado: x.d.RESERVADO || 0, cliente_id: x.cli || '', serie: x.serie || '', op_id: x.op || '', detalle: x.det || '' };
   });
   const is = (W.movStock || []).map((x) => {
     nIS[x.origen] = (nIS[x.origen] || 0) + 1;
@@ -265,7 +281,7 @@ async function upsertMaquinas(sql, filas) {
   for (let i = 0; i < filas.length; i += 500) {
     await sql`insert into maquinas_estado ${sql(filas.slice(i, i + 500))} on conflict (serie) do update set estado = excluded.estado,
       ubicacion_tipo = excluded.ubicacion_tipo, ubicacion_id = excluded.ubicacion_id, fecha_ultimo_mov = excluded.fecha_ultimo_mov,
-      revision_abierta_id = excluded.revision_abierta_id, enviar_a_caba = excluded.enviar_a_caba, updated_at = now()`;
+      revision_abierta_id = excluded.revision_abierta_id, enviar_a_caba = excluded.enviar_a_caba, carrito_destino_id = excluded.carrito_destino_id, updated_at = now()`;
   }
 }
 
@@ -283,7 +299,14 @@ async function persistirCambios(sql, ctx, base, W) {
   Object.keys(W.stock).forEach((d) => Object.keys(W.stock[d]).forEach((c) => { if (base.foto.stock[d + '|' + c] !== JSON.stringify(W.stock[d][c])) stock.push(stockAFila(d, c, W.stock[d][c])); }));
   if (stock.length) {
     await sql`insert into stock ${sql(stock)} on conflict (deposito_id, codigo) do update set disponible = excluded.disponible, a_revisar = excluded.a_revisar,
-      para_caba = excluded.para_caba, updated_at = now()`;
+      para_caba = excluded.para_caba, reservado = excluded.reservado, updated_at = now()`;
+  }
+  // Carritos (después de las máquinas: comparten el depósito de destino).
+  for (const k of new Set(Object.keys(W.carritos || {}).concat(Object.keys(base.foto.carritos)))) {
+    const c = (W.carritos || {})[k];
+    if (!c) { const [o, d] = k.split('|'); await sql`delete from envio_carritos where origen_deposito_id = ${o} and destino_deposito_id = ${d}`; continue; }
+    const f = carritoAFila(c);
+    if (base.foto.carritos[k] !== JSON.stringify(f)) await escribirCarrito(sql, f);
   }
   const lotes = Object.keys(W.lotes).map((id) => loteAFila(W.lotes[id])).filter((f) => f.cantidad > 0 && base.foto.lotes[f.lote_id] !== JSON.stringify(f));
   if (lotes.length) await sql`insert into lotes_revision ${sql(lotes)} on conflict (lote_id) do update set cantidad = excluded.cantidad`;
@@ -319,6 +342,7 @@ async function escribirEstadoCompleto(sql, ctx, W) {
   await sql`delete from stock`;
   await sql`delete from lotes_revision`;
   await sql`delete from taller`; // taller_lineas se borran en cascada
+  await sql`delete from envio_carritos`; // y sus líneas
   await sql`delete from movimientos_stock`;
   await sql`delete from ingresos_salidas`;
   const estado = [], items = [], sistemas = [], componentes = [];
@@ -335,6 +359,7 @@ async function escribirEstadoCompleto(sql, ctx, W) {
   const stock = [];
   Object.keys(W.stock).sort().forEach((d) => Object.keys(W.stock[d]).sort().forEach((c) => stock.push(stockAFila(d, c, W.stock[d][c]))));
   await insertar(sql, 'stock', stock);
+  for (const k of Object.keys(W.carritos || {}).sort()) await escribirCarrito(sql, carritoAFila(W.carritos[k]));
   await insertar(sql, 'lotes_revision', Object.keys(W.lotes).sort().map((id) => loteAFila(W.lotes[id])).filter((f) => f.cantidad > 0));
   const taller = [], tallerL = [];
   Object.keys(W.ingresos).sort().forEach((id) => {
@@ -537,7 +562,8 @@ export async function anularOperacion(sql, usuario, idOp, motivo) {
 
 /** Todas las filas de estado de un W, por tabla y clave, para comparar. */
 function filasPorTabla(ctx, W) {
-  const t = { clientes_estado: {}, clientes_items: {}, clientes_sistemas: {}, clientes_componentes: {}, maquinas_estado: {}, stock: {}, lotes_revision: {}, taller: {} };
+  const t = { clientes_estado: {}, clientes_items: {}, clientes_sistemas: {}, clientes_componentes: {}, maquinas_estado: {}, stock: {}, lotes_revision: {}, taller: {}, envio_carritos: {} };
+  Object.keys(W.carritos || {}).forEach((k) => { t.envio_carritos[k] = JSON.stringify(carritoAFila(W.carritos[k])); });
   Object.keys(W.clientes).forEach((id) => {
     if (!ctx.clientes[id]) return;
     const f = filasCliente(W.clientes[id]);

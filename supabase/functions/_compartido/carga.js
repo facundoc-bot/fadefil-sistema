@@ -46,7 +46,7 @@ function sinCilindros_(ops, sim) {
   return null;
 }
 
-var PREFIJO_OP = { OT: 'OT', INGRESO: 'ING', CIERRE: 'CIE', REVISION_ITEMS: 'REV', ENVIO: 'ENV', RECEPCION: 'REC', AJUSTE: 'AJU', REPARACION_DEPOSITO: 'REP' };
+var PREFIJO_OP = { OT: 'OT', INGRESO: 'ING', CIERRE: 'CIE', REVISION_ITEMS: 'REV', ENVIO: 'ENV', RECEPCION: 'REC', AJUSTE: 'AJU', REPARACION_DEPOSITO: 'REP', CARRITO: 'CAR' };
 
 /** Texto corto de una operación para operaciones.detalle y el log. */
 function detalleOperacion_(op, ctx) {
@@ -60,7 +60,8 @@ function detalleOperacion_(op, ctx) {
     case 'INGRESO': return 'Ingreso a revisión · ' + normalizarSerie(d.serie);
     case 'CIERRE': return 'Cierre de revisión · ' + normalizarSerie(d.serie || d.idIngreso) + ' · ' + (RES_TALLER_TEXTO[String(d.resultado).toUpperCase()] || d.resultado);
     case 'REVISION_ITEMS': return 'Revisión de ítems · ' + d.deposito;
-    case 'ENVIO': return 'Envío ' + (d.origen || depositoCentral()) + ' → ' + d.destino;
+    case 'ENVIO': return (d.desdeCarrito ? 'Envío (carrito) ' : 'Envío ') + (d.origen || depositoCentral()) + ' → ' + d.destino;
+    case 'CARRITO': return 'Carrito ' + (d.origen || depositoCentral()) + ' → ' + d.destino + ': ' + (String(d.accion).toUpperCase() === 'QUITAR' ? 'se saca' : 'se agrega');
     case 'RECEPCION': return 'Recepción del envío ' + d.idEnvio;
     case 'AJUSTE': return 'Ajuste' + (TIPOS_AJUSTE[String(d.tipo || '').toUpperCase()] ? ' (' + TIPOS_AJUSTE[String(d.tipo).toUpperCase()].texto + ')' : '') + ' · ' + d.deposito + ' · ' + d.codigo + ' ' + d.cantidad;
     case 'REPARACION_DEPOSITO': return 'Reparación en depósito · ' + normalizarSerie(d.serie);

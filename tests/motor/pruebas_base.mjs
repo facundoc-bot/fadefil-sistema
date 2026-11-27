@@ -450,6 +450,33 @@ await prueba('CO₂ con dos proveedores: Gases Nordelta en GBA (mismo depósito 
   igual((await co2Auditar(sql, admin)).corregidas, 0, 'la auditoría de CO₂ rearma el mismo proveedor');
 });
 
+await prueba('Carrito de envíos: reserva en CABA, se completa, se despacha; "Enviar a CABA" en una plaza entra solo; auditoría', async () => {
+  let r = await guardarLote(sql, admin, [{ clase: 'AJUSTE', datos: { fecha: hoy, deposito: 'Depósito CABA', codigo: 'FRENTE', cantidad: 6, tipo: 'COMPRA', motivo: 'Compra' } }], true);
+  igual(r.ok, true, 'stock en CABA: ' + JSON.stringify(r.resultados && r.resultados.map((x) => x.errores)));
+  const car = (accion, cant) => ({ clase: 'CARRITO', datos: { fecha: hoy, origen: 'Depósito CABA', destino: 'Depósito Mendoza', accion, items: [{ codigo: 'FRENTE', cantidad: cant }] } });
+  const antes = await uno(sql`select disponible, reservado from stock where deposito_id = 'Depósito CABA' and codigo = 'FRENTE'`);
+  r = await guardarLote(sql, carga, [car('AGREGAR', 4), car('QUITAR', 1)], true);
+  igual(r.ok, true, 'CARGA arma el carrito: ' + JSON.stringify(r.resultados && r.resultados.map((x) => x.errores)));
+  const st = await uno(sql`select disponible, reservado from stock where deposito_id = 'Depósito CABA' and codigo = 'FRENTE'`);
+  igual([Number(antes.disponible) - Number(st.disponible), Number(st.reservado)], [3, 3], 'quedan 3 reservados y se descuentan del disponible');
+  igual(await sql`select codigo, desde_saldo, cantidad::int from envio_carrito_lineas where destino_deposito_id = 'Depósito Mendoza'`, [{ codigo: 'FRENTE', desde_saldo: 'DISPONIBLE', cantidad: 3 }], 'el carrito queda guardado (compartido)');
+  const ini = await api(sql, consulta, 'apiInicio', []);
+  si(ini.carritos.some((c) => c.origen === 'Depósito CABA' && c.destino === 'Depósito Mendoza' && c.lineas[0].cantidad === 3), 'la pantalla recibe el carrito');
+  r = await guardarLote(sql, carga, [{ clase: 'ENVIO', datos: { fecha: hoy, origen: 'Depósito CABA', destino: 'Depósito Mendoza', desdeCarrito: true, transporte: 'Vía Cargo' } }], true);
+  igual(r.ok, true, 'se despacha el carrito: ' + JSON.stringify(r.resultados && r.resultados.map((x) => x.errores)));
+  igual(await sql`select codigo, cantidad::int, desde_saldo from envio_lineas where envio_id = ${r.ids[0]}`, [{ codigo: 'FRENTE', cantidad: 3, desde_saldo: 'RESERVADO' }], 'el envío lleva lo reservado');
+  igual([(await sql`select 1 from envio_carritos where destino_deposito_id = 'Depósito Mendoza'`).length, Number((await uno(sql`select reservado from stock where deposito_id = 'Depósito CABA' and codigo = 'FRENTE'`)).reservado)], [0, 0], 'el carrito se cierra');
+  await sql`insert into maquinas (serie, modelo, fecha_alta, deposito_inicial_id) values ('E-0099', 'AQA 200', ${hace(10)}, 'Depósito Mendoza')`;
+  r = await guardarLote(sql, carga, [{ clase: 'INGRESO', datos: { fecha: hoy, serie: 'E-0099', falla: 'No enfría' } }], true);
+  igual(r.ok, true, 'la máquina entra a revisión en Mendoza: ' + JSON.stringify(r.resultados && r.resultados.map((x) => x.errores)));
+  const abierta = { serie: 'E-0099' };
+  r = await guardarLote(sql, carga, [{ clase: 'CIERRE', datos: { fecha: hoy, serie: abierta.serie, resultado: 'ENVIAR_CABA', diagnostico: 'Compresor' } }], true);
+  igual(r.ok, true, 'revisión: Enviar a CABA: ' + JSON.stringify(r.resultados && r.resultados.map((x) => x.errores)));
+  igual(await uno(sql`select carrito_destino_id from maquinas_estado where serie = ${abierta.serie}`), { carrito_destino_id: 'Depósito CABA' }, 'la máquina entra sola al carrito Mendoza → CABA');
+  si((await sql`select 1 from envio_carritos where origen_deposito_id = 'Depósito Mendoza' and destino_deposito_id = 'Depósito CABA'`).length === 1, 'se abre el carrito hacia CABA');
+  igual((await auditar(sql, admin)).corregidas, [], 'la auditoría rearma los carritos igual que el guardado de a poco');
+});
+
 await sql.end();
 console.log(`Guardado en la base: ${ok} pruebas OK${fallas ? ', ' + fallas + ' con fallas' : ''}.`);
 if (fallas) process.exit(1);

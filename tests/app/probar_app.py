@@ -145,6 +145,22 @@ with sync_playwright() as p:
     pag.screenshot(path='/tmp/app_co2_gn.png', full_page=True)
     pag.goto(BASE + '/index.html')
     pag.wait_for_function("() => document.body.classList.contains('rol-ADMIN') && typeof S !== 'undefined' && S.ini", timeout=30000)
+    # Carrito de envíos: CABA → Mendoza, queda reservado; después se despacha
+    pag.click('nav#pestanas >> text=Envíos'); pag.wait_for_timeout(500)
+    pag.select_option('#env-origen', 'Depósito CABA'); pag.select_option('#env-destino', 'Depósito Mendoza')
+    pag.select_option('#env-item', 'FRENTE'); pag.fill('#env-cant', '1'); pag.click('#p-envios button:has-text("Agregar ítem")')
+    pag.click('button:has-text("Agregar al carrito")')
+    pag.wait_for_function("() => (S.ini.carritos || []).some(c => c.origen === 'Depósito CABA' && c.destino === 'Depósito Mendoza')", timeout=20000)
+    car = pag.evaluate("() => { const i = carritosVisibles().findIndex(c => c.destino === 'Depósito Mendoza'); const el = document.querySelectorAll('#env-carritos .carrito')[i]; return [i, el ? el.innerText.includes('Reservado') : false, (S.ini.stock.find(s => s.deposito === 'Depósito CABA' && s.codigo === 'FRENTE') || {}).reservado]; }")
+    print('Carrito en pantalla:', car)
+    if car[0] < 0 or not car[1] or not car[2]: fallas.append('Carrito: ' + json.dumps(car))
+    pag.locator('#env-carritos').screenshot(path='/tmp/app_carritos.png')
+    pag.evaluate("(i) => despacharCarrito(i)", car[0])
+    pag.wait_for_function("() => !(S.ini.carritos || []).some(c => c.origen === 'Depósito CABA' && c.destino === 'Depósito Mendoza')", timeout=20000)
+    camino = pag.evaluate("() => S.ini.envios.filter(e => e.estado === 'EN_TRANSITO' && e.origen === 'Depósito CABA' && e.destino === 'Depósito Mendoza').length")
+    print('Carrito despachado, envíos en camino:', camino)
+    if not camino: fallas.append('El carrito despachado no quedó en camino')
+    pag.screenshot(path='/tmp/app_envios.png')
     # Guardar una OT desde la app (navegador → función → base) y que la pantalla se actualice con la respuesta
     r = pag.evaluate("""async () => { const r = await llamar('apiConfirmar', [{ clase: 'OT', datos: { fecha: S.ini.hoy, idCliente: '80001', tipo: 'MANTENIMIENTO', items: [] } }], true);
       if (r.ok) aplicarIni(r.ini); return { ok: r.ok, ids: r.ids, err: JSON.stringify(r.resultados && r.resultados.map(x => x.errores)), mant: (S.ini.clientes.find(c => c.id === '80001') || {}).tipoUltimaVisita }; }""")

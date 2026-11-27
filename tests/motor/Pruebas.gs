@@ -383,7 +383,8 @@ function casosDePrueba_() {
         var rev = opP_('REVISION_ITEMS', { fecha: '2026-05-03', deposito: 'Depósito Mendoza', items: [{ codigo: 'BOT', cantidad: 2, resultado: 'DISPONIBLE' }, { codigo: 'BOT', cantidad: 1, resultado: 'ENVIAR_CABA' }, { codigo: 'BOT', cantidad: 2, resultado: 'DESCARTE' }] });
         t.igual(confirmarP_(ctx, [rev]).ok, true, 'revisión con descarte');
         var sb = saldo_(ctx.estado, 'Depósito Mendoza', 'BOT');
-        t.igual([sb.A_REVISAR, sb.DISPONIBLE, sb.PARA_CABA].join(), '0,2,1', 'quedan 2 disponibles, 1 para CABA y 2 descartadas fuera del stock');
+        t.igual([sb.A_REVISAR, sb.DISPONIBLE, sb.PARA_CABA, sb.RESERVADO].join(), '0,2,0,1', 'quedan 2 disponibles, 1 para CABA (v2.2: reservada en el carrito hacia CABA) y 2 descartadas fuera del stock');
+        t.igual(JSON.stringify(ctx.estado.carritos['Depósito Mendoza|Depósito CABA'].lineas), JSON.stringify({ 'BOT|PARA_CABA': { codigo: 'BOT', desde: 'PARA_CABA', cantidad: 1 } }), 'la botella para CABA entra sola al carrito');
         t.contiene(erroresP_(simularLote([opP_('REVISION_ITEMS', { fecha: '2026-05-04', deposito: 'Depósito Mendoza', items: [{ codigo: 'BOT', cantidad: 1, resultado: 'DESCARTE' }] })], ctx)), 'REVISION_SUPERA', 'no se descarta más de lo que hay a revisar');
       }
     },
@@ -699,16 +700,47 @@ function casosDePrueba_() {
       }
     },
     {
+      nombre: 'v2.2 Carrito de envíos desde CABA: reserva, se completa en varias veces, se saca y se despacha',
+      fn: function (t) {
+        var ctx = ctxPrueba_();
+        confirmarP_(ctx, [opP_('AJUSTE', { fecha: '2026-02-01', deposito: 'Depósito CABA', codigo: 'BOMBA', cantidad: 10, motivo: 'Compra' })]);
+        var car = function (fecha, accion, items, series) { return opP_('CARRITO', { fecha: fecha, origen: 'Depósito CABA', destino: 'Depósito Mendoza', accion: accion, items: items || [], series: series || [] }); };
+        t.igual(confirmarP_(ctx, [car('2026-02-02', 'AGREGAR', [{ codigo: 'BOMBA', cantidad: 4 }], ['S4'])]).ok, true, 'se agrega al carrito');
+        var sb = saldo_(ctx.estado, 'Depósito CABA', 'BOMBA');
+        t.igual(sb.DISPONIBLE + '/' + sb.RESERVADO, '6/4', 'queda reservado y se descuenta del disponible');
+        t.igual(ctx.estado.maquinas.S4.carrito, 'Depósito Mendoza', 'la máquina queda en el carrito');
+        t.contiene(erroresP_(simularLote([opP_('ENVIO', { fecha: '2026-02-03', origen: 'Depósito CABA', destino: 'Depósito Córdoba', series: ['S4'] })], ctx)), 'MAQUINA_EN_CARRITO', 'no sale en otro envío');
+        t.contiene(erroresP_(simularLote([car('2026-02-03', 'AGREGAR', [], ['S4'])], ctx)), 'MAQUINA_EN_CARRITO', 'no se agrega dos veces');
+        t.contiene(advertenciasP_(simularLote([car('2026-02-03', 'AGREGAR', [{ codigo: 'BOMBA', cantidad: 9 }])], ctx)), 'STOCK_INSUFICIENTE', 'avisa si se reserva más de lo que hay');
+        confirmarP_(ctx, [car('2026-02-03', 'AGREGAR', [{ codigo: 'BOMBA', cantidad: 2 }]), car('2026-02-04', 'QUITAR', [{ codigo: 'BOMBA', cantidad: 1 }])]);
+        sb = saldo_(ctx.estado, 'Depósito CABA', 'BOMBA');
+        t.igual(sb.DISPONIBLE + '/' + sb.RESERVADO, '5/5', 'uno abierto por destino: suma y resta en el mismo carrito');
+        t.contiene(erroresP_(simularLote([car('2026-02-04', 'QUITAR', [{ codigo: 'BOMBA', cantidad: 9 }])], ctx)), 'NO_ESTA_EN_CARRITO', 'no se saca más de lo que hay');
+        var v = vistaCarritos(ctx.estado, ctx)[0];
+        t.igual(v.destino + ' · ' + v.lineas.map(function (l) { return l.codigo + ':' + l.cantidad; }).join() + ' · ' + v.series.map(function (x) { return x.serie; }).join(), 'Depósito Mendoza · BOMBA:5 · S4', 'vista del carrito');
+        var env = opP_('ENVIO', { fecha: '2026-02-05', origen: 'Depósito CABA', destino: 'Depósito Mendoza', desdeCarrito: true });
+        t.igual(confirmarP_(ctx, [env]).ok, true, 'se despacha el carrito');
+        sb = saldo_(ctx.estado, 'Depósito CABA', 'BOMBA');
+        t.igual(sb.DISPONIBLE + '/' + sb.RESERVADO + ' · ' + Object.keys(ctx.estado.carritos).length + ' · ' + ctx.estado.maquinas.S4.ubicTipo, '5/0 · 0 · TRANSITO', 'lo reservado sale, el carrito se cierra y la máquina va en camino');
+        confirmarP_(ctx, [opP_('RECEPCION', { fecha: '2026-02-08', idEnvio: env.id })]);
+        t.igual(saldo_(ctx.estado, 'Depósito Mendoza', 'BOMBA').DISPONIBLE + ' · ' + ctx.estado.maquinas.S4.ubicId, '5 · Depósito Mendoza', 'Mendoza lo recibe');
+        t.contiene(erroresP_(simularLote([opP_('ENVIO', { fecha: '2026-02-09', origen: 'Depósito CABA', destino: 'Depósito Mendoza', desdeCarrito: true })], ctx)), 'CARRITO_VACIO', 'un carrito vacío no se despacha');
+      }
+    },
+    {
       nombre: 'Enviar a CABA: retorno a CABA, sale del interior; si vuelve reparada llega como Usada',
       fn: function (t) {
         var ctx = ctxConC1Activo_();
         confirmarP_(ctx, [otP_('2026-04-01', 'C1', 'REPARACION_BACKUP', { serieRetirada: 'S1', serieInstalada: 'S2', falla: 'Compresor' })]);
         t.contiene(erroresP_(simularLote([opP_('ENVIO', { fecha: '2026-04-02', origen: 'Depósito Mendoza', destino: 'Depósito CABA', series: ['S1'] })], ctx)), 'MAQUINA_EN_REVISION', 'no sale con la revisión abierta');
         confirmarP_(ctx, [opP_('CIERRE', { fecha: '2026-04-03', serie: 'S1', resultado: 'ENVIAR_CABA' })]);
-        t.contiene(advertenciasP_(simularLote([opP_('ENVIO', { fecha: '2026-04-04', origen: 'Depósito Mendoza', destino: 'Depósito Córdoba', series: ['S1'] })], ctx)), 'MAQUINA_PARA_CABA', 'avisa si se manda a otra plaza');
-        var env = opP_('ENVIO', { fecha: '2026-04-04', origen: 'Depósito Mendoza', destino: 'Depósito CABA', series: ['S1'] });
+        // v2.2: la revisión "Enviar a CABA" la pone sola en el carrito Mendoza → CABA; sale despachando el carrito.
+        t.igual(ctx.estado.maquinas.S1.carrito + ' · ' + ctx.estado.carritos['Depósito Mendoza|Depósito CABA'].series.join(), 'Depósito CABA · S1', 'entra sola al carrito hacia CABA');
+        t.contiene(erroresP_(simularLote([opP_('ENVIO', { fecha: '2026-04-04', origen: 'Depósito Mendoza', destino: 'Depósito Córdoba', series: ['S1'] })], ctx)), 'MAQUINA_EN_CARRITO', 'no se manda suelta a otra plaza');
+        var env = opP_('ENVIO', { fecha: '2026-04-04', origen: 'Depósito Mendoza', destino: 'Depósito CABA', desdeCarrito: true });
         t.igual(confirmarP_(ctx, [env]).ok, true, 'retorno a CABA');
         t.igual(ctx.estado.maquinas.S1.ubicTipo, UBIC.TRANSITO, 'en tránsito');
+        t.igual(Object.keys(ctx.estado.carritos).length + ' · ' + ctx.estado.maquinas.S1.carrito, '0 · ', 'el carrito despachado se cierra');
         t.contiene(erroresP_(simularLote([otP_('2026-04-05', 'C2', 'INSTALACION', { serieInstalada: 'S1' })], ctx)), 'MAQUINA_A_REVISAR', 'no se instala');
         confirmarP_(ctx, [opP_('RECEPCION', { fecha: '2026-04-08', idEnvio: env.id })]);
         t.igual(vistaMaquinas(ctx.estado, ctx).filter(function (m) { return m.serie === 'S1'; })[0].deposito, 'Depósito CABA', 'v1.0: queda en el depósito central');
@@ -763,10 +795,10 @@ function casosDePrueba_() {
         var s = saldo_(ctx.estado, 'Depósito Mendoza', 'BOT');
         t.igual(s.A_REVISAR, 0, 'nada a revisar');
         t.igual(s.DISPONIBLE, 47, '44 + 3 disponibles');
-        t.igual(s.PARA_CABA, 2, '2 para CABA');
-        var ret = confirmarP_(ctx, [opP_('ENVIO', { fecha: '2026-04-03', origen: 'Depósito Mendoza', destino: 'Depósito CABA', items: [{ codigo: 'BOT', cantidad: 2, desde: 'PARA_CABA' }] })]);
-        t.igual(ret.ok, true, 'retorno de ítems');
-        t.igual(saldo_(ctx.estado, 'Depósito Mendoza', 'BOT').PARA_CABA, 0, 'salen del saldo Para CABA');
+        t.igual(s.PARA_CABA + '/' + s.RESERVADO, '0/2', '2 para CABA: v2.2, reservadas en el carrito hacia CABA');
+        var ret = confirmarP_(ctx, [opP_('ENVIO', { fecha: '2026-04-03', origen: 'Depósito Mendoza', destino: 'Depósito CABA', desdeCarrito: true })]);
+        t.igual(ret.ok, true, 'retorno de ítems (despachando el carrito)');
+        t.igual(saldo_(ctx.estado, 'Depósito Mendoza', 'BOT').PARA_CABA + saldo_(ctx.estado, 'Depósito Mendoza', 'BOT').RESERVADO, 0, 'salen de lo reservado');
         t.igual(saldo_(ctx.estado, 'Depósito Mendoza', 'BOT').DISPONIBLE, 47, 'el disponible no se toca');
       }
     },
