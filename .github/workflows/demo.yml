@@ -51,6 +51,7 @@ jobs:
           echo "SUPABASE_DB_PASSWORD=$CLAVE" >> $GITHUB_ENV
           H="Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
           REF=$(curl -sf -H "$H" "$API/projects" | jq -r --arg n "$PROYECTO_DEMO" '[.[] | select(.name == $n)][0].id // empty')
+          echo "Proyectos que ve la clave de acceso: $(curl -sf -H "$H" "$API/projects" | jq -r '[.[] | .name + " (" + .region + ", " + .status + ")"] | join(" · ")')"
           if [ -z "$REF" ]; then
             ORG=$(curl -sf -H "$H" "$API/projects" | jq -r --arg r "$SUPABASE_PROJECT_REF_REAL" '.[] | select(.id == $r) | .organization_id')
             echo "Creando el proyecto $PROYECTO_DEMO en la organización de la app real (São Paulo, plan gratuito)…"
