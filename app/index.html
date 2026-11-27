@@ -513,7 +513,7 @@ function norm(s) { return String(s || '').toUpperCase().replace(/\s+/g, ''); }
 function sinAcentos(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
 function fechaTxt(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : (iso || ''); }
 function ocupado(txt) { $('ocupado-texto').textContent = txt || 'Procesando…'; $('ocupado').style.display = 'flex'; }
-function libre() { $('ocupado').style.display = 'none'; }
+function libre() { if ($('ocupado')) $('ocupado').style.display = 'none'; }
 function aviso(txt, clase) { const a = $('aviso'); a.className = 'nota ' + (clase || 'ok'); a.textContent = txt; a.style.display = 'block'; clearTimeout(a._t); a._t = setTimeout(() => a.style.display = 'none', clase === 'err' ? 7000 : 3000); }
 function errorGlobal(e) { $('error-global').innerHTML = `<div class="nota err">${esc(e.message || e)}</div>`; }
 function opciones(lista, previo, vacio) { return (vacio !== undefined ? `<option value="">${esc(vacio)}</option>` : '') + lista.map(v => `<option value="${esc(v)}"${v === previo ? ' selected' : ''}>${esc(v)}</option>`).join(''); }
@@ -1404,6 +1404,7 @@ function guardarBorrador() {
   try { if (b) localStorage.setItem('fadefil.' + claveBorrador(), b); else localStorage.removeItem('fadefil.' + claveBorrador()); } catch (e) { /* sin almacenamiento: queda el contador y el aviso al cerrar */ }
 }
 function pintarSinGuardar() {
+  if (!$('sin-guardar')) return; // pantalla de ingreso (sin el marco de la app)
   const p = [];
   if (S.lote.length) p.push(S.lote.length + (S.lote.length === 1 ? ' OT' : ' OT'));
   if (envioEnArmado()) p.push('1 envío');

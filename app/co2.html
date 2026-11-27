@@ -389,7 +389,7 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ 
 function norm(s) { return String(s || '').toUpperCase().replace(/\s+/g, ''); }
 function fechaTxt(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : (iso || ''); }
 function ocupado(txt) { $('ocupado-texto').textContent = txt || 'Procesando…'; $('ocupado').style.display = 'flex'; }
-function libre() { $('ocupado').style.display = 'none'; }
+function libre() { if ($('ocupado')) $('ocupado').style.display = 'none'; }
 function aviso(txt, clase) { const a = $('aviso'); a.className = 'nota ' + (clase || 'ok'); a.textContent = txt; a.style.display = 'block'; clearTimeout(a._t); a._t = setTimeout(() => a.style.display = 'none', clase === 'err' ? 7000 : 2500); }
 function errorGlobal(e) { $('error-global').innerHTML = `<div class="nota err">${esc(e.message || e)}</div>`; }
 function estadoTxt(e) { return (S.ini && S.ini.estados[e]) || e || ''; }

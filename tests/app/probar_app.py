@@ -21,7 +21,13 @@ with sync_playwright() as p:
     pag = nav.new_page(viewport={'width': 1280, 'height': 900})
     errores = []
     pag.on('console', lambda m: errores.append(m.text) if m.type == 'error' else None)
-    pag.on('pageerror', lambda e: errores.append(str(e)))
+    pag.on('pageerror', lambda e: errores.append(str(e) + ' @ ' + (e.stack or '').split('\n')[1:3].__str__()))
+    # Sin sesión: cada pantalla muestra el ingreso, sin errores.
+    for pagina in ['index.html', 'co2.html', 'datos.html']:
+        pag.goto(BASE + '/' + pagina); pag.wait_for_selector('#btn-google', timeout=15000); pag.wait_for_timeout(800)
+        if errores: print('Ingreso en', pagina, errores[-2:])
+    if errores: fallas.append('Pantalla de ingreso con errores: ' + ' | '.join(errores[:4])); print('Ingreso:', errores[:4])
+    errores.clear()
     pag.goto(BASE + '/archivo.html?r=nada')
     pag.evaluate("s => localStorage.setItem('sb-localhost-auth-token', JSON.stringify(s))", SESION)
     for pagina, esperar in [('index.html', 'ADMIN'), ('co2.html', 'ADMIN')]:
